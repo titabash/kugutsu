@@ -35,7 +35,7 @@ def version_callback(value: bool) -> None:
         raise typer.Exit()
 
 
-@app.command()  # type: ignore
+@app.command()
 def hello(
     name: Annotated[
         Optional[str],
@@ -110,7 +110,7 @@ def hello(
             console.print(f"[bold green]{message}[/bold green]")
 
 
-@app.command()  # type: ignore
+@app.command()
 def info() -> None:
     """Display information about this CLI tool."""
     info_table = Table(title="CLI Tool Information")
@@ -129,7 +129,7 @@ def info() -> None:
     console.print(info_table)
 
 
-@app.callback()  # type: ignore
+@app.callback()
 def main(
     version: Annotated[
         Optional[bool],

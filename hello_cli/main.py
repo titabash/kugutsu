@@ -214,7 +214,7 @@ def hello(
     target = name or "World"
 
     # Create the greeting message
-    message = f"Hey {target}!"
+    message = f"Hello {target}!"
 
     if uppercase:
         message = message.upper()

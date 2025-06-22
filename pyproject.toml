@@ -26,10 +26,11 @@ classifiers = [
     "Topic :: System :: Systems Administration",
     "Typing :: Typed",
 ]
-requires-python = ">=3.9"
+requires-python = ">=3.13.5"
 dependencies = [
     "typer[all]>=0.12.0",
     "rich>=13.0.0",
+    "claude-code-sdk>=0.0.11",
 ]
 
 [project.optional-dependencies]

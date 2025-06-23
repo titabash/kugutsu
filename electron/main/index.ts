@@ -89,6 +89,14 @@ if (process.send) {
         }
         break;
       
+      case 'structured-log':
+        // 構造化されたログメッセージを処理
+        // console.log('[Electron Main] Sending structured log to renderer:', message.data);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('structured-log-data', message.data);
+        }
+        break;
+      
       case 'update-engineer-count':
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('layout-update', message.data);

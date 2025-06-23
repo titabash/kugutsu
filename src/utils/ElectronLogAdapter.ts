@@ -1,5 +1,6 @@
 import { spawn, ChildProcess } from 'child_process';
 import * as path from 'path';
+import { StructuredLogMessage } from '../types/logging';
 
 export interface ElectronLogMessage {
     engineerId: string;
@@ -13,11 +14,20 @@ export class ElectronLogAdapter {
     private electronProcess: ChildProcess | null = null;
     private isElectronMode: boolean = false;
     private messageQueue: ElectronLogMessage[] = [];
+    private structuredMessageQueue: StructuredLogMessage[] = [];
     private isReady: boolean = false;
+    private static instance: ElectronLogAdapter | null = null;
 
-    constructor() {
+    private constructor() {
         // デフォルトでElectronモードを有効化（--no-electronフラグで無効化可能）
         this.isElectronMode = !process.argv.includes('--no-electron');
+    }
+
+    static getInstance(): ElectronLogAdapter {
+        if (!ElectronLogAdapter.instance) {
+            ElectronLogAdapter.instance = new ElectronLogAdapter();
+        }
+        return ElectronLogAdapter.instance;
     }
 
     async initialize() {
@@ -50,6 +60,7 @@ export class ElectronLogAdapter {
                     console.log('✅ Electron UIが起動しました');
                     this.isReady = true;
                     this.flushMessageQueue();
+                    this.flushStructuredMessageQueue();
                 }
             });
 
@@ -85,6 +96,7 @@ export class ElectronLogAdapter {
                 console.log('🖥️  Electron UIが正常に起動しました');
                 this.isReady = true;
                 this.flushMessageQueue();
+                this.flushStructuredMessageQueue();
             }
 
         } catch (error) {
@@ -137,6 +149,15 @@ export class ElectronLogAdapter {
             const message = this.messageQueue.shift();
             if (message) {
                 this.sendToElectron(message);
+            }
+        }
+    }
+
+    private flushStructuredMessageQueue() {
+        while (this.structuredMessageQueue.length > 0) {
+            const message = this.structuredMessageQueue.shift();
+            if (message) {
+                this.sendStructuredToElectron(message);
             }
         }
     }
@@ -269,6 +290,32 @@ export class ElectronLogAdapter {
         }
     }
 
+    logStructured(structuredLog: StructuredLogMessage) {
+        if (this.isElectronMode) {
+            if (this.isReady && this.electronProcess) {
+                this.sendStructuredToElectron(structuredLog);
+            } else {
+                this.structuredMessageQueue.push(structuredLog);
+            }
+        }
+        
+        // コンソールにも出力（後方互換性のため）
+        this.consoleLog(structuredLog.level, structuredLog.message, structuredLog.executor.id, structuredLog.executor.type);
+    }
+
+    private sendStructuredToElectron(structuredLog: StructuredLogMessage) {
+        if (this.electronProcess && !this.electronProcess.killed) {
+            try {
+                this.electronProcess.send({
+                    type: 'structured-log',
+                    data: structuredLog
+                });
+            } catch (error) {
+                console.error('[ElectronLogAdapter] Failed to send structured log to Electron:', error);
+            }
+        }
+    }
+
     updateTaskStatus(completed: number, total: number) {
         if (this.isElectronMode && this.electronProcess && !this.electronProcess.killed) {
             try {
@@ -291,4 +338,4 @@ export class ElectronLogAdapter {
 }
 
 // シングルトンインスタンス
-export const electronLogAdapter = new ElectronLogAdapter();
+export const electronLogAdapter = ElectronLogAdapter.getInstance();

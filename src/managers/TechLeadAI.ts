@@ -2,17 +2,20 @@ import { query, type SDKMessage } from "@anthropic-ai/claude-code";
 import { Task, EngineerResult, AgentConfig, ReviewResult } from '../types';
 import { MergeCoordinator } from '../utils/MergeCoordinator';
 import { EngineerAI } from './EngineerAI';
+import { BaseAI } from './BaseAI';
+import { ComponentType } from '../types/logging';
 
 /**
  * テックリードAIクラス
  * エンジニアAIの作業をレビューする
  */
-export class TechLeadAI {
+export class TechLeadAI extends BaseAI {
   private readonly config: AgentConfig;
   private readonly techLeadId: string;
   private mergeCoordinator?: MergeCoordinator;
 
   constructor(techLeadId: string, config?: Partial<AgentConfig>) {
+    super();
     this.techLeadId = techLeadId;
     this.config = {
       systemPrompt: this.getDefaultSystemPrompt(),
@@ -67,11 +70,25 @@ export class TechLeadAI {
   }
 
   /**
+   * コンポーネントタイプを取得（BaseAI実装）
+   */
+  protected getComponentType(): ComponentType {
+    return 'TechLead';
+  }
+
+  /**
+   * IDを取得（BaseAI実装）
+   */
+  protected getId(): string {
+    return this.techLeadId;
+  }
+
+  /**
    * エンジニアAIの成果物をレビュー
    */
   async reviewEngineerWork(task: Task, engineerResult: EngineerResult): Promise<ReviewResult> {
-    console.log(`👔 テックリードAI[${this.techLeadId}]: レビュー開始`);
-    console.log(`📋 タスク: ${task.title}`);
+    this.info(`👔 レビュー開始`);
+    this.info(`📋 タスク: ${task.title}`);
 
     const startTime = Date.now();
     const prompt = this.buildReviewPrompt(task, engineerResult);
@@ -105,8 +122,8 @@ export class TechLeadAI {
       // レビュー結果を解析してステータスを決定
       const reviewStatus = this.parseReviewStatus(reviewComments);
       
-      console.log(`✅ テックリードAI[${this.techLeadId}]: レビュー完了 (${duration}ms)`);
-      console.log(`📊 レビュー結果: ${reviewStatus}`);
+      this.success(`✅ レビュー完了 (${duration}ms)`);
+      this.info(`📊 レビュー結果: ${reviewStatus}`);
 
       return {
         taskId: task.id,
@@ -120,7 +137,7 @@ export class TechLeadAI {
     } catch (error) {
       const duration = Date.now() - startTime;
 
-      console.error(`❌ テックリードAI[${this.techLeadId}]: レビュー失敗:`, error);
+      this.error(`❌ レビュー失敗: ${error}`);
 
       return {
         taskId: task.id,
@@ -147,7 +164,7 @@ export class TechLeadAI {
         if (message.message && message.message.content) {
           for (const content of message.message.content) {
             if (content.type === 'text') {
-              console.log(`📝 テックリードAI[${this.techLeadId}]: 入力受信 - ${this.truncateText(content.text, 100)}`);
+              this.debug(`📝 入力受信 - ${this.truncateText(content.text, 100)}`);
             }
           }
         }
@@ -159,14 +176,14 @@ export class TechLeadAI {
           for (const content of message.message.content) {
             if (content.type === 'text') {
               const text = content.text;
-              console.log(`🔍 テックリードAI[${this.techLeadId}]: ${this.truncateText(text, 200)}`);
+              this.info(`🔍 ${this.truncateText(text, 200)}`);
               reviewText += text;
             } else if (content.type === 'tool_use') {
               const toolName = content.name;
               const toolId = content.id;
               const toolInput = content.input || {};
-              console.log(`🛠️  テックリードAI[${this.techLeadId}]: ツール実行 - ${toolName}`);
-              this.displayToolExecutionDetails(toolName, toolInput, toolId);
+              const executionId = this.logToolExecution(toolName, this.getToolDescription(toolName, toolInput));
+              this.displayToolExecutionDetails(toolName, toolInput, executionId);
             }
           }
         }
@@ -182,10 +199,10 @@ export class TechLeadAI {
               const status = isError ? '❌ エラー' : '✅ 成功';
               const result = content.content;
               
-              console.log(`📊 テックリードAI[${this.techLeadId}]: ツール結果 - ${status}`);
+              this.info(`📊 ツール結果 - ${status}`);
               
               if (isError) {
-                console.log(`   ❌ エラー詳細: ${this.truncateText(String(result), 150)}`);
+                this.error(`   ❌ エラー詳細: ${this.truncateText(String(result), 150)}`);
               } else {
                 this.displayToolResult(result, toolUseId);
               }
@@ -196,35 +213,35 @@ export class TechLeadAI {
 
       case 'error':
         // エラーメッセージ
-        console.log(`❌ テックリードAI[${this.techLeadId}]: エラーが発生しました`);
+        this.error(`❌ エラーが発生しました`);
         if (message.error) {
-          console.log(`   ❌ エラー: ${this.truncateText(String(message.error), 200)}`);
+          this.error(`   ❌ エラー: ${this.truncateText(String(message.error), 200)}`);
         }
         break;
 
       case 'system':
         // システムメッセージ
-        console.log(`⚙️  テックリードAI[${this.techLeadId}]: システム通知`);
+        this.debug(`⚙️  システム通知`);
         if (message.content) {
-          console.log(`   📋 内容: ${this.truncateText(String(message.content), 150)}`);
+          this.debug(`   📋 内容: ${this.truncateText(String(message.content), 150)}`);
         }
         break;
 
       case 'thinking':
         // 思考過程（内部処理）
-        console.log(`🤔 テックリードAI[${this.techLeadId}]: レビュー中...`);
+        this.debug(`🤔 レビュー中...`);
         break;
 
       case 'event':
         // イベント通知
         if (message.event_type) {
-          console.log(`📢 テックリードAI[${this.techLeadId}]: イベント - ${message.event_type}`);
+          this.debug(`📢 イベント - ${message.event_type}`);
         }
         break;
 
       default:
         // 未知のメッセージタイプ
-        console.log(`🔍 テックリードAI[${this.techLeadId}]: 未知のメッセージタイプ - ${messageType}`);
+        this.warn(`🔍 未知のメッセージタイプ - ${messageType}`);
         break;
     }
 
@@ -232,38 +249,58 @@ export class TechLeadAI {
   }
 
   /**
-   * ツール実行の詳細を表示
+   * ツールの説明を取得
    */
-  private displayToolExecutionDetails(toolName: string, toolInput: any, _toolId: string): void {
+  private getToolDescription(toolName: string, toolInput: any): string {
     switch (toolName) {
       case 'Read':
-        console.log(`   📖 ファイル読み取り: ${toolInput.file_path || 'パス不明'}`);
+        return `ファイル読み取り: ${toolInput.file_path || 'パス不明'}`;
+      case 'Bash':
+        return `コマンド実行: ${this.truncateText(toolInput.command || 'コマンド不明', 100)}`;
+      case 'Grep':
+        return `内容検索: ${toolInput.pattern || 'パターン不明'}`;
+      case 'Glob':
+        return `ファイル検索: ${toolInput.pattern || 'パターン不明'}`;
+      case 'LS':
+        return `ディレクトリ一覧: ${toolInput.path || 'パス不明'}`;
+      default:
+        return `${toolName}実行`;
+    }
+  }
+
+  /**
+   * ツール実行の詳細を表示
+   */
+  private displayToolExecutionDetails(toolName: string, toolInput: any, executionId: string): void {
+    switch (toolName) {
+      case 'Read':
+        this.debug(`   📖 ファイル読み取り: ${toolInput.file_path || 'パス不明'}`, { parentLogId: executionId });
         break;
 
       case 'Bash':
-        console.log(`   💻 コマンド実行: ${this.truncateText(toolInput.command || 'コマンド不明', 100)}`);
+        this.debug(`   💻 コマンド実行: ${this.truncateText(toolInput.command || 'コマンド不明', 100)}`, { parentLogId: executionId });
         break;
 
       case 'Grep':
-        console.log(`   🔎 内容検索: ${toolInput.pattern || 'パターン不明'}`);
+        this.debug(`   🔎 内容検索: ${toolInput.pattern || 'パターン不明'}`, { parentLogId: executionId });
         if (toolInput.include) {
-          console.log(`   📂 対象ファイル: ${toolInput.include}`);
+          this.debug(`   📂 対象ファイル: ${toolInput.include}`, { parentLogId: executionId });
         }
         break;
 
       case 'Glob':
-        console.log(`   🔍 ファイル検索: ${toolInput.pattern || 'パターン不明'}`);
+        this.debug(`   🔍 ファイル検索: ${toolInput.pattern || 'パターン不明'}`, { parentLogId: executionId });
         if (toolInput.path) {
-          console.log(`   📁 検索パス: ${toolInput.path}`);
+          this.debug(`   📁 検索パス: ${toolInput.path}`, { parentLogId: executionId });
         }
         break;
 
       case 'LS':
-        console.log(`   📂 ディレクトリ一覧: ${toolInput.path || 'パス不明'}`);
+        this.debug(`   📂 ディレクトリ一覧: ${toolInput.path || 'パス不明'}`, { parentLogId: executionId });
         break;
 
       default:
-        console.log(`   ⚙️  パラメータ: ${JSON.stringify(toolInput).substring(0, 100)}...`);
+        this.debug(`   ⚙️  パラメータ: ${JSON.stringify(toolInput).substring(0, 100)}...`, { parentLogId: executionId });
         break;
     }
   }
@@ -271,35 +308,35 @@ export class TechLeadAI {
   /**
    * ツール実行結果を表示
    */
-  private displayToolResult(result: any, _toolId: string): void {
+  private displayToolResult(result: any, toolId: string): void {
     if (typeof result === 'string') {
       const lines = result.split('\n');
       const lineCount = lines.length;
       
       if (lineCount === 1) {
-        console.log(`   ✅ 結果: ${this.truncateText(result, 100)}`);
+        this.logToolResult(`   ✅ 結果: ${this.truncateText(result, 100)}`, toolId);
       } else if (lineCount <= 5) {
-        console.log(`   ✅ 結果: ${lineCount}行の出力`);
+        this.logToolResult(`   ✅ 結果: ${lineCount}行の出力`, toolId);
         lines.forEach(line => {
           if (line.trim()) {
-            console.log(`   │ ${this.truncateText(line, 80)}`);
+            this.debug(`   │ ${this.truncateText(line, 80)}`, { parentLogId: toolId });
           }
         });
       } else {
-        console.log(`   ✅ 結果: ${lineCount}行の出力（抜粋）`);
+        this.logToolResult(`   ✅ 結果: ${lineCount}行の出力（抜粋）`, toolId);
         lines.slice(0, 3).forEach(line => {
           if (line.trim()) {
-            console.log(`   │ ${this.truncateText(line, 80)}`);
+            this.debug(`   │ ${this.truncateText(line, 80)}`, { parentLogId: toolId });
           }
         });
-        console.log(`   │ ... (他${lineCount - 3}行)`);
+        this.debug(`   │ ... (他${lineCount - 3}行)`, { parentLogId: toolId });
       }
     } else if (typeof result === 'object' && result !== null) {
-      console.log(`   ✅ 結果: オブジェクト形式`);
+      this.logToolResult(`   ✅ 結果: オブジェクト形式`, toolId);
       const preview = JSON.stringify(result, null, 2);
-      console.log(`   │ ${this.truncateText(preview, 150)}`);
+      this.debug(`   │ ${this.truncateText(preview, 150)}`, { parentLogId: toolId });
     } else {
-      console.log(`   ✅ 結果: ${String(result)}`);
+      this.logToolResult(`   ✅ 結果: ${String(result)}`, toolId);
     }
   }
 
@@ -503,7 +540,7 @@ npm run lint
       };
     }
 
-    console.log(`🔀 テックリードAI[${this.techLeadId}]: 協調マージ開始 - ${task.title}`);
+    this.info(`🔀 協調マージ開始 - ${task.title}`);
 
     // コンフリクト解消用のコールバック関数
     const conflictResolutionHandler = async (
@@ -511,7 +548,7 @@ npm run lint
       engineerId: string,
       existingEngineer?: EngineerAI
     ): Promise<EngineerResult> => {
-      console.log(`🔧 テックリードAI[${this.techLeadId}]: コンフリクト解消依頼 - ${conflictTask.title}`);
+      this.info(`🔧 コンフリクト解消依頼 - ${conflictTask.title}`);
       
       // 既存のエンジニアAIがあれば再利用、なければ新規作成
       const engineer = existingEngineer || new EngineerAI(engineerId, {
@@ -535,11 +572,11 @@ npm run lint
     );
 
     if (mergeResult.success) {
-      console.log(`✅ テックリードAI[${this.techLeadId}]: マージ成功 - ${task.title}`);
+      this.success(`✅ マージ成功 - ${task.title}`);
     } else if (mergeResult.conflictResolutionInProgress) {
-      console.log(`⚠️ テックリードAI[${this.techLeadId}]: コンフリクト解消中（並列実行） - ${task.title}`);
+      this.warn(`⚠️ コンフリクト解消中（並列実行） - ${task.title}`);
     } else {
-      console.log(`❌ テックリードAI[${this.techLeadId}]: マージ失敗 - ${task.title}: ${mergeResult.error}`);
+      this.error(`❌ マージ失敗 - ${task.title}: ${mergeResult.error}`);
     }
 
     return mergeResult;

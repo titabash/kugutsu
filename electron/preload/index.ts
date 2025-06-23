@@ -6,6 +6,9 @@ const electronAPI = {
   onLogData: (callback: (data: any) => void) => {
     ipcRenderer.on('log-data', (event, data) => callback(data));
   },
+  onStructuredLogData: (callback: (data: any) => void) => {
+    ipcRenderer.on('structured-log-data', (event, data) => callback(data));
+  },
 
   // レイアウト関連
   updateLayout: (engineerCount: number) => ipcRenderer.invoke('update-layout', engineerCount),

@@ -73,6 +73,24 @@ const fitAddons = {};
 const engineerIdMapping = {};
 let engineerCounter = 0;
 
+// エンジニアIDマッピングの管理
+function getOrCreateEngineerTerminalId(taskId) {
+    if (!engineerIdMapping[taskId]) {
+        // 新しいエンジニアの場合、次の連番を割り当て
+        engineerCounter++;
+        engineerIdMapping[taskId] = `engineer-${engineerCounter}`;
+        console.log(`[Renderer] New engineer mapping: ${taskId} -> ${engineerIdMapping[taskId]}`);
+    }
+    return engineerIdMapping[taskId];
+}
+
+// エンジニアIDマッピングのクリア（必要に応じて）
+function clearEngineerMapping() {
+    Object.keys(engineerIdMapping).forEach(key => delete engineerIdMapping[key]);
+    engineerCounter = 0;
+    console.log('[Renderer] Engineer ID mapping cleared');
+}
+
 // 最後に使用したターミナルIDを記録（ツール結果を適切な場所に表示するため）
 let lastUsedTerminalId = 'merge-coordinator';
 // 最後にツール実行を行ったコンポーネントを記録
@@ -161,6 +179,75 @@ function clearTerminal(id) {
     }
 }
 
+// 構造化ログからターミナルIDを決定
+function getTerminalIdFromStructuredLog(executor, context) {
+    // executorの型に基づいてターミナルIDを決定
+    switch (executor.type) {
+        case 'ProductOwner':
+            return 'product-owner';
+        case 'TechLead':
+            return 'tech-lead';
+        case 'MergeCoordinator':
+            return 'merge-coordinator';
+        case 'System':
+            // ツール実行結果などの場合、最後のツール実行者のターミナルに表示
+            if (context?.parentLogId && lastToolExecutor) {
+                return lastToolExecutor;
+            }
+            return 'merge-coordinator';
+        case 'Engineer':
+            // エンジニアのIDをマッピング
+            return getOrCreateEngineerTerminalId(executor.id);
+        default:
+            return 'merge-coordinator';
+    }
+}
+
+// 構造化ログメッセージの表示
+function displayStructuredLogMessage(terminalId, level, message, timestamp, context) {
+    const terminal = terminals[terminalId];
+    if (!terminal) {
+        console.warn(`[Renderer] Terminal not found: ${terminalId}`);
+        return;
+    }
+
+    const time = new Date(timestamp).toLocaleTimeString();
+    let colorCode = '\x1b[37m'; // デフォルト白
+    
+    // ログレベルに基づく色設定
+    switch (level) {
+        case 'error':
+            colorCode = '\x1b[31m'; // 赤
+            break;
+        case 'warn':
+            colorCode = '\x1b[33m'; // 黄
+            break;
+        case 'success':
+            colorCode = '\x1b[32m'; // 緑
+            break;
+        case 'info':
+            colorCode = '\x1b[36m'; // シアン
+            break;
+        case 'debug':
+            colorCode = '\x1b[90m'; // グレー
+            break;
+    }
+
+    // コンテキスト情報の表示を準備
+    let contextInfo = '';
+    if (context?.toolName) {
+        contextInfo = `\x1b[35m[${context.toolName}]\x1b[0m `;
+    }
+    
+    // ツール実行IDがある場合の表示
+    if (context?.toolExecutionId) {
+        contextInfo += `\x1b[90m(${context.toolExecutionId.slice(0, 8)})\x1b[0m `;
+    }
+
+    // ログメッセージを表示
+    terminal.writeln(`\x1b[90m[${time}]\x1b[0m ${contextInfo}${colorCode}${message}\x1b[0m`);
+}
+
 // dragEventエラーを回避
 if (typeof dragEvent === 'undefined') {
     window.dragEvent = null;
@@ -219,7 +306,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (window.electronAPI) {
         console.log('[Renderer] Electron API available');
         
-        // ログデータの受信
+        // ログデータの受信（レガシー）
         window.electronAPI.onLogData((data) => {
             console.log('[Renderer] Received log data:', data);
             const { engineerId, level, message, component, timestamp } = data;
@@ -239,13 +326,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 terminalId = 'merge-coordinator';
             } else if (engineerId && engineerId.startsWith('engineer-')) {
                 // エンジニアAIのログ
-                // タスクIDベースのIDを連番にマッピング
-                if (!engineerIdMapping[engineerId]) {
-                    // 新しいエンジニアの場合、次の連番を割り当て
-                    engineerCounter++;
-                    engineerIdMapping[engineerId] = `engineer-${engineerCounter}`;
-                }
-                terminalId = engineerIdMapping[engineerId];
+                terminalId = getOrCreateEngineerTerminalId(engineerId);
             } else {
                 // デフォルトはmerge-coordinator
                 terminalId = 'merge-coordinator';
@@ -294,6 +375,23 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
+        // 構造化ログデータの受信
+        window.electronAPI.onStructuredLogData((data) => {
+            console.log('[Renderer] Received structured log data:', data);
+            const { executor, level, message, timestamp, context } = data;
+            
+            // ターミナルIDを決定
+            const terminalId = getTerminalIdFromStructuredLog(executor, context);
+            
+            // ツール実行のログの場合、実行者を記録
+            if (context?.toolName) {
+                lastToolExecutor = terminalId;
+            }
+            
+            // ログメッセージを表示
+            displayStructuredLogMessage(terminalId, level, message, timestamp, context);
+        });
+
         // レイアウト更新
         window.electronAPI.onLayoutUpdate((engineerCount) => {
             createEngineerTerminals(engineerCount);
@@ -320,6 +418,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const { ipcRenderer } = require('electron');
             console.log('[Renderer] Using direct ipcRenderer as fallback');
             
+            // レガシーログデータ
             ipcRenderer.on('log-data', (event, data) => {
                 const { engineerId, level, message, component, timestamp } = data;
                 
@@ -338,13 +437,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     terminalId = 'merge-coordinator';
                 } else if (engineerId && engineerId.startsWith('engineer-')) {
                     // エンジニアAIのログ
-                    // タスクIDベースのIDを連番にマッピング
-                    if (!engineerIdMapping[engineerId]) {
-                        // 新しいエンジニアの場合、次の連番を割り当て
-                        engineerCounter++;
-                        engineerIdMapping[engineerId] = `engineer-${engineerCounter}`;
-                    }
-                    terminalId = engineerIdMapping[engineerId];
+                    terminalId = getOrCreateEngineerTerminalId(engineerId);
                 } else {
                     // デフォルトはmerge-coordinator
                     terminalId = 'merge-coordinator';
@@ -392,6 +485,23 @@ document.addEventListener('DOMContentLoaded', () => {
                     const logLine = `\x1b[90m[${time}]\x1b[0m ${colorCode}${message}\x1b[0m`;
                     terminal.writeln(logLine);
                 }
+            });
+            
+            // 構造化ログデータ
+            ipcRenderer.on('structured-log-data', (event, data) => {
+                console.log('[Renderer] Received structured log data (fallback):', data);
+                const { executor, level, message, timestamp, context } = data;
+                
+                // ターミナルIDを決定
+                const terminalId = getTerminalIdFromStructuredLog(executor, context);
+                
+                // ツール実行のログの場合、実行者を記録
+                if (context?.toolName) {
+                    lastToolExecutor = terminalId;
+                }
+                
+                // ログメッセージを表示
+                displayStructuredLogMessage(terminalId, level, message, timestamp, context);
             });
             // レイアウト更新
             ipcRenderer.on('layout-update', (event, engineerCount) => {

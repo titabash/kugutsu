@@ -4,83 +4,98 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a modern Python CLI tool built with Typer and Rich, providing a command-line interface with beautiful terminal output. The project uses `uv` for dependency management and follows modern Python development practices.
+This is an AI-powered parallel development system built with TypeScript and the Claude Code SDK. It enables multiple AI engineers to work simultaneously on different tasks using git worktrees for isolation. The system includes task orchestration, automated code review, and intelligent merge coordination.
 
 ## Development Commands
 
 ### Package Manager Policy
-**IMPORTANT**: This project uses `uv` as the package manager. Direct use of `pip` is prohibited. All package operations must be performed through `uv`.
+**IMPORTANT**: This project uses `npm` as the package manager. Ensure Node.js 18+ is installed.
 
 ### Installation and Setup
 ```bash
-# Install with uv (required - do not use pip directly)
-uv sync
+# Install dependencies
+npm install
 
-# Install with development dependencies
-uv sync --group dev
-
-# Install in editable mode (use uv pip, not pip directly)
-uv pip install -e .
+# Build TypeScript
+npm run build
 ```
 
-### Code Quality Commands
+### Development Commands
 ```bash
-# Format code
-ruff format
+# Build the project
+npm run build
 
-# Lint code
-ruff check
+# Start the main CLI (after build)
+npm start
 
-# Type checking
-mypy hello_cli
+# Run in development mode with TypeScript
+npm run dev "<prompt>" [directory]
 
-# Run all tests
-pytest
-
-# Run a specific test
-pytest tests/test_main.py::test_hello_default
-
-# Run tests with coverage
-pytest --cov=hello_cli
+# Run parallel development system
+npm run parallel-dev "<development request>" [options]
 ```
 
-### Pre-commit
+### Type Checking and Linting
 ```bash
-# Install pre-commit hooks
-pre-commit install
+# Type checking (if tsc configured)
+npx tsc --noEmit
+
+# For linting, check if ESLint is configured
+# npm run lint (if configured)
 ```
 
-### Running the CLI
+### Running the System
 ```bash
-# Run hello-cli commands via uv
-uv run hello-cli hello          # Display greeting message
-uv run hello-cli info           # Display CLI tool information
-uv run hello-cli --version      # Show version information
-uv run hello-cli --help         # Show help message
+# Single Claude Code SDK execution
+npm run dev "Please analyze this codebase"
+npm run dev "Fix TypeScript errors" ./src
 
-# Run with custom name
-uv run hello-cli hello --name "Alice"
+# AI Parallel Development System
+npm run parallel-dev "Implement user authentication system"
+npm run parallel-dev "Add API endpoints for user management" --max-engineers 2
+npm run parallel-dev "Bug fixes for login flow" --cleanup
 ```
 
 ## Architecture
 
 ### Project Structure
-- `hello_cli/` - Main package directory
-  - `__init__.py` - Package initialization with version info
-  - `main.py` - Main CLI application using Typer
-- `tests/` - Test suite using pytest
-- `pyproject.toml` - Project configuration and dependencies
+- `src/` - Main source directory
+  - `index.ts` - Basic Claude Code SDK runner
+  - `parallel-dev.ts` - AI parallel development CLI entry point
+  - `managers/` - Core system managers
+    - `ParallelDevelopmentOrchestrator.ts` - Main orchestrator
+    - `EngineerAI.ts` - AI engineer implementation
+    - `ProductOwnerAI.ts` - Task analysis and planning
+    - `TechLeadAI.ts` - Technical review and guidance
+    - `ReviewWorkflow.ts` - Code review automation
+    - `GitWorktreeManager.ts` - Git worktree operations
+  - `utils/` - Utility functions
+    - `MergeCoordinator.ts` - Merge conflict resolution
+    - `TaskInstructionManager.ts` - Task instruction management
+  - `types/` - TypeScript type definitions
+- `tests/` - Test suite
+- `dist/` - Compiled JavaScript output
+- `worktrees/` - Git worktree directories (created during execution)
 
 ### Key Design Patterns
-1. **CLI Framework**: Uses Typer for type-safe command definitions with automatic help generation
-2. **Output Formatting**: Uses Rich for beautiful terminal output with panels, tables, and styled text
-3. **Command Structure**: 
-   - Main entry point through `app` Typer instance
-   - Commands defined with `@app.command()` decorator
-   - Version callback for `--version` flag
-   - Global options in `@app.callback()`
+1. **AI Orchestration**: Uses Claude Code SDK to coordinate multiple AI agents
+2. **Git Worktree Isolation**: Each task runs in isolated git worktree for parallel development
+3. **Task-Based Architecture**: User requests are analyzed and split into independent tasks
+4. **Parallel Execution**: Multiple AI engineers work simultaneously on different tasks
+5. **Automated Review**: Integrated review workflow with AI-powered code review
+6. **Merge Coordination**: Intelligent conflict resolution and merge management
+
+### Core Components
+1. **ParallelDevelopmentOrchestrator**: Main system coordinator
+2. **ProductOwnerAI**: Requirements analysis and task decomposition
+3. **EngineerAI**: Code implementation with Claude Code SDK
+4. **TechLeadAI**: Technical oversight and architecture guidance
+5. **ReviewWorkflow**: Automated code review process
+6. **GitWorktreeManager**: Git operations and branch management
+7. **MergeCoordinator**: Conflict resolution and integration
 
 ### Testing Strategy
-- Uses `typer.testing.CliRunner` for testing CLI commands
-- Tests cover all command variations and options
-- Minimum code coverage requirement: 80%
+- TypeScript-based testing framework
+- Integration tests for AI workflows
+- Git worktree operation testing
+- Mock Claude Code SDK for unit tests

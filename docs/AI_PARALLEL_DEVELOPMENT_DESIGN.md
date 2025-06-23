@@ -3,7 +3,7 @@
 ## 1. システム概要
 
 ### 1.1 目的
-Claude Code SDKとgit worktreeを活用し、複数のAIエンジニアが並列で開発タスクを実行できるシステムを構築する。これにより、大規模な開発プロジェクトを効率的に進めることが可能となる。
+Claude Code SDK（TypeScript版）とgit worktreeを活用し、複数のAIエンジニアが並列で開発タスクを実行できるシステムを構築する。これにより、大規模な開発プロジェクトを効率的に進めることが可能となる。
 
 ### 1.2 主要な特徴
 - **並列タスク実行**: 複数のAIエンジニアが独立したworktreeで同時作業
@@ -221,19 +221,22 @@ graph TD
 ## 6. 技術スタック
 
 ### 6.1 必要なライブラリ
-- **claude-code-sdk**: Claude CodeのPython SDK（`uv add claude-code-sdk`）
-- **GitPython**: Gitリポジトリ操作（`uv add GitPython`）
-- **Typer**: CLIインターフェース（`uv add typer`）
-- **Rich**: 進捗表示とUI（`uv add rich`）
-- **anyio**: 非同期処理（`uv add anyio`）
-- **pydantic**: データモデル定義（`uv add pydantic`）
-- **subprocess**: Git worktreeコマンド実行（標準ライブラリ）
+- **@anthropic-ai/claude-code**: Claude Code SDK for TypeScript
+- **uuid**: タスクID生成用
+- **fs**: ファイルシステム操作（Node標準）
+- **path**: パス操作（Node標準）
+- **child_process**: Git worktreeコマンド実行（Node標準）
 
-### 6.2 前提条件
-- **Python 3.10+**: Claude Code SDKの要件
-- **Node.js**: Claude Code CLIの実行に必要
-- **Claude Code CLI**: `npm install -g @anthropic-ai/claude-code`
-- **uv**: パッケージマネージャー
+### 6.2 開発依存関係
+- **typescript**: TypeScriptコンパイラ
+- **@types/node**: Node.js型定義
+- **@types/uuid**: UUID型定義
+- **ts-node**: TypeScript直接実行
+
+### 6.3 前提条件
+- **Node.js 18+**: Claude Code SDKの要件
+- **TypeScript**: 開発言語
+- **Claude Code**: API アクセス（環境変数経由）
 - **git 2.0+**: worktree機能の使用
 
 
@@ -291,187 +294,263 @@ graph TD
 
 ## 10. Claude Code SDK並列実行の実装例
 
-### 10.1 複数エージェントの並列実行
+### 10.1 複数エージェントの並列実行（TypeScript実装）
 
-```python
-import anyio
-import asyncio
-from claude_code_sdk import query, ClaudeCodeOptions
-from pathlib import Path
-from typing import List, Dict
+```typescript
+import { query, type SDKMessage } from "@anthropic-ai/claude-code";
+import * as fs from 'fs';
+import * as path from 'path';
+import { v4 as uuidv4 } from 'uuid';
 
-class ParallelClaudeManager:
-    def __init__(self, base_repo_path: str, worktree_base_path: str):
-        self.base_repo_path = Path(base_repo_path)
-        self.worktree_base_path = Path(worktree_base_path)
+interface TaskConfig {
+  id: string;
+  type: 'feature' | 'bugfix' | 'refactor' | 'test' | 'docs';
+  description: string;
+  maxTurns?: number;
+}
+
+class ParallelClaudeManager {
+  constructor(
+    private baseRepoPath: string,
+    private worktreeBasePath: string
+  ) {}
+
+  async executeTask(task: TaskConfig, worktreePath: string): Promise<string[]> {
+    const messages: string[] = [];
     
-    async def execute_task(self, task: Dict, worktree_path: str) -> List[str]:
-        """単一タスクを実行"""
-        options = ClaudeCodeOptions(
-            system_prompt=f"あなたは{task['type']}担当のエンジニアです。",
-            max_turns=task.get('max_turns', 10),
-            allowed_tools=["Read", "Write", "Bash", "Glob", "Grep", "Edit"],
-            permission_mode='acceptEdits',
-            working_directory=worktree_path
-        )
-        
-        messages = []
-        try:
-            async for message in query(prompt=task['description'], options=options):
-                messages.append(f"[{task['id']}] {message}")
-                print(f"[{task['id']}] {message}")
-        except Exception as e:
-            messages.append(f"[{task['id']}] ERROR: {str(e)}")
-        
-        return messages
-    
-    async def execute_parallel_tasks(self, tasks: List[Dict]) -> Dict[str, List[str]]:
-        """複数タスクを並列実行"""
-        async def run_single_task(task):
-            worktree_path = str(self.worktree_base_path / f"task-{task['id']}")
-            return task['id'], await self.execute_task(task, worktree_path)
-        
-        # 並列実行
-        results = {}
-        async with anyio.create_task_group() as tg:
-            for task in tasks:
-                tg.start_soon(run_single_task, task)
-        
-        return results
-
-# 使用例
-async def main():
-    tasks = [
-        {
-            "id": "001",
-            "type": "backend",
-            "description": "ユーザ認証APIを実装してください",
-            "max_turns": 15
+    try {
+      const abortController = new AbortController();
+      
+      for await (const message of query({
+        prompt: `タスクID: ${task.id}\nタスクタイプ: ${task.type}\n\n${task.description}`,
+        abortController,
+        options: {
+          maxTurns: task.maxTurns || 20,
+          cwd: worktreePath,
         },
-        {
-            "id": "002", 
-            "type": "frontend",
-            "description": "ログイン画面を作成してください",
-            "max_turns": 10
-        },
-        {
-            "id": "003",
-            "type": "test",
-            "description": "認証機能のテストを作成してください",
-            "max_turns": 8
+      })) {
+        if (message && typeof message === 'object' && 'type' in message) {
+          if (message.type === 'assistant' && 'message' in message) {
+            const assistantMessage = message.message as any;
+            if (assistantMessage.content) {
+              for (const content of assistantMessage.content) {
+                if (content.type === 'text') {
+                  const logMessage = `[${task.id}] ${content.text}`;
+                  messages.push(logMessage);
+                  console.log(logMessage);
+                }
+              }
+            }
+          }
         }
-    ]
+      }
+    } catch (error) {
+      const errorMessage = `[${task.id}] ERROR: ${error}`;
+      messages.push(errorMessage);
+      console.error(errorMessage);
+    }
     
-    manager = ParallelClaudeManager(".", "./worktrees")
-    results = await manager.execute_parallel_tasks(tasks)
+    return messages;
+  }
     
-    for task_id, messages in results.items():
-        print(f"\n=== Task {task_id} Results ===")
-        for message in messages:
-            print(message)
+  async executeParallelTasks(tasks: TaskConfig[]): Promise<Record<string, string[]>> {
+    const results: Record<string, string[]> = {};
+    
+    // 並列実行
+    const promises = tasks.map(async (task) => {
+      const worktreePath = path.join(this.worktreeBasePath, `task-${task.id}`);
+      const messages = await this.executeTask(task, worktreePath);
+      results[task.id] = messages;
+    });
+    
+    await Promise.all(promises);
+    return results;
+  }
+}
 
-if __name__ == "__main__":
-    anyio.run(main)
+// 使用例
+async function main() {
+  const tasks: TaskConfig[] = [
+    {
+      id: "001",
+      type: "feature",
+      description: "ユーザ認証APIを実装してください",
+      maxTurns: 15
+    },
+    {
+      id: "002", 
+      type: "feature",
+      description: "ログイン画面を作成してください",
+      maxTurns: 10
+    },
+    {
+      id: "003",
+      type: "test",
+      description: "認証機能のテストを作成してください",
+      maxTurns: 8
+    }
+  ];
+  
+  const manager = new ParallelClaudeManager(".", "./worktrees");
+  const results = await manager.executeParallelTasks(tasks);
+  
+  for (const [taskId, messages] of Object.entries(results)) {
+    console.log(`\n=== Task ${taskId} Results ===`);
+    messages.forEach(message => console.log(message));
+  }
+}
+
+// 実行
+main().catch(console.error);
 ```
 
-### 10.2 Git Worktree管理の統合
+### 10.2 Git Worktree管理の統合（TypeScript実装）
 
-```python
-import subprocess
-import anyio
-from pathlib import Path
-from claude_code_sdk import ClaudeCodeOptions
+```typescript
+import { spawn, exec } from 'child_process';
+import { promisify } from 'util';
+import * as fs from 'fs';
+import * as path from 'path';
+import { query } from "@anthropic-ai/claude-code";
 
-class IntegratedTaskManager:
-    def __init__(self, base_repo_path: str, worktree_base_path: str):
-        self.base_repo_path = Path(base_repo_path)
-        self.worktree_base_path = Path(worktree_base_path)
+const execAsync = promisify(exec);
+
+class IntegratedTaskManager {
+  constructor(
+    private baseRepoPath: string,
+    private worktreeBasePath: string
+  ) {}
+
+  async createWorktree(taskId: string, baseBranch: string = "main"): Promise<string> {
+    const branchName = `feature/task-${taskId}`;
+    const worktreePath = path.join(this.worktreeBasePath, `task-${taskId}`);
     
-    def create_worktree(self, task_id: str, base_branch: str = "main") -> str:
-        """タスク用のworktreeを作成"""
-        branch_name = f"feature/task-{task_id}"
-        worktree_path = self.worktree_base_path / f"task-{task_id}"
-        
-        if worktree_path.exists():
-            self.remove_worktree(task_id)
-        
-        cmd = [
-            "git", "worktree", "add", 
-            "-b", branch_name,
-            str(worktree_path),
-            base_branch
-        ]
-        
-        result = subprocess.run(
-            cmd, 
-            cwd=self.base_repo_path,
-            capture_output=True,
-            text=True
-        )
-        
-        if result.returncode != 0:
-            raise Exception(f"Worktree作成エラー: {result.stderr}")
-        
-        return str(worktree_path)
+    // 既存のworktreeがあれば削除
+    if (fs.existsSync(worktreePath)) {
+      await this.removeWorktree(taskId);
+    }
     
-    def remove_worktree(self, task_id: str):
-        """worktreeを削除"""
-        worktree_path = self.worktree_base_path / f"task-{task_id}"
-        
-        if worktree_path.exists():
-            subprocess.run([
-                "git", "worktree", "remove", 
-                str(worktree_path)
-            ], cwd=self.base_repo_path)
+    try {
+      const command = `git worktree add -b ${branchName} ${worktreePath} ${baseBranch}`;
+      const { stdout, stderr } = await execAsync(command, { cwd: this.baseRepoPath });
+      
+      if (stderr && !stderr.includes('Switched to a new branch')) {
+        console.warn('Git worktree warning:', stderr);
+      }
+      
+      return worktreePath;
+    } catch (error) {
+      throw new Error(`Worktree作成エラー: ${error}`);
+    }
+  }
     
-    async def run_task_with_worktree(self, task: Dict) -> List[str]:
-        """Worktreeを作成してタスクを実行"""
-        task_id = task['id']
-        
-        try:
-            # Worktreeを作成
-            worktree_path = self.create_worktree(task_id)
-            
-            # Claude Code SDKでタスクを実行
-            options = ClaudeCodeOptions(
-                system_prompt="あなたは経験豊富なソフトウェアエンジニアです。",
-                max_turns=task.get('max_turns', 10),
-                allowed_tools=["Read", "Write", "Bash", "Glob", "Grep", "Edit"],
-                permission_mode='acceptEdits',
-                working_directory=worktree_path
-            )
-            
-            messages = []
-            async for message in query(prompt=task['description'], options=options):
-                messages.append(message)
-            
-            return messages
-            
-        except Exception as e:
-            return [f"ERROR: {str(e)}"]
-        finally:
-            # タスク完了後にworktreeをクリーンアップ（オプション）
-            # self.remove_worktree(task_id)
-            pass
+  async removeWorktree(taskId: string): Promise<void> {
+    const worktreePath = path.join(this.worktreeBasePath, `task-${taskId}`);
+    
+    if (fs.existsSync(worktreePath)) {
+      try {
+        const command = `git worktree remove ${worktreePath}`;
+        await execAsync(command, { cwd: this.baseRepoPath });
+      } catch (error) {
+        console.warn(`Worktree削除の警告: ${error}`);
+        // 強制削除を試行
+        try {
+          const forceCommand = `git worktree remove --force ${worktreePath}`;
+          await execAsync(forceCommand, { cwd: this.baseRepoPath });
+        } catch (forceError) {
+          console.error(`Worktree強制削除エラー: ${forceError}`);
+        }
+      }
+    }
+  }
+
+  async runTaskWithWorktree(task: TaskConfig): Promise<string[]> {
+    const taskId = task.id;
+    
+    try {
+      // Worktreeを作成
+      const worktreePath = await this.createWorktree(taskId);
+      
+      // Claude Code SDKでタスクを実行
+      const messages: string[] = [];
+      const abortController = new AbortController();
+      
+      for await (const message of query({
+        prompt: task.description,
+        abortController,
+        options: {
+          maxTurns: task.maxTurns || 20,
+          cwd: worktreePath,
+        },
+      })) {
+        if (message && typeof message === 'object' && 'type' in message) {
+          if (message.type === 'assistant' && 'message' in message) {
+            const assistantMessage = message.message as any;
+            if (assistantMessage.content) {
+              for (const content of assistantMessage.content) {
+                if (content.type === 'text') {
+                  messages.push(content.text);
+                }
+              }
+            }
+          }
+        }
+      }
+      
+      return messages;
+      
+    } catch (error) {
+      return [`ERROR: ${error}`];
+    } finally {
+      // タスク完了後にworktreeをクリーンアップ（オプション）
+      // await this.removeWorktree(taskId);
+    }
+  }
+}
 ```
 
-### 10.3 並列実行時の注意点
+### 10.3 並列実行時の注意点（TypeScript実装）
 
 1. **ブランチの重複回避**: 各worktreeは独立したブランチを使用
 2. **リソース管理**: 同時実行数の制限とメモリ使用量の監視
 3. **エラーハンドリング**: worktree作成・削除の失敗に対する適切な処理
 4. **クリーンアップ**: タスク完了後の自動的なworktree削除
-5. **Node.js環境**: Claude Code CLIが各worktreeで正常に動作することを確認
-6. **非同期処理**: anyioを使用した適切な並列実行管理
+5. **Node.js環境**: Claude Code SDKが各worktreeで正常に動作することを確認
+6. **非同期処理**: Promise.allを使用した適切な並列実行管理
+7. **TypeScript型安全性**: 適切な型定義による実行時エラーの予防
+8. **エラー境界**: 一つのタスクの失敗が他のタスクに影響しないような実装
 
-## 11. まとめ
+## 11. 実装済み機能
 
-このAI並列開発システムは、git worktreeとClaude Code SDK for Pythonを組み合わせることで、複雑な開発タスクを効率的に並列処理するための包括的なソリューションを提供します。
+### 11.1 現在の実装状況
+- ✅ **基本的なClaude Code SDK統合**: TypeScriptベースの実装完了
+- ✅ **並列開発オーケストレーター**: 複数AIエンジニアの協調動作
+- ✅ **Git Worktree管理**: 自動的なブランチ作成とworktree管理
+- ✅ **タスク分析AI (ProductOwnerAI)**: ユーザー要求の自動分析と分割
+- ✅ **エンジニアAI**: 独立したworktreeでの開発作業
+- ✅ **技術リードAI**: アーキテクチャ指導と技術的監督
+- ✅ **レビューワークフロー**: 自動コードレビューシステム
+- ✅ **マージコーディネーター**: 競合解決と統合管理
+- ✅ **CLIインターフェース**: 使いやすいコマンドライン操作
+
+### 11.2 アーキテクチャ特徴
+- **TypeScript**: 型安全性による信頼性の高い実装
+- **モジュラー設計**: 各コンポーネントが独立して機能
+- **非同期処理**: Promise.allによる効率的な並列実行
+- **エラー境界**: 一つのタスクの失敗が全体に影響しない設計
+- **リソース管理**: 適切なクリーンアップとメモリ管理
+
+## 12. まとめ
+
+このAI並列開発システムは、git worktreeとClaude Code SDK for TypeScriptを組み合わせることで、複雑な開発タスクを効率的に並列処理するための包括的なソリューションを提供します。
 
 **主要な利点:**
 - 複数のAIエンジニアが独立したworktreeで同時作業
 - Claude Code SDKによる高度なツール使用（Read, Write, Bash等）
+- TypeScriptによる型安全な実装
 - 非同期処理によるスケーラブルな並列実行
 - 適切なエラーハンドリングとリソース管理
+- 自動的なコードレビューと品質管理
+- インテリジェントなマージとコンフリクト解決
 
-調査結果を基に、実際のClaude Code SDK APIとgit worktreeコマンドを正確に使用し、制限事項を考慮した実装を行うことで、従来の開発プロセスを大幅に改善し、開発速度と品質の向上を実現します。
+実際のClaude Code SDK APIと現代的なTypeScript開発手法を組み合わせ、制限事項を考慮した実装により、従来の開発プロセスを大幅に改善し、開発速度と品質の向上を実現しています。

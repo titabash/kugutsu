@@ -1,4 +1,15 @@
 /**
+ * 開発フェーズの定義
+ */
+export enum DevelopmentPhase {
+  ANALYSIS = 'フェーズ1: 要求分析',
+  PREPARATION = 'フェーズ2: 並列実行準備',
+  DEVELOPMENT = 'フェーズ3: 並列開発',
+  REVIEW = 'フェーズ4: レビュー（コンフリクト解消含む）',
+  COMPLETION = 'フェーズ5: 完了'
+}
+
+/**
  * タスクの型定義
  */
 export interface Task {

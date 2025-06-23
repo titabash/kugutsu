@@ -76,38 +76,44 @@ export class ParallelDevelopmentOrchestrator {
 
       // 3. 並列実行グループの作成
       const executionGroups = this.createExecutionGroups(orderedTasks);
-      this.log('system', 'info', `🏗️ 実行グループ作成: ${executionGroups.length}グループ`, 'Orchestrator', 'Phase 2: Preparation');
+      this.log('system', 'info', `🏗️ フェーズ2: 並列実行準備`, 'Orchestrator', 'Phase 2: Preparation');
+      this.log('system', 'info', `実行グループ作成: ${executionGroups.length}グループ`, 'Orchestrator', 'Phase 2: Preparation');
       
       if (this.logViewer) {
         this.updateMainInfo(`並列実行準備中... | グループ数: ${executionGroups.length} | ${new Date().toLocaleString()}`);
       }
 
-      // 4. 並列実行（レビュー含む）
-      this.log('system', 'info', '⚡ フェーズ3: 並列実行・レビュー開始', 'Orchestrator', 'Phase 3: Execution');
+      // 4. 並列開発
+      this.log('system', 'info', '⚡ フェーズ3: 並列開発', 'Orchestrator', 'Phase 3: Development');
       const { results, reviewResults, completedTasks, failedTasks } = await this.executeTasksInParallel(executionGroups);
 
-      this.log('system', 'success', '✅ 並列開発・レビュー完了', 'Orchestrator', 'Phase 4: Completion');
+      this.log('system', 'info', '🔍 フェーズ4: レビュー（コンフリクト解消含む）', 'Orchestrator', 'Phase 4: Review');
       
       // 5. 全ての保留中のコンフリクト解消処理の完了を待機
-      this.log('system', 'info', '🔄 フェーズ4: コンフリクト解消完了待機', 'Orchestrator', 'Phase 4: Completion');
+      this.log('system', 'info', '🔄 コンフリクト解消処理の確認中...', 'Orchestrator', 'Phase 4: Review');
       await this.reviewWorkflow.waitForAllConflictResolutions();
       
       // 6. コンフリクト解消後の再レビューとマージ
-      this.log('system', 'info', '🔍 フェーズ5: コンフリクト解消後再レビュー', 'Orchestrator', 'Phase 5: Re-Review');
+      this.log('system', 'info', '🔍 コンフリクト解消結果の処理中...', 'Orchestrator', 'Phase 4: Review');
       const reReviewResults = await this.reviewWorkflow.handleConflictResolutionResults();
       
       // 再レビュー結果のログ出力
-      for (const [taskId, success] of reReviewResults) {
-        if (success) {
-          this.log('system', 'success', `✅ 再レビュー承認・マージ完了: ${taskId}`, 'Orchestrator', 'Phase 5: Re-Review');
-        } else {
-          this.log('system', 'error', `❌ 再レビュー失敗: ${taskId}`, 'Orchestrator', 'Phase 5: Re-Review');
+      if (reReviewResults.size > 0) {
+        this.log('system', 'info', `📊 コンフリクト解消後の再レビュー結果: ${reReviewResults.size}件`, 'Orchestrator', 'Phase 4: Review');
+        for (const [taskId, success] of reReviewResults) {
+          if (success) {
+            this.log('system', 'success', `✅ 再レビュー承認・マージ完了: ${taskId}`, 'Orchestrator', 'Phase 4: Review');
+          } else {
+            this.log('system', 'error', `❌ 再レビュー失敗: ${taskId}`, 'Orchestrator', 'Phase 4: Review');
+          }
         }
+      } else {
+        this.log('system', 'info', `ℹ️ コンフリクト解消が必要なタスクはありませんでした`, 'Orchestrator', 'Phase 4: Review');
       }
       
-      this.log('system', 'success', '✅ 全プロセス完了（再レビュー含む）', 'Orchestrator', 'Phase 5: Completion');
-      this.log('system', 'info', `📊 完了タスク: ${completedTasks.length}個`, 'Orchestrator', 'Phase 4: Completion');
-      this.log('system', 'info', `📊 失敗タスク: ${failedTasks.length}個`, 'Orchestrator', 'Phase 4: Completion');
+      this.log('system', 'success', '✅ フェーズ5: 完了', 'Orchestrator', 'Phase 5: Completion');
+      this.log('system', 'info', `📊 完了タスク: ${completedTasks.length}個`, 'Orchestrator', 'Phase 5: Completion');
+      this.log('system', 'info', `📊 失敗タスク: ${failedTasks.length}個`, 'Orchestrator', 'Phase 5: Completion');
       
       if (this.logViewer) {
         this.updateMainInfo(`完了 | 成功: ${completedTasks.length} | 失敗: ${failedTasks.length} | ${new Date().toLocaleString()}`);
@@ -176,7 +182,7 @@ export class ParallelDevelopmentOrchestrator {
   }
 
   /**
-   * タスクグループを並列実行（レビュー含む）
+   * タスクグループを並列実行（開発とレビューを含む）
    */
   private async executeTasksInParallel(executionGroups: Task[][]): Promise<{
     results: EngineerResult[];
@@ -191,7 +197,7 @@ export class ParallelDevelopmentOrchestrator {
 
     for (let groupIndex = 0; groupIndex < executionGroups.length; groupIndex++) {
       const group = executionGroups[groupIndex];
-      console.log(`\n🔥 グループ ${groupIndex + 1}/${executionGroups.length} 実行開始 (${group.length}タスク)`);
+      this.log('system', 'info', `🔥 グループ ${groupIndex + 1}/${executionGroups.length} 開発開始 (${group.length}タスク)`, 'Orchestrator', 'Phase 3: Development');
 
       // 各タスクにworktreeを作成
       await this.setupWorktreesForGroup(group);
@@ -200,8 +206,8 @@ export class ParallelDevelopmentOrchestrator {
       const groupResults = await this.executeGroupInParallel(group);
       allResults.push(...groupResults);
 
-      // レビューワークフローを実行
-      console.log(`\n🔍 グループ ${groupIndex + 1} レビューフェーズ開始`);
+      // レビューワークフローを実行（フェーズ4の一部として）
+      this.log('system', 'info', `🔍 グループ ${groupIndex + 1} レビュー開始`, 'Orchestrator', 'Phase 4: Review');
       const groupReviewResults = await this.executeReviewWorkflow(group, groupResults);
       allReviewResults.push(...groupReviewResults);
 
@@ -224,7 +230,7 @@ export class ParallelDevelopmentOrchestrator {
         }
       }
 
-      console.log(`✅ グループ ${groupIndex + 1} 完了（開発・レビュー）`);
+      this.log('system', 'success', `✅ グループ ${groupIndex + 1} 完了`, 'Orchestrator', groupIndex === executionGroups.length - 1 ? 'Phase 4: Review' : 'Phase 3: Development');
     }
 
     return {

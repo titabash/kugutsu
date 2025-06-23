@@ -566,9 +566,20 @@ git commit -m "resolve: マージコンフリクトを解消
    */
   async handleConflictResolutionResults(): Promise<Map<string, boolean>> {
     const results = new Map<string, boolean>();
+    
+    console.log(`🔍 コンフリクト解消結果の確認開始...`);
     const conflictResults = await this.mergeCoordinator.waitForAllConflictResolutions();
+    console.log(`📊 待機完了: ${conflictResults.size}件のコンフリクト解消結果`);
+    
+    // 結果が空の場合のデバッグログ
+    if (conflictResults.size === 0) {
+      console.log(`ℹ️ コンフリクト解消対象のタスクがありません`);
+      return results;
+    }
     
     for (const [taskId, engineerResult] of conflictResults) {
+      console.log(`🔍 タスクID: ${taskId}, 結果: ${engineerResult ? 'あり' : 'なし'}, needsReReview: ${engineerResult?.needsReReview}`);
+      
       if (engineerResult?.needsReReview) {
         console.log(`🔄 コンフリクト解消後の再レビュー開始: ${taskId}`);
         
@@ -580,9 +591,12 @@ git commit -m "resolve: マージコンフリクトを解消
           console.error(`❌ 再レビューエラー: ${taskId}`, error);
           results.set(taskId, false);
         }
+      } else {
+        console.log(`⚠️ タスク ${taskId} は再レビュー不要`);
       }
     }
     
+    console.log(`✅ コンフリクト解消後の処理完了: ${results.size}件`);
     return results;
   }
 
@@ -792,6 +806,25 @@ git commit -m "resolve: マージコンフリクトを解消
       return true;
     } catch (error) {
       console.error(`❌ 最終マージ失敗: ${task.title}`, error);
+      
+      // コンフリクトかどうかを確認
+      const conflictDetected = await this.detectMergeConflict(this.config.baseRepoPath);
+      
+      if (conflictDetected) {
+        console.error(`⚠️ 最終マージでコンフリクトが発生しました: ${task.branchName}`);
+        console.error(`🔍 この問題は手動で解決する必要があります`);
+        
+        // マージを中止
+        try {
+          execSync(`git merge --abort`, {
+            cwd: this.config.baseRepoPath,
+            stdio: 'pipe'
+          });
+        } catch (abortError) {
+          // マージ中止のエラーは無視
+        }
+      }
+      
       return false;
     }
   }

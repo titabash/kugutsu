@@ -41,6 +41,7 @@ export interface WorktreeInfo {
  */
 export interface EngineerResult {
   taskId: string;
+  engineerId: string;
   success: boolean;
   output: string[];
   error?: string;
@@ -66,4 +67,17 @@ export interface AgentConfig {
   systemPrompt: string;
   maxTurns: number;
   allowedTools: string[];
+}
+
+/**
+ * レビュー結果
+ */
+export interface ReviewResult {
+  taskId: string;
+  status: 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED' | 'ERROR';
+  comments: string[];
+  reviewer: string;
+  reviewedAt: Date;
+  duration: number;
+  error?: string;
 }

@@ -8,6 +8,7 @@ import { Task, EngineerResult, AgentConfig } from '../types';
 export class EngineerAI {
   private readonly config: AgentConfig;
   private readonly engineerId: string;
+  private sessionId?: string;
 
   constructor(engineerId: string, config?: Partial<AgentConfig>) {
     this.engineerId = engineerId;
@@ -70,10 +71,16 @@ export class EngineerAI {
           maxTurns: this.config.maxTurns,
           cwd: task.worktreePath,
           permissionMode: 'acceptEdits',
-          allowedTools: this.config.allowedTools
+          allowedTools: this.config.allowedTools,
+          resume: this.sessionId // 既存セッションがあれば再利用
         },
       })) {
         messages.push(message);
+
+        // セッションIDを保存
+        if (message && typeof message === 'object' && 'session_id' in message) {
+          this.sessionId = message.session_id;
+        }
 
         // リアルタイムでエンジニアAIの作業状況を表示
         if (message && typeof message === 'object' && 'type' in message) {
@@ -99,6 +106,7 @@ export class EngineerAI {
 
       return {
         taskId: task.id,
+        engineerId: this.engineerId,
         success: true,
         output,
         duration,
@@ -112,6 +120,7 @@ export class EngineerAI {
 
       return {
         taskId: task.id,
+        engineerId: this.engineerId,
         success: false,
         output: [],
         error: error instanceof Error ? error.message : String(error),
@@ -293,5 +302,19 @@ ${task.worktreePath}
    */
   getConfig(): AgentConfig {
     return { ...this.config };
+  }
+
+  /**
+   * セッションIDを取得
+   */
+  getSessionId(): string | undefined {
+    return this.sessionId;
+  }
+
+  /**
+   * セッションIDを設定
+   */
+  setSessionId(sessionId: string): void {
+    this.sessionId = sessionId;
   }
 }

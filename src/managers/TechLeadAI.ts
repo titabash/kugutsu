@@ -349,7 +349,13 @@ ${engineerResult.filesChanged.length > 0
 # 変更状況を確認
 git status
 git diff --staged
-git diff HEAD~1..HEAD
+
+# 元ブランチとの差分を確認（これが重要）
+# まず、現在のブランチがどこから分岐したか確認
+git merge-base HEAD @{-1} 2>/dev/null || git merge-base HEAD main 2>/dev/null || git merge-base HEAD master
+
+# 分岐元との差分を確認
+git diff $(git merge-base HEAD @{-1} 2>/dev/null || git merge-base HEAD main 2>/dev/null || git merge-base HEAD master)...HEAD
 \`\`\`
 
 ### 2. 必須チェック項目の確認

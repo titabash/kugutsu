@@ -73,7 +73,8 @@ export class MergeCoordinator {
    */
   async coordinatedMerge(
     task: Task,
-    onConflictResolution?: (task: Task, engineerId: string, existingEngineer?: EngineerAI) => Promise<EngineerResult>
+    onConflictResolution?: (task: Task, engineerId: string, existingEngineer?: EngineerAI) => Promise<EngineerResult>,
+    onFinalMergeSuccess?: (task: Task) => Promise<void>
   ): Promise<{
     success: boolean;
     conflictResolutionInProgress?: boolean;
@@ -99,7 +100,7 @@ export class MergeCoordinator {
           
           // コンフリクト解消を非同期で開始（Mutex外で実行）
           if (onConflictResolution) {
-            const conflictPromise = this.startConflictResolution(task, onConflictResolution);
+            const conflictPromise = this.startConflictResolution(task, onConflictResolution, onFinalMergeSuccess);
             this.pendingConflictResolutions.set(task.id, conflictPromise);
             
             // Mutexを即座に解放してコンフリクト解消は並列実行
@@ -134,7 +135,8 @@ export class MergeCoordinator {
    */
   private async startConflictResolution(
     task: Task,
-    onConflictResolution: (task: Task, engineerId: string, existingEngineer?: EngineerAI) => Promise<EngineerResult>
+    onConflictResolution: (task: Task, engineerId: string, existingEngineer?: EngineerAI) => Promise<EngineerResult>,
+    onFinalMergeSuccess?: (task: Task) => Promise<void>
   ): Promise<EngineerResult> {
     console.log(`🔧 コンフリクト解消開始（並列実行）: ${task.title}`);
     
@@ -143,8 +145,33 @@ export class MergeCoordinator {
       const result = await onConflictResolution(task, engineerId);
       
       console.log(`✅ コンフリクト解消完了: ${task.title}`);
-      this.pendingConflictResolutions.delete(task.id);
       
+      // コンフリクト解消後にマージを再実行
+      console.log(`🔄 コンフリクト解消後のマージを再実行: ${task.title}`);
+      const finalMergeResult = await this.performFinalMerge(task);
+      
+      if (finalMergeResult === true) {
+        console.log(`✅ 最終マージ完了: ${task.title}`);
+        
+        // 最終マージ成功時のクリーンアップコールバック実行
+        if (onFinalMergeSuccess) {
+          try {
+            await onFinalMergeSuccess(task);
+          } catch (cleanupError) {
+            console.error(`❌ クリーンアップエラー: ${task.title}`, cleanupError);
+          }
+        }
+      } else if (finalMergeResult === 'CONFLICT') {
+        console.error(`❌ 再度コンフリクトが発生: ${task.title}`);
+        result.success = false;
+        result.error = '解消後に再度コンフリクトが発生しました';
+      } else {
+        console.error(`❌ 最終マージ失敗: ${task.title}`);
+        result.success = false;
+        result.error = '最終マージに失敗しました';
+      }
+      
+      this.pendingConflictResolutions.delete(task.id);
       return result;
     } catch (error) {
       console.error(`❌ コンフリクト解消失敗: ${task.title}`, error);
@@ -323,6 +350,34 @@ export class MergeCoordinator {
   }
 
   /**
+   * コンフリクト解消後の最終マージ実行（排他制御）
+   */
+  private async performFinalMerge(task: Task): Promise<boolean | 'CONFLICT'> {
+    // Mutexで排他制御してマージを実行
+    return await this.mergeMutex.acquire(async () => {
+      try {
+        console.log(`🔄 最終マージ実行: ${task.title}`);
+        
+        // メインブランチを最新化
+        await this.pullLatestMain();
+        
+        // マージを実行（コンフリクトチェック込み）
+        const result = await this.performMerge(task);
+        
+        if (result === true) {
+          // マージ成功 - クリーンアップは呼び出し元で実行
+          console.log(`✅ 最終マージ成功: ${task.title}`);
+        }
+        
+        return result;
+      } catch (error) {
+        console.error(`❌ 最終マージエラー: ${task.title}`, error);
+        return false;
+      }
+    });
+  }
+
+  /**
    * コンフリクト解消の完了を待機
    */
   async waitForConflictResolution(taskId: string): Promise<EngineerResult | null> {
@@ -338,6 +393,34 @@ export class MergeCoordinator {
    */
   getPendingConflictResolutions(): string[] {
     return Array.from(this.pendingConflictResolutions.keys());
+  }
+
+  /**
+   * 全ての保留中のコンフリクト解消処理の完了を待機
+   */
+  async waitForAllConflictResolutions(): Promise<Map<string, EngineerResult | null>> {
+    const results = new Map<string, EngineerResult | null>();
+    
+    // 現在保留中のタスクIDを取得
+    const pendingTaskIds = this.getPendingConflictResolutions();
+    
+    if (pendingTaskIds.length === 0) {
+      return results;
+    }
+
+    console.log(`🔄 保留中のコンフリクト解消処理を待機中: ${pendingTaskIds.length}件`);
+    
+    // 全ての保留中のコンフリクト解消処理を並列で待機
+    const promises = pendingTaskIds.map(async (taskId) => {
+      const result = await this.waitForConflictResolution(taskId);
+      results.set(taskId, result);
+      return { taskId, result };
+    });
+
+    await Promise.all(promises);
+    
+    console.log(`✅ 全てのコンフリクト解消処理が完了しました`);
+    return results;
   }
 
   /**

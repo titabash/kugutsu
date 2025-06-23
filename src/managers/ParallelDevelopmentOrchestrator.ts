@@ -87,6 +87,12 @@ export class ParallelDevelopmentOrchestrator {
       const { results, reviewResults, completedTasks, failedTasks } = await this.executeTasksInParallel(executionGroups);
 
       this.log('system', 'success', '✅ 並列開発・レビュー完了', 'Orchestrator', 'Phase 4: Completion');
+      
+      // 5. 全ての保留中のコンフリクト解消処理の完了を待機
+      this.log('system', 'info', '🔄 フェーズ4: コンフリクト解消完了待機', 'Orchestrator', 'Phase 4: Completion');
+      await this.reviewWorkflow.waitForAllConflictResolutions();
+      
+      this.log('system', 'success', '✅ 全プロセス完了', 'Orchestrator', 'Phase 4: Completion');
       this.log('system', 'info', `📊 完了タスク: ${completedTasks.length}個`, 'Orchestrator', 'Phase 4: Completion');
       this.log('system', 'info', `📊 失敗タスク: ${failedTasks.length}個`, 'Orchestrator', 'Phase 4: Completion');
       

@@ -61,6 +61,11 @@ export class ReviewWorkflow {
             async (conflictTask, conflictEngineerId) => {
               console.log(`🔄 コンフリクト解消依頼（並列実行）: ${conflictTask.title}`);
               return await this.resolveConflictWithEngineer(conflictTask, conflictEngineerId, existingEngineer);
+            },
+            // 最終マージ成功時のクリーンアップコールバック
+            async (finalTask) => {
+              console.log(`🧹 コンフリクト解消後のクリーンアップ実行: ${finalTask.title}`);
+              await this.cleanupAfterMerge(finalTask);
             }
           );
           
@@ -528,5 +533,12 @@ git commit -m "resolve: マージコンフリクトを解消
       errorCount,
       averageReviewTime
     };
+  }
+
+  /**
+   * 全ての保留中のコンフリクト解消処理の完了を待機
+   */
+  async waitForAllConflictResolutions(): Promise<void> {
+    await this.mergeCoordinator.waitForAllConflictResolutions();
   }
 }

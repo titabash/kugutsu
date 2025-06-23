@@ -178,7 +178,7 @@ class ParallelDevelopmentCLI {
       // 並列開発を実行
       const { analysis, results } = await orchestrator.executeUserRequest(userRequest);
 
-      // 結果のサマリーを表示
+      // 結果のサマリーを表示（全プロセス完了後）
       console.log('\n📊 実行結果サマリー');
       console.log(`═══════════════════════════════════════`);
       console.log(`📝 分析概要: ${analysis.summary}`);

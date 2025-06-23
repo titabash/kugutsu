@@ -31,6 +31,7 @@ class ParallelDevelopmentCLI {
   --base-branch <branch>    ベースブランチ (デフォルト: main)
   --use-remote              リモートリポジトリを使用 (デフォルト: ローカルのみ)
   --cleanup                 実行後にWorktreeをクリーンアップ
+  --visual-ui               ターミナル分割表示を使用
   --help, -h                このヘルプを表示
 
 例:
@@ -38,6 +39,7 @@ class ParallelDevelopmentCLI {
   npm run parallel-dev "バグ修正: ログイン時のエラーハンドリング" --max-engineers 2
   npm run parallel-dev "新しいAPI endpointを3つ追加" --cleanup
   npm run parallel-dev "機能改善" --use-remote --cleanup
+  npm run parallel-dev "パフォーマンス改善" --visual-ui
 `);
   }
 
@@ -49,6 +51,7 @@ class ParallelDevelopmentCLI {
     config: SystemConfig;
     cleanup: boolean;
     showHelp: boolean;
+    visualUI: boolean;
   } {
     const config: SystemConfig = {
       baseRepoPath: process.cwd(),
@@ -61,6 +64,7 @@ class ParallelDevelopmentCLI {
 
     let cleanup = false;
     let showHelp = false;
+    let visualUI = false;
     let userRequest: string | undefined;
 
     for (let i = 0; i < args.length; i++) {
@@ -70,6 +74,8 @@ class ParallelDevelopmentCLI {
         showHelp = true;
       } else if (arg === '--cleanup') {
         cleanup = true;
+      } else if (arg === '--visual-ui') {
+        visualUI = true;
       } else if (arg === '--use-remote') {
         config.useRemote = true;
       } else if (arg === '--base-repo') {
@@ -87,7 +93,7 @@ class ParallelDevelopmentCLI {
       }
     }
 
-    return { userRequest, config, cleanup, showHelp };
+    return { userRequest, config, cleanup, showHelp, visualUI };
   }
 
   /**
@@ -122,7 +128,7 @@ class ParallelDevelopmentCLI {
    */
   public static async main(): Promise<void> {
     const args = process.argv.slice(2);
-    const { userRequest, config, cleanup, showHelp } = this.parseArgs(args);
+    const { userRequest, config, cleanup, showHelp, visualUI } = this.parseArgs(args);
 
     // ヘルプ表示
     if (showHelp || args.length === 0) {
@@ -152,14 +158,16 @@ class ParallelDevelopmentCLI {
     console.log(`🌱 ベースブランチ: ${config.baseBranch}`);
     console.log(`📡 リモート使用: ${config.useRemote ? 'はい' : 'いいえ'}`);
     console.log(`🧹 実行後クリーンアップ: ${cleanup ? 'はい' : 'いいえ'}`);
+    console.log(`🖥️ ビジュアルUI: ${visualUI ? 'はい' : 'いいえ'}`);
 
     try {
       // オーケストレーターを初期化
-      const orchestrator = new ParallelDevelopmentOrchestrator(config);
+      const orchestrator = new ParallelDevelopmentOrchestrator(config, visualUI);
 
       // シグナルハンドラーを設定（Ctrl+Cなどで適切にクリーンアップ）
       const cleanup_handler = async () => {
         console.log('\n🛑 システム停止中...');
+        orchestrator.stopLogViewer();
         await orchestrator.cleanup(true);
         process.exit(0);
       };

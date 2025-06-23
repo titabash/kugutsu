@@ -11,13 +11,18 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-code": "latest",
+    "blessed": "^0.1.81",
+    "blessed-contrib": "^4.11.0",
+    "chalk": "^5.4.1",
+    "strip-ansi": "^7.1.0",
     "uuid": "^9.0.0"
   },
   "devDependencies": {
+    "@types/blessed": "^0.1.25",
     "@types/node": "^20.0.0",
     "@types/uuid": "^9.0.0",
-    "typescript": "^5.0.0",
-    "ts-node": "^10.9.0"
+    "ts-node": "^10.9.0",
+    "typescript": "^5.0.0"
   },
   "engines": {
     "node": ">=18.0.0"

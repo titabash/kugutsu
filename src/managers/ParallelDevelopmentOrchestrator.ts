@@ -3,6 +3,8 @@ import { GitWorktreeManager } from './GitWorktreeManager';
 import { EngineerAI } from './EngineerAI';
 import { ReviewWorkflow } from './ReviewWorkflow';
 import { TaskInstructionManager } from '../utils/TaskInstructionManager';
+import { ParallelLogViewer } from '../utils/ParallelLogViewer';
+import { LogFormatter } from '../utils/LogFormatter';
 import { Task, TaskAnalysisResult, EngineerResult, ReviewResult, SystemConfig } from '../types';
 
 /**
@@ -17,12 +19,19 @@ export class ParallelDevelopmentOrchestrator {
   private readonly engineerPool: Map<string, EngineerAI> = new Map();
   private activeTasks: Map<string, Task> = new Map();
   private instructionManager?: TaskInstructionManager;
+  private logViewer?: ParallelLogViewer;
+  private useVisualUI: boolean;
 
-  constructor(config: SystemConfig) {
+  constructor(config: SystemConfig, useVisualUI: boolean = false) {
     this.config = config;
+    this.useVisualUI = useVisualUI;
     this.productOwnerAI = new ProductOwnerAI(config.baseRepoPath);
     this.gitManager = new GitWorktreeManager(config.baseRepoPath, config.worktreeBasePath);
     this.reviewWorkflow = new ReviewWorkflow(this.gitManager, config);
+    
+    if (this.useVisualUI) {
+      this.logViewer = new ParallelLogViewer();
+    }
   }
 
   /**
@@ -35,46 +44,60 @@ export class ParallelDevelopmentOrchestrator {
     completedTasks: string[];
     failedTasks: string[];
   }> {
-    console.log('🚀 並列開発システム開始');
-    console.log(`📝 ユーザー要求: ${userRequest}`);
+    this.log('system', 'info', '🚀 並列開発システム開始');
+    this.log('system', 'info', `📝 ユーザー要求: ${userRequest}`);
 
     try {
       // TaskInstructionManagerを初期化
       this.instructionManager = new TaskInstructionManager();
       
+      // ログビューアーを開始
+      if (this.logViewer) {
+        this.logViewer.start();
+        this.updateMainInfo(`要求分析中... | ${new Date().toLocaleString()}`);
+      }
+
       // 1. プロダクトオーナーAIによる要求分析
-      console.log('\n📊 フェーズ1: 要求分析');
+      this.log('ProductOwner', 'info', '📊 フェーズ1: 要求分析', 'Analysis');
       const analysis = await this.productOwnerAI.analyzeUserRequestWithInstructions(
         userRequest, 
         this.instructionManager
       );
       
-      console.log(`\n📋 分析結果:`);
-      console.log(`- 概要: ${analysis.summary}`);
-      console.log(`- 見積もり時間: ${analysis.estimatedTime}`);
-      console.log(`- タスク数: ${analysis.tasks.length}`);
-      console.log(`- リスク: ${analysis.riskAssessment}`);
+      this.log('ProductOwner', 'info', `📋 分析結果:`, 'Analysis');
+      this.log('ProductOwner', 'info', `- 概要: ${analysis.summary}`, 'Analysis');
+      this.log('ProductOwner', 'info', `- 見積もり時間: ${analysis.estimatedTime}`, 'Analysis');
+      this.log('ProductOwner', 'info', `- タスク数: ${analysis.tasks.length}`, 'Analysis');
+      this.log('ProductOwner', 'info', `- リスク: ${analysis.riskAssessment}`, 'Analysis');
 
       // 2. タスクの依存関係を解決
       const orderedTasks = this.productOwnerAI.resolveDependencies(analysis.tasks);
-      console.log(`\n🔗 依存関係解決完了`);
+      this.log('ProductOwner', 'info', `🔗 依存関係解決完了`, 'Dependencies');
 
       // 3. 並列実行グループの作成
       const executionGroups = this.createExecutionGroups(orderedTasks);
-      console.log(`\n🏗️ 実行グループ作成: ${executionGroups.length}グループ`);
+      this.log('system', 'info', `🏗️ 実行グループ作成: ${executionGroups.length}グループ`, 'Orchestrator');
+      
+      if (this.logViewer) {
+        this.updateMainInfo(`並列実行準備中... | グループ数: ${executionGroups.length} | ${new Date().toLocaleString()}`);
+      }
 
       // 4. 並列実行（レビュー含む）
-      console.log('\n⚡ フェーズ2: 並列実行・レビュー開始');
+      this.log('system', 'info', '⚡ フェーズ2: 並列実行・レビュー開始', 'Orchestrator');
       const { results, reviewResults, completedTasks, failedTasks } = await this.executeTasksInParallel(executionGroups);
 
-      console.log('\n✅ 並列開発・レビュー完了');
-      console.log(`📊 完了タスク: ${completedTasks.length}個`);
-      console.log(`📊 失敗タスク: ${failedTasks.length}個`);
+      this.log('system', 'info', '✅ 並列開発・レビュー完了', 'Orchestrator');
+      this.log('system', 'info', `📊 完了タスク: ${completedTasks.length}個`, 'Orchestrator');
+      this.log('system', 'info', `📊 失敗タスク: ${failedTasks.length}個`, 'Orchestrator');
+      
+      if (this.logViewer) {
+        this.updateMainInfo(`完了 | 成功: ${completedTasks.length} | 失敗: ${failedTasks.length} | ${new Date().toLocaleString()}`);
+      }
       
       return { analysis, results, reviewResults, completedTasks, failedTasks };
 
     } catch (error) {
-      console.error('❌ 並列開発エラー:', error);
+      this.log('system', 'error', `❌ 並列開発エラー: ${error instanceof Error ? error.message : String(error)}`, 'Orchestrator');
       throw error;
     }
   }
@@ -268,9 +291,9 @@ export class ParallelDevelopmentOrchestrator {
         task.status = 'in_progress';
         this.activeTasks.set(task.id, task);
         
-        console.log(`  ✅ ${task.title}: ${worktreePath}`);
+        this.log('system', 'info', `✅ ${task.title}: ${worktreePath}`, 'GitWorktree');
       } catch (error) {
-        console.error(`  ❌ ${task.title}: Worktree作成失敗 - ${error}`);
+        this.log('system', 'error', `❌ ${task.title}: Worktree作成失敗 - ${error}`, 'GitWorktree');
         task.status = 'failed';
       }
     });
@@ -286,11 +309,11 @@ export class ParallelDevelopmentOrchestrator {
     const validTasks = tasks.filter(task => task.status === 'in_progress' && task.worktreePath);
     
     if (validTasks.length === 0) {
-      console.warn('⚠️ 実行可能なタスクがありません');
+      this.log('system', 'warn', '⚠️ 実行可能なタスクがありません', 'Orchestrator');
       return [];
     }
 
-    console.log(`👥 ${validTasks.length}名のエンジニアAIを並列起動...`);
+    this.log('system', 'info', `👥 ${validTasks.length}名のエンジニアAIを並列起動...`, 'Orchestrator');
 
     // 各タスクにエンジニアAIを割り当てて並列実行
     const executionPromises = validTasks.map(async (task, index) => {
@@ -300,6 +323,7 @@ export class ParallelDevelopmentOrchestrator {
       });
 
       this.engineerPool.set(engineerId, engineer);
+      this.registerEngineerInViewer(engineerId, task.title);
 
       try {
         // タスクの事前チェック
@@ -313,17 +337,17 @@ export class ParallelDevelopmentOrchestrator {
         
         if (result.success) {
           task.status = 'completed';
-          console.log(`✅ ${task.title} 完了 (${engineerId})`);
+          this.log(engineerId, 'info', `✅ ${task.title} 完了`, 'EngineerAI');
         } else {
           task.status = 'failed';
-          console.error(`❌ ${task.title} 失敗 (${engineerId}): ${result.error}`);
+          this.log(engineerId, 'error', `❌ ${task.title} 失敗: ${result.error}`, 'EngineerAI');
         }
 
         return result;
 
       } catch (error) {
         task.status = 'failed';
-        console.error(`❌ ${task.title} 実行エラー (${engineerId}):`, error);
+        this.log(engineerId, 'error', `❌ ${task.title} 実行エラー: ${error instanceof Error ? error.message : String(error)}`, 'EngineerAI');
         
         return {
           taskId: task.id,
@@ -337,8 +361,11 @@ export class ParallelDevelopmentOrchestrator {
       } finally {
         // セッションIDを記録
         if (engineer.getSessionId()) {
-          console.log(`💾 エンジニアAI[${engineerId}] セッションID保存: ${engineer.getSessionId()}`);
+          this.log(engineerId, 'info', `💾 セッションID保存: ${engineer.getSessionId()}`, 'EngineerAI');
         }
+        
+        // エンジニアをログビューアーから削除
+        this.unregisterEngineerFromViewer(engineerId);
         
         // 作業完了後もエンジニアをプールに保持（修正作業のため）
         // this.engineerPool.delete(engineerId); // コメントアウト
@@ -416,6 +443,64 @@ export class ParallelDevelopmentOrchestrator {
     } catch (error) {
       console.error(`❌ タスク ${taskId} の停止に失敗:`, error);
       return false;
+    }
+  }
+
+  /**
+   * ログ出力ヘルパーメソッド
+   */
+  private log(engineerId: string, level: 'info' | 'error' | 'warn' | 'debug', message: string, component?: string): void {
+    if (this.logViewer) {
+      this.logViewer.log(engineerId, level, message, component);
+    } else {
+      // フォールバック: 従来のconsole出力
+      const formatted = LogFormatter.formatMessage(engineerId, level, message, component);
+      console.log(LogFormatter.formatForConsole(formatted));
+    }
+  }
+
+  /**
+   * 新しいエンジニアをログビューアーに登録
+   */
+  private registerEngineerInViewer(engineerId: string, taskTitle: string): void {
+    if (this.logViewer && !this.logViewer.isEngineerActive(engineerId)) {
+      this.logViewer.addEngineer(engineerId, `🔧 ${taskTitle}`);
+    }
+  }
+
+  /**
+   * エンジニアをログビューアーから削除
+   */
+  private unregisterEngineerFromViewer(engineerId: string): void {
+    if (this.logViewer && this.logViewer.isEngineerActive(engineerId)) {
+      this.logViewer.removeEngineer(engineerId);
+    }
+  }
+
+  /**
+   * ログビューアーを開始
+   */
+  public startLogViewer(): void {
+    if (this.logViewer) {
+      this.logViewer.start();
+    }
+  }
+
+  /**
+   * ログビューアーを終了
+   */
+  public stopLogViewer(): void {
+    if (this.logViewer) {
+      this.logViewer.destroy();
+    }
+  }
+
+  /**
+   * メイン情報を更新
+   */
+  private updateMainInfo(content: string): void {
+    if (this.logViewer) {
+      this.logViewer.updateMainInfo(content);
     }
   }
 }

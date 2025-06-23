@@ -2,6 +2,7 @@ import { execSync } from 'child_process';
 import { TechLeadAI } from './TechLeadAI';
 import { EngineerAI } from './EngineerAI';
 import { GitWorktreeManager } from './GitWorktreeManager';
+import { MergeCoordinator } from '../utils/MergeCoordinator';
 import { Task, EngineerResult, ReviewResult, SystemConfig } from '../types';
 
 /**
@@ -11,11 +12,13 @@ export class ReviewWorkflow {
   private readonly gitManager: GitWorktreeManager;
   private readonly config: SystemConfig;
   private readonly maxRetries: number;
+  private readonly mergeCoordinator: MergeCoordinator;
 
   constructor(gitManager: GitWorktreeManager, config: SystemConfig, maxRetries: number = 3) {
     this.gitManager = gitManager;
     this.config = config;
     this.maxRetries = maxRetries;
+    this.mergeCoordinator = new MergeCoordinator(config);
   }
 
   /**
@@ -31,6 +34,7 @@ export class ReviewWorkflow {
     reviewHistory: ReviewResult[];
     finalResult?: EngineerResult;
     merged?: boolean;
+    conflictResolutionInProgress?: boolean;
   }> {
     console.log(`\n🔍 レビューワークフロー開始: ${task.title}`);
     
@@ -50,11 +54,18 @@ export class ReviewWorkflow {
         case 'APPROVED':
           console.log(`✅ レビュー承認: ${task.title}`);
           
-          // メインブランチにマージ
-          const mergeResult = await this.mergeToMainBranch(task);
+          // MergeCoordinatorを使用した排他制御マージ
+          const mergeResult = await this.mergeCoordinator.coordinatedMerge(
+            task,
+            // コンフリクト解消コールバック（並列実行）
+            async (conflictTask, conflictEngineerId) => {
+              console.log(`🔄 コンフリクト解消依頼（並列実行）: ${conflictTask.title}`);
+              return await this.resolveConflictWithEngineer(conflictTask, conflictEngineerId, existingEngineer);
+            }
+          );
           
-          if (mergeResult === true) {
-            // ワークツリーとブランチのクリーンアップ
+          if (mergeResult.success) {
+            // マージ成功 - クリーンアップして完了
             await this.cleanupAfterMerge(task);
             
             return {
@@ -63,25 +74,18 @@ export class ReviewWorkflow {
               finalResult: currentResult,
               merged: true
             };
-          } else if (mergeResult === 'CONFLICT') {
-            // コンフリクト解消をエンジニアAIに依頼
-            console.log(`🔄 コンフリクト解消依頼: ${task.title}`);
-            currentResult = await this.resolveConflictWithEngineer(task, engineerId, existingEngineer);
-            
-            if (!currentResult.success) {
-              console.error(`❌ コンフリクト解消失敗: ${task.title}`);
-              return {
-                approved: false,
-                reviewHistory,
-                finalResult: currentResult,
-                merged: false
-              };
-            }
-            
-            // 解消後は再度レビューに回す
-            continue;
+          } else if (mergeResult.conflictResolutionInProgress) {
+            // コンフリクト解消が並列実行中 - 承認済みとして返す
+            console.log(`🔄 コンフリクト解消が並列実行中: ${task.title}`);
+            return {
+              approved: true,
+              reviewHistory,
+              finalResult: currentResult,
+              merged: false,
+              conflictResolutionInProgress: true
+            };
           } else {
-            console.error(`❌ マージ失敗: ${task.title}`);
+            console.error(`❌ マージ失敗: ${task.title} - ${mergeResult.error}`);
             return {
               approved: false,
               reviewHistory,
@@ -93,9 +97,16 @@ export class ReviewWorkflow {
         case 'COMMENTED':
           console.log(`💬 レビューコメント済み: ${task.title}`);
           // コメントのみの場合は承認扱いとしてマージ
-          const mergeResultCommented = await this.mergeToMainBranch(task);
+          const mergeResultCommented = await this.mergeCoordinator.coordinatedMerge(
+            task,
+            // コンフリクト解消コールバック（並列実行）
+            async (conflictTask, conflictEngineerId) => {
+              console.log(`🔄 コンフリクト解消依頼（並列実行・COMMENTED）: ${conflictTask.title}`);
+              return await this.resolveConflictWithEngineer(conflictTask, conflictEngineerId, existingEngineer);
+            }
+          );
           
-          if (mergeResultCommented === true) {
+          if (mergeResultCommented.success) {
             await this.cleanupAfterMerge(task);
             return {
               approved: true,
@@ -103,23 +114,16 @@ export class ReviewWorkflow {
               finalResult: currentResult,
               merged: true
             };
-          } else if (mergeResultCommented === 'CONFLICT') {
-            // コンフリクト解消をエンジニアAIに依頼
-            console.log(`🔄 コンフリクト解消依頼 (COMMENTED): ${task.title}`);
-            currentResult = await this.resolveConflictWithEngineer(task, engineerId, existingEngineer);
-            
-            if (!currentResult.success) {
-              console.error(`❌ コンフリクト解消失敗: ${task.title}`);
-              return {
-                approved: false,
-                reviewHistory,
-                finalResult: currentResult,
-                merged: false
-              };
-            }
-            
-            // 解消後は再度レビューに回す
-            continue;
+          } else if (mergeResultCommented.conflictResolutionInProgress) {
+            // コンフリクト解消が並列実行中 - 承認済みとして返す
+            console.log(`🔄 コンフリクト解消が並列実行中（COMMENTED）: ${task.title}`);
+            return {
+              approved: true,
+              reviewHistory,
+              finalResult: currentResult,
+              merged: false,
+              conflictResolutionInProgress: true
+            };
           } else {
             return {
               approved: false,

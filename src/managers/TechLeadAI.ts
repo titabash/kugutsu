@@ -1,5 +1,7 @@
 import { query, type SDKMessage } from "@anthropic-ai/claude-code";
 import { Task, EngineerResult, AgentConfig, ReviewResult } from '../types';
+import { MergeCoordinator } from '../utils/MergeCoordinator';
+import { EngineerAI } from './EngineerAI';
 
 /**
  * テックリードAIクラス
@@ -8,6 +10,7 @@ import { Task, EngineerResult, AgentConfig, ReviewResult } from '../types';
 export class TechLeadAI {
   private readonly config: AgentConfig;
   private readonly techLeadId: string;
+  private mergeCoordinator?: MergeCoordinator;
 
   constructor(techLeadId: string, config?: Partial<AgentConfig>) {
     this.techLeadId = techLeadId;
@@ -90,17 +93,9 @@ export class TechLeadAI {
 
         // リアルタイムでテックリードAIのレビュー状況を表示
         if (message && typeof message === 'object' && 'type' in message) {
-          if (message.type === 'assistant' && 'message' in message) {
-            const assistantMessage = message.message as any;
-            if (assistantMessage.content) {
-              for (const content of assistantMessage.content) {
-                if (content.type === 'text') {
-                  const text = content.text;
-                  console.log(`🔍 テックリードAI[${this.techLeadId}]: ${text}`);
-                  reviewComments.push(text);
-                }
-              }
-            }
+          const reviewText = this.displayMessageActivity(message as any);
+          if (reviewText) {
+            reviewComments.push(reviewText);
           }
         }
       }
@@ -137,6 +132,185 @@ export class TechLeadAI {
         error: error instanceof Error ? error.message : String(error)
       };
     }
+  }
+
+  /**
+   * メッセージアクティビティを表示
+   */
+  private displayMessageActivity(message: any): string | null {
+    const messageType = message.type;
+    let reviewText = '';
+    
+    switch (messageType) {
+      case 'user':
+        // ユーザーメッセージ（入力）
+        if (message.message && message.message.content) {
+          for (const content of message.message.content) {
+            if (content.type === 'text') {
+              console.log(`📝 テックリードAI[${this.techLeadId}]: 入力受信 - ${this.truncateText(content.text, 100)}`);
+            }
+          }
+        }
+        break;
+
+      case 'assistant':
+        // アシスタントメッセージ（レビューコメント）
+        if (message.message && message.message.content) {
+          for (const content of message.message.content) {
+            if (content.type === 'text') {
+              const text = content.text;
+              console.log(`🔍 テックリードAI[${this.techLeadId}]: ${this.truncateText(text, 200)}`);
+              reviewText += text;
+            } else if (content.type === 'tool_use') {
+              const toolName = content.name;
+              const toolId = content.id;
+              const toolInput = content.input || {};
+              console.log(`🛠️  テックリードAI[${this.techLeadId}]: ツール実行 - ${toolName}`);
+              this.displayToolExecutionDetails(toolName, toolInput, toolId);
+            }
+          }
+        }
+        break;
+
+      case 'tool_result':
+        // ツール実行結果
+        if (message.content) {
+          for (const content of message.content) {
+            if (content.type === 'tool_result') {
+              const toolUseId = content.tool_use_id;
+              const isError = content.is_error;
+              const status = isError ? '❌ エラー' : '✅ 成功';
+              const result = content.content;
+              
+              console.log(`📊 テックリードAI[${this.techLeadId}]: ツール結果 - ${status}`);
+              
+              if (isError) {
+                console.log(`   ❌ エラー詳細: ${this.truncateText(String(result), 150)}`);
+              } else {
+                this.displayToolResult(result, toolUseId);
+              }
+            }
+          }
+        }
+        break;
+
+      case 'error':
+        // エラーメッセージ
+        console.log(`❌ テックリードAI[${this.techLeadId}]: エラーが発生しました`);
+        if (message.error) {
+          console.log(`   ❌ エラー: ${this.truncateText(String(message.error), 200)}`);
+        }
+        break;
+
+      case 'system':
+        // システムメッセージ
+        console.log(`⚙️  テックリードAI[${this.techLeadId}]: システム通知`);
+        if (message.content) {
+          console.log(`   📋 内容: ${this.truncateText(String(message.content), 150)}`);
+        }
+        break;
+
+      case 'thinking':
+        // 思考過程（内部処理）
+        console.log(`🤔 テックリードAI[${this.techLeadId}]: レビュー中...`);
+        break;
+
+      case 'event':
+        // イベント通知
+        if (message.event_type) {
+          console.log(`📢 テックリードAI[${this.techLeadId}]: イベント - ${message.event_type}`);
+        }
+        break;
+
+      default:
+        // 未知のメッセージタイプ
+        console.log(`🔍 テックリードAI[${this.techLeadId}]: 未知のメッセージタイプ - ${messageType}`);
+        break;
+    }
+
+    return reviewText || null;
+  }
+
+  /**
+   * ツール実行の詳細を表示
+   */
+  private displayToolExecutionDetails(toolName: string, toolInput: any, _toolId: string): void {
+    switch (toolName) {
+      case 'Read':
+        console.log(`   📖 ファイル読み取り: ${toolInput.file_path || 'パス不明'}`);
+        break;
+
+      case 'Bash':
+        console.log(`   💻 コマンド実行: ${this.truncateText(toolInput.command || 'コマンド不明', 100)}`);
+        break;
+
+      case 'Grep':
+        console.log(`   🔎 内容検索: ${toolInput.pattern || 'パターン不明'}`);
+        if (toolInput.include) {
+          console.log(`   📂 対象ファイル: ${toolInput.include}`);
+        }
+        break;
+
+      case 'Glob':
+        console.log(`   🔍 ファイル検索: ${toolInput.pattern || 'パターン不明'}`);
+        if (toolInput.path) {
+          console.log(`   📁 検索パス: ${toolInput.path}`);
+        }
+        break;
+
+      case 'LS':
+        console.log(`   📂 ディレクトリ一覧: ${toolInput.path || 'パス不明'}`);
+        break;
+
+      default:
+        console.log(`   ⚙️  パラメータ: ${JSON.stringify(toolInput).substring(0, 100)}...`);
+        break;
+    }
+  }
+
+  /**
+   * ツール実行結果を表示
+   */
+  private displayToolResult(result: any, _toolId: string): void {
+    if (typeof result === 'string') {
+      const lines = result.split('\n');
+      const lineCount = lines.length;
+      
+      if (lineCount === 1) {
+        console.log(`   ✅ 結果: ${this.truncateText(result, 100)}`);
+      } else if (lineCount <= 5) {
+        console.log(`   ✅ 結果: ${lineCount}行の出力`);
+        lines.forEach(line => {
+          if (line.trim()) {
+            console.log(`   │ ${this.truncateText(line, 80)}`);
+          }
+        });
+      } else {
+        console.log(`   ✅ 結果: ${lineCount}行の出力（抜粋）`);
+        lines.slice(0, 3).forEach(line => {
+          if (line.trim()) {
+            console.log(`   │ ${this.truncateText(line, 80)}`);
+          }
+        });
+        console.log(`   │ ... (他${lineCount - 3}行)`);
+      }
+    } else if (typeof result === 'object' && result !== null) {
+      console.log(`   ✅ 結果: オブジェクト形式`);
+      const preview = JSON.stringify(result, null, 2);
+      console.log(`   │ ${this.truncateText(preview, 150)}`);
+    } else {
+      console.log(`   ✅ 結果: ${String(result)}`);
+    }
+  }
+
+  /**
+   * テキストを指定された長さで切り詰める
+   */
+  private truncateText(text: string, maxLength: number): string {
+    if (text.length <= maxLength) {
+      return text;
+    }
+    return text.substring(0, maxLength) + '...';
   }
 
   /**
@@ -292,5 +466,124 @@ npm run lint
    */
   getConfig(): AgentConfig {
     return { ...this.config };
+  }
+
+  /**
+   * MergeCoordinatorを設定
+   */
+  setMergeCoordinator(mergeCoordinator: MergeCoordinator): void {
+    this.mergeCoordinator = mergeCoordinator;
+  }
+
+  /**
+   * レビュー承認後の協調マージを実行
+   */
+  async performCoordinatedMerge(
+    task: Task,
+    reviewResult: ReviewResult
+  ): Promise<{
+    success: boolean;
+    conflictResolutionInProgress?: boolean;
+    error?: string;
+  }> {
+    if (!this.mergeCoordinator) {
+      throw new Error('MergeCoordinatorが設定されていません');
+    }
+
+    if (reviewResult.status !== 'APPROVED') {
+      return {
+        success: false,
+        error: `レビューが承認されていません: ${reviewResult.status}`
+      };
+    }
+
+    console.log(`🔀 テックリードAI[${this.techLeadId}]: 協調マージ開始 - ${task.title}`);
+
+    // コンフリクト解消用のコールバック関数
+    const conflictResolutionHandler = async (
+      conflictTask: Task,
+      engineerId: string,
+      existingEngineer?: EngineerAI
+    ): Promise<EngineerResult> => {
+      console.log(`🔧 テックリードAI[${this.techLeadId}]: コンフリクト解消依頼 - ${conflictTask.title}`);
+      
+      // 既存のエンジニアAIがあれば再利用、なければ新規作成
+      const engineer = existingEngineer || new EngineerAI(engineerId, {
+        systemPrompt: this.buildConflictResolutionPrompt(),
+        maxTurns: 25,
+        allowedTools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep", "LS"]
+      });
+
+      // コンフリクト解消タスクを実行
+      return await engineer.executeTask({
+        ...conflictTask,
+        title: `コンフリクト解消: ${conflictTask.title}`,
+        description: `${conflictTask.description}\n\n## コンフリクト解消指示\nマージコンフリクトが発生しました。以下の手順で解消してください：\n1. git status でコンフリクトファイルを確認\n2. コンフリクトマーカーを手動で解消\n3. git add でステージング\n4. git commit でコミット完了`
+      });
+    };
+
+    // 協調マージを実行
+    const mergeResult = await this.mergeCoordinator.coordinatedMerge(
+      task,
+      conflictResolutionHandler
+    );
+
+    if (mergeResult.success) {
+      console.log(`✅ テックリードAI[${this.techLeadId}]: マージ成功 - ${task.title}`);
+    } else if (mergeResult.conflictResolutionInProgress) {
+      console.log(`⚠️ テックリードAI[${this.techLeadId}]: コンフリクト解消中（並列実行） - ${task.title}`);
+    } else {
+      console.log(`❌ テックリードAI[${this.techLeadId}]: マージ失敗 - ${task.title}: ${mergeResult.error}`);
+    }
+
+    return mergeResult;
+  }
+
+  /**
+   * コンフリクト解消用のシステムプロンプト
+   */
+  private buildConflictResolutionPrompt(): string {
+    return `あなたは経験豊富なソフトウェアエンジニアです。
+マージコンフリクトの解消を専門に行います。
+
+## コンフリクト解消の手順
+1. **コンフリクト状況の確認**
+   - \`git status\` でコンフリクトファイルを特定
+   - \`git diff\` で競合内容を確認
+
+2. **コンフリクトマーカーの解消**
+   - \`<<<<<<<\`, \`=======\`, \`>>>>>>>\` マーカーを確認
+   - 両方のブランチの変更を適切に統合
+   - マーカーを完全に削除
+
+3. **統合の確認**
+   - 統合されたコードが正しく動作することを確認
+   - 既存のテストが通ることを確認
+
+4. **コミット完了**
+   - \`git add\` で解消したファイルをステージング
+   - \`git commit\` でマージコミット完了
+
+## 重要事項
+- コンフリクト解消は慎重に行ってください
+- 両方のブランチの意図を理解して統合してください
+- 機能の破綻や品質低下を避けてください
+- 解消後は必ずテストを実行してください
+
+効率的で品質の高いコンフリクト解消を心がけてください。`;
+  }
+
+  /**
+   * 協調マージの状態を確認
+   */
+  getMergeStatus(): {
+    isLocked: boolean;
+    queueLength: number;
+    pendingConflicts: number;
+  } | null {
+    if (!this.mergeCoordinator) {
+      return null;
+    }
+    return this.mergeCoordinator.getMutexStatus();
   }
 }

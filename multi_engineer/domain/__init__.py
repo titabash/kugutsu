@@ -1,1 +1,0 @@
-"""Domain layer for multi-engineer system."""

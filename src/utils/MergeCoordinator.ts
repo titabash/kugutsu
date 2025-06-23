@@ -175,18 +175,20 @@ export class MergeCoordinator {
         stdio: 'pipe'
       });
       
-      // リモートリポジトリの存在確認
+      // リモート使用設定とリモートリポジトリの存在確認
       const hasRemote = this.hasRemoteOrigin();
       
-      if (hasRemote) {
+      if (this.config.useRemote && hasRemote) {
         console.log(`📡 リモートリポジトリから最新化`);
         execSync(`git pull origin ${this.config.baseBranch}`, {
           cwd: this.config.baseRepoPath,
           stdio: 'pipe'
         });
         console.log(`✅ メインブランチ最新化完了`);
+      } else if (!this.config.useRemote) {
+        console.log(`📂 ローカルモード - リモート更新をスキップ`);
       } else {
-        console.log(`📂 ローカルリポジトリのみ - プルをスキップ`);
+        console.log(`📂 リモートリポジトリなし - プルをスキップ`);
       }
       
     } catch (error) {

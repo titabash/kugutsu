@@ -84,18 +84,7 @@ export class EngineerAI {
 
         // リアルタイムでエンジニアAIの作業状況を表示
         if (message && typeof message === 'object' && 'type' in message) {
-          if (message.type === 'assistant' && 'message' in message) {
-            const assistantMessage = message.message as any;
-            if (assistantMessage.content) {
-              for (const content of assistantMessage.content) {
-                if (content.type === 'text') {
-                  const text = content.text;
-                  console.log(`🔧 エンジニアAI[${this.engineerId}]: ${text}`);
-                  output.push(text);
-                }
-              }
-            }
-          }
+          this.displayMessageActivity(message as any, output);
         }
       }
 
@@ -128,6 +117,210 @@ export class EngineerAI {
         filesChanged: []
       };
     }
+  }
+
+  /**
+   * メッセージアクティビティを表示
+   */
+  private displayMessageActivity(message: any, output: string[]): void {
+    const messageType = message.type;
+    
+    switch (messageType) {
+      case 'user':
+        // ユーザーメッセージ（入力）
+        if (message.message && message.message.content) {
+          for (const content of message.message.content) {
+            if (content.type === 'text') {
+              console.log(`📝 エンジニアAI[${this.engineerId}]: 入力受信 - ${this.truncateText(content.text, 100)}`);
+            }
+          }
+        }
+        break;
+
+      case 'assistant':
+        // アシスタントメッセージ（出力）
+        if (message.message && message.message.content) {
+          for (const content of message.message.content) {
+            if (content.type === 'text') {
+              const text = content.text;
+              console.log(`🔧 エンジニアAI[${this.engineerId}]: ${this.truncateText(text, 200)}`);
+              output.push(text);
+            } else if (content.type === 'tool_use') {
+              const toolName = content.name;
+              const toolId = content.id;
+              const toolInput = content.input || {};
+              console.log(`🛠️  エンジニアAI[${this.engineerId}]: ツール実行 - ${toolName}`);
+              this.displayToolExecutionDetails(toolName, toolInput, toolId);
+            }
+          }
+        }
+        break;
+
+      case 'tool_result':
+        // ツール実行結果
+        if (message.content) {
+          for (const content of message.content) {
+            if (content.type === 'tool_result') {
+              const toolUseId = content.tool_use_id;
+              const isError = content.is_error;
+              const status = isError ? '❌ エラー' : '✅ 成功';
+              const result = content.content;
+              
+              console.log(`📊 エンジニアAI[${this.engineerId}]: ツール結果 - ${status}`);
+              
+              if (isError) {
+                console.log(`   ❌ エラー詳細: ${this.truncateText(String(result), 150)}`);
+              } else {
+                this.displayToolResult(result, toolUseId);
+              }
+            }
+          }
+        }
+        break;
+
+      case 'error':
+        // エラーメッセージ
+        console.log(`❌ エンジニアAI[${this.engineerId}]: エラーが発生しました`);
+        if (message.error) {
+          console.log(`   ❌ エラー: ${this.truncateText(String(message.error), 200)}`);
+        }
+        break;
+
+      case 'system':
+        // システムメッセージ
+        console.log(`⚙️  エンジニアAI[${this.engineerId}]: システム通知`);
+        if (message.content) {
+          console.log(`   📋 内容: ${this.truncateText(String(message.content), 150)}`);
+        }
+        break;
+
+      case 'thinking':
+        // 思考過程（内部処理）
+        console.log(`🤔 エンジニアAI[${this.engineerId}]: 思考中...`);
+        break;
+
+      case 'event':
+        // イベント通知
+        if (message.event_type) {
+          console.log(`📢 エンジニアAI[${this.engineerId}]: イベント - ${message.event_type}`);
+        }
+        break;
+
+      default:
+        // 未知のメッセージタイプ
+        console.log(`🔍 エンジニアAI[${this.engineerId}]: 未知のメッセージタイプ - ${messageType}`);
+        break;
+    }
+  }
+
+  /**
+   * ツール実行の詳細を表示
+   */
+  private displayToolExecutionDetails(toolName: string, toolInput: any, _toolId: string): void {
+    switch (toolName) {
+      case 'Read':
+        console.log(`   📖 ファイル読み取り: ${toolInput.file_path || 'パス不明'}`);
+        if (toolInput.offset || toolInput.limit) {
+          console.log(`   📄 範囲: ${toolInput.offset || 0}行目から${toolInput.limit || '全て'}行`);
+        }
+        break;
+
+      case 'Write':
+        console.log(`   ✍️  ファイル書き込み: ${toolInput.file_path || 'パス不明'}`);
+        if (toolInput.content) {
+          const contentLength = String(toolInput.content).length;
+          console.log(`   📝 内容サイズ: ${contentLength}文字`);
+        }
+        break;
+
+      case 'Edit':
+        console.log(`   ✏️  ファイル編集: ${toolInput.file_path || 'パス不明'}`);
+        if (toolInput.old_string) {
+          console.log(`   🔍 検索: "${this.truncateText(toolInput.old_string, 50)}"`);
+        }
+        if (toolInput.new_string) {
+          console.log(`   🔄 置換: "${this.truncateText(toolInput.new_string, 50)}"`);
+        }
+        break;
+
+      case 'MultiEdit':
+        console.log(`   📝 複数編集: ${toolInput.file_path || 'パス不明'}`);
+        if (toolInput.edits && Array.isArray(toolInput.edits)) {
+          console.log(`   🔢 編集数: ${toolInput.edits.length}個`);
+        }
+        break;
+
+      case 'Bash':
+        console.log(`   💻 コマンド実行: ${this.truncateText(toolInput.command || 'コマンド不明', 100)}`);
+        if (toolInput.timeout) {
+          console.log(`   ⏱️  タイムアウト: ${toolInput.timeout}ms`);
+        }
+        break;
+
+      case 'Glob':
+        console.log(`   🔍 ファイル検索: ${toolInput.pattern || 'パターン不明'}`);
+        if (toolInput.path) {
+          console.log(`   📁 検索パス: ${toolInput.path}`);
+        }
+        break;
+
+      case 'Grep':
+        console.log(`   🔎 内容検索: ${toolInput.pattern || 'パターン不明'}`);
+        if (toolInput.include) {
+          console.log(`   📂 対象ファイル: ${toolInput.include}`);
+        }
+        break;
+
+      case 'LS':
+        console.log(`   📂 ディレクトリ一覧: ${toolInput.path || 'パス不明'}`);
+        break;
+
+      default:
+        console.log(`   ⚙️  パラメータ: ${JSON.stringify(toolInput).substring(0, 100)}...`);
+        break;
+    }
+  }
+
+  /**
+   * ツール実行結果を表示
+   */
+  private displayToolResult(result: any, _toolId: string): void {
+    if (typeof result === 'string') {
+      const lines = result.split('\n');
+      const lineCount = lines.length;
+      
+      if (lineCount === 1) {
+        console.log(`   ✅ 結果: ${this.truncateText(result, 100)}`);
+      } else {
+        console.log(`   ✅ 結果: ${lineCount}行の出力`);
+        // 最初の数行を表示
+        const previewLines = lines.slice(0, 3);
+        previewLines.forEach(line => {
+          if (line.trim()) {
+            console.log(`   │ ${this.truncateText(line, 80)}`);
+          }
+        });
+        if (lineCount > 3) {
+          console.log(`   │ ... (他${lineCount - 3}行)`);
+        }
+      }
+    } else if (typeof result === 'object' && result !== null) {
+      console.log(`   ✅ 結果: オブジェクト形式`);
+      const preview = JSON.stringify(result, null, 2);
+      console.log(`   │ ${this.truncateText(preview, 150)}`);
+    } else {
+      console.log(`   ✅ 結果: ${String(result)}`);
+    }
+  }
+
+  /**
+   * テキストを指定された長さで切り詰める
+   */
+  private truncateText(text: string, maxLength: number): string {
+    if (text.length <= maxLength) {
+      return text;
+    }
+    return text.substring(0, maxLength) + '...';
   }
 
   /**

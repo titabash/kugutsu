@@ -28,13 +28,20 @@ export class ProductOwnerAI {
     return `あなたは経験豊富なプロダクトオーナー兼テックリードです。
 ユーザからの開発要求を分析し、効率的で実行可能なタスクに分割することが役割です。
 
+重要：並列処理の最大化を優先してください。可能な限り多くの独立したタスクに分割し、同時実行を促進してください。
+
 以下の観点でタスクを分析してください：
 1. 要求の明確化と詳細化
 2. 技術的実現可能性の評価
-3. 適切なタスクサイズへの分割（1タスク=1時間程度の作業量）
-4. タスク間の依存関係の整理
+3. 積極的なタスク分割（小さなタスクでも独立させる）
+4. タスク間の依存関係の最小化
 5. 優先度の設定
 6. リスク評価
+
+特別なルール：
+- ユーザーが「並列」「同時」「複数」といったキーワードを使用した場合は、必ず複数タスクに分割する
+- 単純な作業でも、異なるファイルに対する操作は独立したタスクとして扱う
+- テスト目的の要求では、最低でも2つ以上のタスクに分割する
 
 コードベースを理解するため、必要に応じてRead、Glob、Grepツールを使用してファイルを調査してください。
 最終的に、JSON形式でタスクリストと分析結果を返してください。`;
@@ -67,25 +74,15 @@ export class ProductOwnerAI {
         
         // リアルタイムでプロダクトオーナーAIの思考過程を表示
         if (message && typeof message === 'object' && 'type' in message) {
-          if (message.type === 'assistant' && 'message' in message) {
-            const assistantMessage = message.message as any;
-            if (assistantMessage.content) {
-              for (const content of assistantMessage.content) {
-                if (content.type === 'text') {
-                  const text = content.text;
-                  console.log(`💭 プロダクトオーナーAI: ${text}`);
-                  fullAnalysis += text + '\n';
-                }
-              }
-            }
-          } else if (message.type === 'result') {
-            fullAnalysis += (message as any).result || '';
+          const analysisText = this.displayMessageActivity(message as any);
+          if (analysisText) {
+            fullAnalysis += analysisText + '\n';
           }
         }
       }
 
-      // タスクを解析・作成
-      const result = this.extractTasksFromAnalysis(fullAnalysis, userRequest);
+      // タスクを解析・作成（実際のLLMの応答メッセージを使用）
+      const result = this.extractTaskAnalysisResult(messages);
       
       // 概要ファイルを作成
       await instructionManager.createOverviewFile(userRequest, fullAnalysis);
@@ -109,6 +106,186 @@ export class ProductOwnerAI {
   }
 
   /**
+   * メッセージアクティビティを表示
+   */
+  private displayMessageActivity(message: any): string | null {
+    const messageType = message.type;
+    let analysisText = '';
+    
+    switch (messageType) {
+      case 'user':
+        // ユーザーメッセージ（入力）
+        if (message.message && message.message.content) {
+          for (const content of message.message.content) {
+            if (content.type === 'text') {
+              console.log(`📝 プロダクトオーナーAI: 入力受信 - ${this.truncateText(content.text, 100)}`);
+            }
+          }
+        }
+        break;
+
+      case 'assistant':
+        // アシスタントメッセージ（出力・思考）
+        if (message.message && message.message.content) {
+          for (const content of message.message.content) {
+            if (content.type === 'text') {
+              const text = content.text;
+              console.log(`💭 プロダクトオーナーAI: ${this.truncateText(text, 200)}`);
+              analysisText += text;
+            } else if (content.type === 'tool_use') {
+              const toolName = content.name;
+              const toolId = content.id;
+              const toolInput = content.input || {};
+              console.log(`🛠️  プロダクトオーナーAI: ツール実行 - ${toolName}`);
+              this.displayToolExecutionDetails(toolName, toolInput, toolId);
+            }
+          }
+        }
+        break;
+
+      case 'tool_result':
+        // ツール実行結果
+        if (message.content) {
+          for (const content of message.content) {
+            if (content.type === 'tool_result') {
+              const toolUseId = content.tool_use_id;
+              const isError = content.is_error;
+              const status = isError ? '❌ エラー' : '✅ 成功';
+              const result = content.content;
+              
+              console.log(`📊 プロダクトオーナーAI: ツール結果 - ${status}`);
+              
+              if (isError) {
+                console.log(`   ❌ エラー詳細: ${this.truncateText(String(result), 150)}`);
+              } else {
+                this.displayToolResult(result, toolUseId);
+              }
+            }
+          }
+        }
+        break;
+
+      case 'error':
+        // エラーメッセージ
+        console.log(`❌ プロダクトオーナーAI: エラーが発生しました`);
+        if (message.error) {
+          console.log(`   ❌ エラー: ${this.truncateText(String(message.error), 200)}`);
+        }
+        break;
+
+      case 'system':
+        // システムメッセージ
+        console.log(`⚙️  プロダクトオーナーAI: システム通知`);
+        if (message.content) {
+          console.log(`   📋 内容: ${this.truncateText(String(message.content), 150)}`);
+        }
+        break;
+
+      case 'thinking':
+        // 思考過程（内部処理）
+        console.log(`🤔 プロダクトオーナーAI: 分析中...`);
+        break;
+
+      case 'event':
+        // イベント通知
+        if (message.event_type) {
+          console.log(`📢 プロダクトオーナーAI: イベント - ${message.event_type}`);
+        }
+        break;
+
+      case 'result':
+        // 旧形式の結果メッセージ（後方互換性）
+        analysisText += (message as any).result || '';
+        break;
+
+      default:
+        // 未知のメッセージタイプ
+        console.log(`🔍 プロダクトオーナーAI: 未知のメッセージタイプ - ${messageType}`);
+        break;
+    }
+
+    return analysisText || null;
+  }
+
+  /**
+   * ツール実行の詳細を表示
+   */
+  private displayToolExecutionDetails(toolName: string, toolInput: any, _toolId: string): void {
+    switch (toolName) {
+      case 'Read':
+        console.log(`   📖 ファイル読み取り: ${toolInput.file_path || 'パス不明'}`);
+        break;
+
+      case 'Glob':
+        console.log(`   🔍 ファイル検索: ${toolInput.pattern || 'パターン不明'}`);
+        if (toolInput.path) {
+          console.log(`   📁 検索パス: ${toolInput.path}`);
+        }
+        break;
+
+      case 'Grep':
+        console.log(`   🔎 内容検索: ${toolInput.pattern || 'パターン不明'}`);
+        if (toolInput.include) {
+          console.log(`   📂 対象ファイル: ${toolInput.include}`);
+        }
+        break;
+
+      case 'LS':
+        console.log(`   📂 ディレクトリ一覧: ${toolInput.path || 'パス不明'}`);
+        break;
+
+      default:
+        console.log(`   ⚙️  パラメータ: ${JSON.stringify(toolInput).substring(0, 100)}...`);
+        break;
+    }
+  }
+
+  /**
+   * ツール実行結果を表示
+   */
+  private displayToolResult(result: any, _toolId: string): void {
+    if (typeof result === 'string') {
+      const lines = result.split('\n');
+      const lineCount = lines.length;
+      
+      if (lineCount === 1) {
+        console.log(`   ✅ 結果: ${this.truncateText(result, 100)}`);
+      } else if (lineCount <= 5) {
+        console.log(`   ✅ 結果: ${lineCount}行の出力`);
+        lines.forEach(line => {
+          if (line.trim()) {
+            console.log(`   │ ${this.truncateText(line, 80)}`);
+          }
+        });
+      } else {
+        console.log(`   ✅ 結果: ${lineCount}行の出力（抜粋）`);
+        lines.slice(0, 3).forEach(line => {
+          if (line.trim()) {
+            console.log(`   │ ${this.truncateText(line, 80)}`);
+          }
+        });
+        console.log(`   │ ... (他${lineCount - 3}行)`);
+      }
+    } else if (typeof result === 'object' && result !== null) {
+      console.log(`   ✅ 結果: オブジェクト形式`);
+      const preview = JSON.stringify(result, null, 2);
+      console.log(`   │ ${this.truncateText(preview, 150)}`);
+    } else {
+      console.log(`   ✅ 結果: ${String(result)}`);
+    }
+  }
+
+  /**
+   * テキストを指定された長さで切り詰める
+   */
+  private truncateText(text: string, maxLength: number): string {
+    if (text.length <= maxLength) {
+      return text;
+    }
+    return text.substring(0, maxLength) + '...';
+  }
+
+  /**
    * 分析用プロンプトを構築
    */
   private buildAnalysisPrompt(userRequest: string): string {
@@ -125,6 +302,11 @@ ${userRequest}
 4. 各タスクを適切なサイズ（1-2時間程度）に分割してください
 5. タスク間の依存関係を整理してください
 
+## 重要：タスク分割の指針
+- ユーザーが「並列」「同時」「複数」などの並列処理を示唆している場合は、必ず複数の独立したタスクに分割してください
+- 異なるファイルに対する操作は、可能な限り独立したタスクとして扱ってください
+- 単一のファイルに対する複数の変更でも、論理的に分離可能であれば別タスクにしてください
+
 ## 分析内容
 - プロジェクトの現状把握
 - 要求の技術的実現可能性
@@ -132,51 +314,81 @@ ${userRequest}
 - リスク評価と対策
 - 実装の優先順位
 
-詳細な分析結果を自然な日本語で回答してください。
-後で個別のタスクファイルを作成するため、各タスクについても具体的に説明してください。`;
+## 必須：最終的に以下のJSON形式でタスクリストを出力してください
+
+\`\`\`json
+{
+  "tasks": [
+    {
+      "title": "タスクのタイトル",
+      "description": "タスクの詳細な説明",
+      "type": "feature|bugfix|documentation|test",
+      "priority": "high|medium|low",
+      "dependencies": ["依存するタスクのタイトル"]
+    }
+  ],
+  "summary": "分析の概要",
+  "estimatedTime": "見積もり時間",
+  "riskAssessment": "リスク評価"
+}
+\`\`\`
+
+詳細な分析結果を自然な日本語で説明した後、上記のJSON形式でタスクリストを必ず出力してください。`;
   }
 
   /**
    * 分析結果からタスクを抽出・作成
    */
   private extractTasksFromAnalysis(analysisText: string, userRequest: string): TaskAnalysisResult {
-    // 分析テキストからタスクを推測して作成
-    const tasks: Task[] = [];
+    // 分析テキストを仮のメッセージ配列として扱い、LLMの分析結果を解析
+    const fakeMessages = [{ type: 'result', result: analysisText } as any];
+    const jsonResult = this.extractTaskAnalysisResult(fakeMessages);
     
-    // 基本的なタスクパターンを検出
-    if (userRequest.includes('package.json') && userRequest.includes('スクリプト')) {
-      tasks.push({
-        id: uuidv4(),
-        type: 'feature',
-        title: 'package.jsonにテスト用スクリプト追加',
-        description: `package.jsonのscriptsセクションにテスト関連のnpmスクリプトを追加する`,
-        priority: 'high',
-        status: 'pending',
-        dependencies: [],
-        createdAt: new Date(),
-        updatedAt: new Date()
-      });
-    } else {
-      // 汎用的なタスクを作成
-      tasks.push({
-        id: uuidv4(),
-        type: 'feature',
-        title: 'ユーザー要求の実装',
-        description: userRequest,
-        priority: 'high',
-        status: 'pending',
-        dependencies: [],
-        createdAt: new Date(),
-        updatedAt: new Date()
-      });
+    // JSONから複数タスクが抽出された場合はそれを使用
+    if (jsonResult.tasks.length > 1) {
+      console.log(`✅ 複数タスクを検出: ${jsonResult.tasks.length}個のタスク`);
+      return jsonResult;
+    }
+    
+    // JSONが見つからない場合でも、分析テキストから複数のタスクを推測
+    if (jsonResult.tasks.length === 1 && (analysisText.includes('並列') || analysisText.includes('同時') || analysisText.includes('複数'))) {
+      console.log('⚠️ JSON未検出ですが、並列処理キーワードを検出したため複数タスクを生成します');
+      
+      const tasks: Task[] = [
+        {
+          id: uuidv4(),
+          type: 'feature',
+          title: 'メインタスクの実装',
+          description: userRequest,
+          priority: 'high',
+          status: 'pending',
+          dependencies: [],
+          createdAt: new Date(),
+          updatedAt: new Date()
+        },
+        {
+          id: uuidv4(),
+          type: 'feature',
+          title: '並列タスクの実装',
+          description: `${userRequest} - 並列処理部分`,
+          priority: 'high',
+          status: 'pending',
+          dependencies: [],
+          createdAt: new Date(),
+          updatedAt: new Date()
+        }
+      ];
+
+      return {
+        tasks,
+        summary: `ユーザー要求「${userRequest}」に対する分析結果（並列処理対応）`,
+        estimatedTime: '1-2時間',
+        riskAssessment: '低リスク - 並列処理テスト'
+      };
     }
 
-    return {
-      tasks,
-      summary: `ユーザー要求「${userRequest}」に対する分析結果`,
-      estimatedTime: '1-2時間',
-      riskAssessment: '低リスク - 標準的な実装作業'
-    };
+    // フォールバック: 単一タスク
+    return jsonResult;
   }
 
   /**
@@ -275,38 +487,43 @@ ${analysis}
    * Claude Code SDKの応答からタスク分析結果を抽出
    */
   private extractTaskAnalysisResult(messages: SDKMessage[]): TaskAnalysisResult {
-    // 最後のメッセージから結果を抽出
-    const lastMessage = messages[messages.length - 1];
+    // 全ての分析メッセージから結果を抽出
+    let fullAnalysisText = '';
     
-    let analysisText = '';
-    if (lastMessage && typeof lastMessage === 'object' && 'type' in lastMessage) {
-      if (lastMessage.type === 'assistant' && 'message' in lastMessage) {
-        const assistantMessage = lastMessage.message as any;
-        if (assistantMessage.content) {
-          for (const content of assistantMessage.content) {
-            if (content.type === 'text') {
-              analysisText += content.text;
+    for (const message of messages) {
+      if (message && typeof message === 'object' && 'type' in message) {
+        if (message.type === 'assistant' && 'message' in message) {
+          const assistantMessage = message.message as any;
+          if (assistantMessage.content) {
+            for (const content of assistantMessage.content) {
+              if (content.type === 'text') {
+                fullAnalysisText += content.text + '\n';
+              }
             }
           }
+        } else if (message.type === 'result') {
+          fullAnalysisText += (message as any).result || '';
         }
-      } else if (lastMessage.type === 'result') {
-        analysisText = (lastMessage as any).result || '';
       }
     }
 
-    // JSONブロックを抽出
-    const jsonMatch = analysisText.match(/```json\s*([\s\S]*?)\s*```/);
+    // JSONブロックを抽出（最後のものを優先）
+    const jsonMatches = [...fullAnalysisText.matchAll(/```json\s*([\s\S]*?)\s*```/g)];
     
-    if (jsonMatch) {
+    if (jsonMatches.length > 0) {
+      // 最後のJSONブロックを使用
+      const lastJsonMatch = jsonMatches[jsonMatches.length - 1];
       try {
-        const jsonData = JSON.parse(jsonMatch[1]);
+        const jsonData = JSON.parse(lastJsonMatch[1]);
+        
+        console.log(`📋 JSONタスクリストを検出: ${jsonData.tasks?.length || 0}個のタスク`);
         
         // タスクオブジェクトを作成
-        const tasks: Task[] = jsonData.tasks.map((taskData: any) => ({
+        const tasks: Task[] = (jsonData.tasks || []).map((taskData: any) => ({
           id: uuidv4(),
           type: taskData.type || 'feature',
-          title: taskData.title,
-          description: taskData.description,
+          title: taskData.title || 'タスク',
+          description: taskData.description || 'タスクの説明',
           priority: taskData.priority || 'medium',
           status: 'pending',
           dependencies: taskData.dependencies || [],
@@ -314,15 +531,18 @@ ${analysis}
           updatedAt: new Date()
         }));
 
-        return {
-          tasks,
-          summary: jsonData.summary || 'プロダクトオーナーAIによる分析結果',
-          estimatedTime: jsonData.estimatedTime || '未定',
-          riskAssessment: jsonData.riskAssessment || 'リスク評価なし'
-        };
+        if (tasks.length > 0) {
+          return {
+            tasks,
+            summary: jsonData.summary || 'プロダクトオーナーAIによる分析結果',
+            estimatedTime: jsonData.estimatedTime || '未定',
+            riskAssessment: jsonData.riskAssessment || 'リスク評価なし'
+          };
+        }
 
       } catch (error) {
         console.error('❌ JSON解析エラー:', error);
+        console.error('❌ 問題のあるJSON:', lastJsonMatch[1]);
       }
     }
 
@@ -334,7 +554,7 @@ ${analysis}
         id: uuidv4(),
         type: 'feature',
         title: 'ユーザー要求の実装',
-        description: analysisText || 'プロダクトオーナーAIによる分析結果を基にした実装',
+        description: fullAnalysisText || 'プロダクトオーナーAIによる分析結果を基にした実装',
         priority: 'high',
         status: 'pending',
         dependencies: [],

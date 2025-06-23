@@ -29,6 +29,7 @@ class ParallelDevelopmentCLI {
   --max-engineers <num>     最大同時エンジニア数 (デフォルト: 3)
   --max-turns <num>         タスクあたりの最大ターン数 (デフォルト: 20)
   --base-branch <branch>    ベースブランチ (デフォルト: main)
+  --use-remote              リモートリポジトリを使用 (デフォルト: ローカルのみ)
   --cleanup                 実行後にWorktreeをクリーンアップ
   --help, -h                このヘルプを表示
 
@@ -36,6 +37,7 @@ class ParallelDevelopmentCLI {
   npm run parallel-dev "ユーザー認証機能を実装してください"
   npm run parallel-dev "バグ修正: ログイン時のエラーハンドリング" --max-engineers 2
   npm run parallel-dev "新しいAPI endpointを3つ追加" --cleanup
+  npm run parallel-dev "機能改善" --use-remote --cleanup
 `);
   }
 
@@ -53,7 +55,8 @@ class ParallelDevelopmentCLI {
       worktreeBasePath: path.join(process.cwd(), 'worktrees'),
       maxConcurrentEngineers: 3,
       maxTurnsPerTask: 20,
-      baseBranch: 'main'
+      baseBranch: 'main',
+      useRemote: false // デフォルトはローカルのみ
     };
 
     let cleanup = false;
@@ -67,6 +70,8 @@ class ParallelDevelopmentCLI {
         showHelp = true;
       } else if (arg === '--cleanup') {
         cleanup = true;
+      } else if (arg === '--use-remote') {
+        config.useRemote = true;
       } else if (arg === '--base-repo') {
         config.baseRepoPath = path.resolve(args[++i] || process.cwd());
       } else if (arg === '--worktree-base') {
@@ -145,6 +150,7 @@ class ParallelDevelopmentCLI {
     console.log(`👥 最大同時エンジニア数: ${config.maxConcurrentEngineers}`);
     console.log(`🔄 最大ターン数: ${config.maxTurnsPerTask}`);
     console.log(`🌱 ベースブランチ: ${config.baseBranch}`);
+    console.log(`📡 リモート使用: ${config.useRemote ? 'はい' : 'いいえ'}`);
     console.log(`🧹 実行後クリーンアップ: ${cleanup ? 'はい' : 'いいえ'}`);
 
     try {

@@ -58,6 +58,7 @@ export interface SystemConfig {
   maxConcurrentEngineers: number;
   maxTurnsPerTask: number;
   baseBranch: string;
+  useRemote: boolean;
 }
 
 /**

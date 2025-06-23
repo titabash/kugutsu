@@ -1,0 +1,159 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    background-color: #1e1e1e;
+    color: #d4d4d4;
+    overflow: hidden;
+}
+
+#container {
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+#header {
+    background-color: #2d2d30;
+    padding: 10px;
+    border-bottom: 1px solid #474747;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+#header h1 {
+    font-size: 16px;
+    font-weight: normal;
+}
+
+#status {
+    display: flex;
+    gap: 20px;
+    align-items: center;
+}
+
+.status-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.status-indicator {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background-color: #4CAF50;
+}
+
+#main-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+#top-panes {
+    display: flex;
+    height: 30%;
+    border-bottom: 2px solid #474747;
+}
+
+#engineer-panes {
+    display: flex;
+    height: 50%;
+    border-bottom: 2px solid #474747;
+}
+
+#bottom-pane {
+    height: 20%;
+}
+
+.terminal-pane {
+    position: relative;
+    overflow: hidden;
+    background-color: #1e1e1e;
+    border: 1px solid #474747;
+}
+
+.terminal-header {
+    background-color: #2d2d30;
+    padding: 5px 10px;
+    border-bottom: 1px solid #474747;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+}
+
+.terminal-title {
+    font-weight: bold;
+}
+
+.terminal-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.terminal-action {
+    cursor: pointer;
+    opacity: 0.7;
+    transition: opacity 0.2s;
+    user-select: none;
+}
+
+.terminal-action:hover {
+    opacity: 1;
+}
+
+.terminal-container {
+    position: absolute;
+    top: 30px;
+    left: 0;
+    right: 0;
+    bottom: 0;
+}
+
+.split {
+    -webkit-box-sizing: border-box;
+    -moz-box-sizing: border-box;
+    box-sizing: border-box;
+}
+
+.gutter {
+    background-color: #474747;
+    background-repeat: no-repeat;
+    background-position: 50%;
+}
+
+.gutter.gutter-horizontal {
+    background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=');
+    cursor: col-resize;
+}
+
+.gutter.gutter-vertical {
+    background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=');
+    cursor: row-resize;
+}
+
+/* ロール別のカラーテーマ */
+.product-owner .terminal-header {
+    border-top: 3px solid #9c27b0;
+}
+
+.tech-lead .terminal-header {
+    border-top: 3px solid #2196f3;
+}
+
+.engineer .terminal-header {
+    border-top: 3px solid #4caf50;
+}
+
+.merge-coordinator .terminal-header {
+    border-top: 3px solid #ff9800;
+}

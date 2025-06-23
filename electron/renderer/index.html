@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
+    <title>Multi-Engineer Parallel Development</title>
+    <link rel="stylesheet" href="./styles/xterm.css">
+    <link rel="stylesheet" href="./styles/main.css">
+</head>
+<body>
+    <div id="container">
+        <div id="header">
+            <h1>🚀 Multi-Engineer Parallel Development System</h1>
+            <div id="status">
+                <div class="status-item">
+                    <div class="status-indicator" id="connection-status"></div>
+                    <span>Connected</span>
+                </div>
+                <div class="status-item">
+                    <span id="engineer-count">Engineers: 0</span>
+                </div>
+                <div class="status-item">
+                    <span id="task-status">Tasks: 0/0</span>
+                </div>
+            </div>
+        </div>
+        <div id="main-content">
+            <div id="top-panes">
+                <div id="product-owner-pane" class="terminal-pane product-owner">
+                    <div class="terminal-header">
+                        <span class="terminal-title">📊 Product Owner AI</span>
+                        <div class="terminal-actions">
+                            <span class="terminal-action" data-terminal="product-owner">Clear</span>
+                        </div>
+                    </div>
+                    <div class="terminal-container" id="product-owner-terminal"></div>
+                </div>
+                <div id="tech-lead-pane" class="terminal-pane tech-lead">
+                    <div class="terminal-header">
+                        <span class="terminal-title">🔍 Tech Lead AI</span>
+                        <div class="terminal-actions">
+                            <span class="terminal-action" data-terminal="tech-lead">Clear</span>
+                        </div>
+                    </div>
+                    <div class="terminal-container" id="tech-lead-terminal"></div>
+                </div>
+            </div>
+            <div id="engineer-panes">
+                <!-- Engineer terminals will be dynamically added here -->
+            </div>
+            <div id="bottom-pane" class="terminal-pane merge-coordinator">
+                <div class="terminal-header">
+                    <span class="terminal-title">🔧 Merge Coordinator & Summary</span>
+                    <div class="terminal-actions">
+                        <span class="terminal-action" data-terminal="merge-coordinator">Clear</span>
+                    </div>
+                </div>
+                <div class="terminal-container" id="merge-coordinator-terminal"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="./js/app.js"></script>
+</body>
+</html>

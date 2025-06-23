@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Electron Test</title>
+</head>
+<body>
+    <h1>Electron Test Page</h1>
+    <div id="status">Loading...</div>
+    <pre id="log"></pre>
+    
+    <script>
+        console.log('Script loaded');
+        
+        const logElement = document.getElementById('log');
+        const statusElement = document.getElementById('status');
+        
+        function addLog(message) {
+            logElement.textContent += message + '\n';
+            console.log(message);
+        }
+        
+        addLog('1. Script execution started');
+        addLog('2. window.electronAPI = ' + window.electronAPI);
+        
+        if (window.electronAPI) {
+            statusElement.textContent = 'electronAPI is available!';
+            addLog('3. Setting up event listeners');
+            
+            window.electronAPI.onLogData((data) => {
+                addLog('Received log: ' + JSON.stringify(data));
+            });
+        } else {
+            statusElement.textContent = 'electronAPI is NOT available!';
+            addLog('3. ERROR: electronAPI not found');
+        }
+        
+        // IPCの直接テスト
+        if (typeof require !== 'undefined') {
+            addLog('4. require is available');
+            try {
+                const { ipcRenderer } = require('electron');
+                addLog('5. ipcRenderer loaded');
+                
+                ipcRenderer.on('log-data', (event, data) => {
+                    addLog('Direct IPC log: ' + JSON.stringify(data));
+                });
+            } catch (e) {
+                addLog('5. ERROR loading ipcRenderer: ' + e.message);
+            }
+        } else {
+            addLog('4. require is NOT available (this is expected with contextIsolation)');
+        }
+    </script>
+</body>
+</html>

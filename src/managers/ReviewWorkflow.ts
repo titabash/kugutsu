@@ -12,6 +12,7 @@ export class ReviewWorkflow {
   private readonly gitManager: GitWorktreeManager;
   private readonly config: SystemConfig;
   private readonly maxRetries: number;
+  private readonly maxConflictResolutionRetries: number = 2;
   private readonly mergeCoordinator: MergeCoordinator;
 
   constructor(gitManager: GitWorktreeManager, config: SystemConfig, maxRetries: number = 3) {
@@ -61,11 +62,6 @@ export class ReviewWorkflow {
             async (conflictTask, conflictEngineerId) => {
               console.log(`🔄 コンフリクト解消依頼（並列実行）: ${conflictTask.title}`);
               return await this.resolveConflictWithEngineer(conflictTask, conflictEngineerId, existingEngineer);
-            },
-            // 最終マージ成功時のクリーンアップコールバック
-            async (finalTask) => {
-              console.log(`🧹 コンフリクト解消後のクリーンアップ実行: ${finalTask.title}`);
-              await this.cleanupAfterMerge(finalTask);
             }
           );
           
@@ -101,6 +97,29 @@ export class ReviewWorkflow {
 
         case 'COMMENTED':
           console.log(`💬 レビューコメント済み: ${task.title}`);
+          console.log(`📝 コメント: ${reviewResult.comments.join(', ')}`);
+          
+          // COMMENTEDの場合、改善提案があるかを確認し、修正選択肢を提供
+          const shouldImprove = this.shouldApplyCommentImprovements(reviewResult.comments);
+          
+          if (shouldImprove && retryCount < this.maxRetries - 1) {
+            console.log(`🔄 コメントに基づく改善修正を実行: ${task.title}`);
+            
+            // コメントに基づく改善修正を実行
+            currentResult = await this.requestChanges(task, reviewResult, engineerId, existingEngineer);
+            
+            if (!currentResult.success) {
+              console.error(`❌ 改善修正に失敗: ${task.title}`);
+              break;
+            }
+            
+            // 次のループで再レビューを実行
+            break;
+          } else {
+            // 改善提案なし、または最大試行回数に達した場合は承認扱いでマージ
+            console.log(`✅ コメント付き承認としてマージ実行: ${task.title}`);
+          }
+          
           // コメントのみの場合は承認扱いとしてマージ
           const mergeResultCommented = await this.mergeCoordinator.coordinatedMerge(
             task,
@@ -540,5 +559,240 @@ git commit -m "resolve: マージコンフリクトを解消
    */
   async waitForAllConflictResolutions(): Promise<void> {
     await this.mergeCoordinator.waitForAllConflictResolutions();
+  }
+
+  /**
+   * コンフリクト解消完了後の再レビュー処理
+   */
+  async handleConflictResolutionResults(): Promise<Map<string, boolean>> {
+    const results = new Map<string, boolean>();
+    const conflictResults = await this.mergeCoordinator.waitForAllConflictResolutions();
+    
+    for (const [taskId, engineerResult] of conflictResults) {
+      if (engineerResult?.needsReReview) {
+        console.log(`🔄 コンフリクト解消後の再レビュー開始: ${taskId}`);
+        
+        try {
+          // コンフリクト解消されたタスクに対して再レビューを実行
+          const reReviewResult = await this.performConflictResolutionReReview(taskId, engineerResult);
+          results.set(taskId, reReviewResult);
+        } catch (error) {
+          console.error(`❌ 再レビューエラー: ${taskId}`, error);
+          results.set(taskId, false);
+        }
+      }
+    }
+    
+    return results;
+  }
+
+  /**
+   * コンフリクト解消に対する再レビューとマージの実行（完全な修正ループ対応）
+   */
+  private async performConflictResolutionReReview(
+    taskId: string, 
+    conflictResolutionResult: EngineerResult
+  ): Promise<boolean> {
+    // タスク情報をMergeCoordinatorから取得
+    const task = this.mergeCoordinator.getTask(taskId);
+    if (!task) {
+      console.error(`❌ タスク情報が見つかりません: ${taskId}`);
+      return false;
+    }
+    
+    console.log(`📊 コンフリクト解消後レビューループ開始: ${task.title}`);
+    
+    let currentResult = conflictResolutionResult;
+    let retryCount = 0;
+    const reviewHistory: ReviewResult[] = [];
+    
+    // コンフリクト解消後の修正→レビューループ
+    while (retryCount < this.maxConflictResolutionRetries) {
+      console.log(`\n📝 コンフリクト解消レビューラウンド ${retryCount + 1}/${this.maxConflictResolutionRetries}`);
+      
+      // コンフリクト解消内容のレビュー
+      const reviewTask: Task = {
+        ...task,
+        title: `[コンフリクト解消-R${retryCount + 1}] ${task.title}`,
+        description: `${task.description}\n\n## コンフリクト解消内容レビュー\nコンフリクト解消作業の結果をレビューしてください。`
+      };
+      
+      const reviewResult = await this.performReview(reviewTask, currentResult);
+      reviewHistory.push(reviewResult);
+      
+      // レビュー結果による分岐
+      switch (reviewResult.status) {
+        case 'APPROVED':
+          console.log(`✅ コンフリクト解消内容が承認されました: ${task.title}`);
+          
+          // 最終マージの実行
+          console.log(`🔀 最終マージ実行: ${task.title}`);
+          try {
+            const finalMergeResult = await this.performFinalMergeAfterReReview(task);
+            if (finalMergeResult) {
+              console.log(`✅ 最終マージ成功: ${task.title}`);
+              
+              // クリーンアップの実行
+              await this.cleanupAfterMerge(task);
+              console.log(`🧹 クリーンアップ完了: ${task.title}`);
+              
+              return true;
+            } else {
+              console.error(`❌ 最終マージ失敗: ${task.title}`);
+              return false;
+            }
+          } catch (error) {
+            console.error(`❌ 最終マージエラー: ${task.title}`, error);
+            return false;
+          }
+          
+        case 'CHANGES_REQUESTED':
+          console.log(`🔄 コンフリクト解消内容の修正が要求されました: ${task.title}`);
+          
+          if (retryCount < this.maxConflictResolutionRetries - 1) {
+            // 再修正を実行
+            currentResult = await this.requestChangesForConflictResolution(
+              task, 
+              reviewResult, 
+              conflictResolutionResult.engineerId
+            );
+            
+            if (!currentResult.success) {
+              console.error(`❌ コンフリクト解消の修正作業に失敗: ${task.title}`);
+              return false;
+            }
+          } else {
+            console.error(`❌ コンフリクト解消の修正試行回数上限に達しました: ${task.title}`);
+            return false;
+          }
+          break;
+          
+        case 'COMMENTED':
+          console.log(`💬 コンフリクト解消にコメントあり（承認扱い）: ${task.title}`);
+          console.log(`📝 コメント: ${reviewResult.comments.join(', ')}`);
+          
+          // COMMENTEDは承認扱いとして最終マージ実行
+          try {
+            const finalMergeResult = await this.performFinalMergeAfterReReview(task);
+            if (finalMergeResult) {
+              console.log(`✅ 最終マージ成功（コメント付き承認）: ${task.title}`);
+              
+              // クリーンアップの実行
+              await this.cleanupAfterMerge(task);
+              console.log(`🧹 クリーンアップ完了: ${task.title}`);
+              
+              return true;
+            } else {
+              console.error(`❌ 最終マージ失敗: ${task.title}`);
+              return false;
+            }
+          } catch (error) {
+            console.error(`❌ 最終マージエラー: ${task.title}`, error);
+            return false;
+          }
+          
+        case 'ERROR':
+        default:
+          console.error(`❌ コンフリクト解消レビューエラー: ${task.title}`);
+          console.error(`🔍 エラー詳細: ${reviewResult.error || 'Unknown error'}`);
+          return false;
+      }
+      
+      retryCount++;
+    }
+    
+    console.error(`❌ コンフリクト解消レビューの最大試行回数に達しました: ${task.title}`);
+    return false;
+  }
+
+  /**
+   * レビューコメントから改善修正が必要かを判断
+   */
+  private shouldApplyCommentImprovements(comments: string[]): boolean {
+    // 改善提案を示すキーワードを検索
+    const improvementKeywords = [
+      '改善', '修正', '最適化', '効率化', 'improve', 'optimize', 'refactor',
+      'better', 'should', 'consider', '提案', 'suggest', 'recommend',
+      'より良い', 'もっと', '追加', 'add', 'enhance'
+    ];
+    
+    const joinedComments = comments.join(' ').toLowerCase();
+    
+    // キーワードが含まれている場合は改善修正を推奨
+    return improvementKeywords.some(keyword => 
+      joinedComments.includes(keyword.toLowerCase())
+    );
+  }
+
+  /**
+   * コンフリクト解消専用の修正要求処理
+   */
+  private async requestChangesForConflictResolution(
+    task: Task, 
+    reviewResult: ReviewResult, 
+    engineerId: string
+  ): Promise<EngineerResult> {
+    console.log(`🔄 コンフリクト解消内容の修正作業開始: ${engineerId}`);
+
+    // 既存のエンジニアインスタンスを再利用（セッション継続）
+    const engineer = new EngineerAI(engineerId, {
+      maxTurns: this.config.maxTurnsPerTask
+    });
+
+    // 修正用のタスクを作成
+    const revisionTask: Task = {
+      ...task,
+      title: `[コンフリクト解消修正] ${task.title}`,
+      description: `${task.description}\n\n## レビューフィードバック（コンフリクト解消内容）\n${reviewResult.comments.join('\n')}\n\n上記のフィードバックに基づいて、コンフリクト解消内容を修正してください。`
+    };
+
+    try {
+      console.log(`🔧 コンフリクト解消修正実行中: ${engineerId}`);
+      const result = await engineer.executeTask(revisionTask);
+      
+      if (result.success) {
+        console.log(`✅ コンフリクト解消修正完了: ${engineerId}`);
+      } else {
+        console.error(`❌ コンフリクト解消修正失敗: ${engineerId} - ${result.error}`);
+      }
+      
+      return result;
+    } catch (error) {
+      console.error(`❌ コンフリクト解消修正実行エラー:`, error);
+      return {
+        taskId: task.id,
+        engineerId,
+        success: false,
+        output: [],
+        error: error instanceof Error ? error.message : String(error),
+        duration: 0,
+        filesChanged: []
+      };
+    }
+  }
+
+  /**
+   * 再レビュー後の最終マージ実行
+   */
+  private async performFinalMergeAfterReReview(task: Task): Promise<boolean> {
+    try {
+      // メインブランチに切り替え
+      execSync(`git checkout ${this.config.baseBranch}`, {
+        cwd: this.config.baseRepoPath,
+        stdio: 'pipe'
+      });
+
+      // フィーチャーブランチをマージ
+      execSync(`git merge --no-ff ${task.branchName}`, {
+        cwd: this.config.baseRepoPath,
+        stdio: 'pipe'
+      });
+
+      console.log(`✅ 最終マージ完了: ${task.branchName} -> ${this.config.baseBranch}`);
+      return true;
+    } catch (error) {
+      console.error(`❌ 最終マージ失敗: ${task.title}`, error);
+      return false;
+    }
   }
 }

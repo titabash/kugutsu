@@ -63,6 +63,7 @@ export class MergeCoordinator {
   private readonly mergeMutex = new AsyncMutex();
   private readonly config: SystemConfig;
   private readonly pendingConflictResolutions = new Map<string, Promise<EngineerResult>>();
+  private readonly taskRegistry = new Map<string, Task>();
 
   constructor(config: SystemConfig) {
     this.config = config;
@@ -73,14 +74,16 @@ export class MergeCoordinator {
    */
   async coordinatedMerge(
     task: Task,
-    onConflictResolution?: (task: Task, engineerId: string, existingEngineer?: EngineerAI) => Promise<EngineerResult>,
-    onFinalMergeSuccess?: (task: Task) => Promise<void>
+    onConflictResolution?: (task: Task, engineerId: string, existingEngineer?: EngineerAI) => Promise<EngineerResult>
   ): Promise<{
     success: boolean;
     conflictResolutionInProgress?: boolean;
     error?: string;
   }> {
     console.log(`🔒 マージ待機中: ${task.title} (キュー: ${this.mergeMutex.getQueueLength()})`);
+    
+    // Taskオブジェクトを登録
+    this.taskRegistry.set(task.id, task);
     
     return await this.mergeMutex.acquire(async () => {
       console.log(`🔀 マージ実行開始: ${task.title}`);
@@ -100,7 +103,7 @@ export class MergeCoordinator {
           
           // コンフリクト解消を非同期で開始（Mutex外で実行）
           if (onConflictResolution) {
-            const conflictPromise = this.startConflictResolution(task, onConflictResolution, onFinalMergeSuccess);
+            const conflictPromise = this.startConflictResolution(task, onConflictResolution);
             this.pendingConflictResolutions.set(task.id, conflictPromise);
             
             // Mutexを即座に解放してコンフリクト解消は並列実行
@@ -135,8 +138,7 @@ export class MergeCoordinator {
    */
   private async startConflictResolution(
     task: Task,
-    onConflictResolution: (task: Task, engineerId: string, existingEngineer?: EngineerAI) => Promise<EngineerResult>,
-    onFinalMergeSuccess?: (task: Task) => Promise<void>
+    onConflictResolution: (task: Task, engineerId: string, existingEngineer?: EngineerAI) => Promise<EngineerResult>
   ): Promise<EngineerResult> {
     console.log(`🔧 コンフリクト解消開始（並列実行）: ${task.title}`);
     
@@ -146,30 +148,11 @@ export class MergeCoordinator {
       
       console.log(`✅ コンフリクト解消完了: ${task.title}`);
       
-      // コンフリクト解消後にマージを再実行
-      console.log(`🔄 コンフリクト解消後のマージを再実行: ${task.title}`);
-      const finalMergeResult = await this.performFinalMerge(task);
+      // コンフリクト解消完了 - 再レビューのために処理を終了
+      console.log(`✅ コンフリクト解消完了（再レビュー待ち）: ${task.title}`);
       
-      if (finalMergeResult === true) {
-        console.log(`✅ 最終マージ完了: ${task.title}`);
-        
-        // 最終マージ成功時のクリーンアップコールバック実行
-        if (onFinalMergeSuccess) {
-          try {
-            await onFinalMergeSuccess(task);
-          } catch (cleanupError) {
-            console.error(`❌ クリーンアップエラー: ${task.title}`, cleanupError);
-          }
-        }
-      } else if (finalMergeResult === 'CONFLICT') {
-        console.error(`❌ 再度コンフリクトが発生: ${task.title}`);
-        result.success = false;
-        result.error = '解消後に再度コンフリクトが発生しました';
-      } else {
-        console.error(`❌ 最終マージ失敗: ${task.title}`);
-        result.success = false;
-        result.error = '最終マージに失敗しました';
-      }
+      // 結果に再レビューが必要であることを示すマーカーを追加
+      result.needsReReview = true;
       
       this.pendingConflictResolutions.delete(task.id);
       return result;
@@ -393,6 +376,13 @@ export class MergeCoordinator {
    */
   getPendingConflictResolutions(): string[] {
     return Array.from(this.pendingConflictResolutions.keys());
+  }
+
+  /**
+   * 登録されたTaskオブジェクトを取得
+   */
+  getTask(taskId: string): Task | undefined {
+    return this.taskRegistry.get(taskId);
   }
 
   /**

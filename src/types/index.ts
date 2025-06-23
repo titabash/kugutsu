@@ -43,6 +43,7 @@ export interface EngineerResult {
   taskId: string;
   engineerId: string;
   success: boolean;
+  needsReReview?: boolean;
   output: string[];
   error?: string;
   duration: number;

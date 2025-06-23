@@ -92,7 +92,20 @@ export class ParallelDevelopmentOrchestrator {
       this.log('system', 'info', '🔄 フェーズ4: コンフリクト解消完了待機', 'Orchestrator', 'Phase 4: Completion');
       await this.reviewWorkflow.waitForAllConflictResolutions();
       
-      this.log('system', 'success', '✅ 全プロセス完了', 'Orchestrator', 'Phase 4: Completion');
+      // 6. コンフリクト解消後の再レビューとマージ
+      this.log('system', 'info', '🔍 フェーズ5: コンフリクト解消後再レビュー', 'Orchestrator', 'Phase 5: Re-Review');
+      const reReviewResults = await this.reviewWorkflow.handleConflictResolutionResults();
+      
+      // 再レビュー結果のログ出力
+      for (const [taskId, success] of reReviewResults) {
+        if (success) {
+          this.log('system', 'success', `✅ 再レビュー承認・マージ完了: ${taskId}`, 'Orchestrator', 'Phase 5: Re-Review');
+        } else {
+          this.log('system', 'error', `❌ 再レビュー失敗: ${taskId}`, 'Orchestrator', 'Phase 5: Re-Review');
+        }
+      }
+      
+      this.log('system', 'success', '✅ 全プロセス完了（再レビュー含む）', 'Orchestrator', 'Phase 5: Completion');
       this.log('system', 'info', `📊 完了タスク: ${completedTasks.length}個`, 'Orchestrator', 'Phase 4: Completion');
       this.log('system', 'info', `📊 失敗タスク: ${failedTasks.length}個`, 'Orchestrator', 'Phase 4: Completion');
       

@@ -222,16 +222,30 @@ export class MergeCoordinator {
       throw new Error(`ブランチ名が設定されていません: ${task.id}`);
     }
 
+    const worktreePath = task.worktreePath;
+    if (!worktreePath) {
+      throw new Error(`Worktreeパスが設定されていません: ${task.id}`);
+    }
+
     try {
       console.log(`🔀 マージ実行: ${task.branchName} -> ${this.config.baseBranch}`);
 
-      // メインブランチに切り替え
+      // Step 1: worktree側でmainブランチをマージしてコンフリクトチェック
+      console.log(`📥 worktree側でmainブランチをマージ中...`);
+      
+      execSync(`git merge ${this.config.baseBranch}`, {
+        cwd: worktreePath,
+        stdio: 'pipe'
+      });
+
+      // Step 2: worktree側でマージが成功したら、mainブランチに切り替えてフィーチャーブランチをマージ
+      console.log(`📤 mainブランチにフィーチャーブランチをマージ中...`);
+      
       execSync(`git checkout ${this.config.baseBranch}`, {
         cwd: this.config.baseRepoPath,
         stdio: 'pipe'
       });
 
-      // フィーチャーブランチをマージ
       execSync(`git merge --no-ff ${task.branchName}`, {
         cwd: this.config.baseRepoPath,
         stdio: 'pipe'
@@ -240,13 +254,24 @@ export class MergeCoordinator {
       return true;
 
     } catch (error) {
-      // コンフリクト検出
-      const conflictDetected = await this.detectMergeConflict();
+      // worktree側でのマージでコンフリクトが発生した場合
+      const conflictDetected = await this.detectMergeConflictInWorktree(worktreePath);
       
       if (conflictDetected) {
+        console.log(`⚠️ worktree側でコンフリクト検出: ${task.branchName}`);
         return 'CONFLICT';
       } else {
-        // 通常のマージエラー - マージを中止
+        // 通常のマージエラー - worktree側のマージを中止
+        try {
+          execSync(`git merge --abort`, {
+            cwd: worktreePath,
+            stdio: 'pipe'
+          });
+        } catch (abortError) {
+          // 中止エラーは無視
+        }
+        
+        // main側でもマージが失敗している可能性があるので中止
         try {
           execSync(`git merge --abort`, {
             cwd: this.config.baseRepoPath,
@@ -255,6 +280,7 @@ export class MergeCoordinator {
         } catch (abortError) {
           // 中止エラーは無視
         }
+        
         return false;
       }
     }
@@ -267,6 +293,24 @@ export class MergeCoordinator {
     try {
       const status = execSync('git status --porcelain', {
         cwd: this.config.baseRepoPath,
+        encoding: 'utf-8',
+        stdio: 'pipe'
+      });
+      
+      // マージコンフリクトのマーカーを検索
+      return status.includes('UU ') || status.includes('AA ') || status.includes('DD ');
+    } catch (error) {
+      return false;
+    }
+  }
+
+  /**
+   * worktree側でのマージコンフリクトの検出
+   */
+  private async detectMergeConflictInWorktree(worktreePath: string): Promise<boolean> {
+    try {
+      const status = execSync('git status --porcelain', {
+        cwd: worktreePath,
         encoding: 'utf-8',
         stdio: 'pipe'
       });

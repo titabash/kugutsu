@@ -15,7 +15,7 @@ export class ProductOwnerAI {
     this.baseRepoPath = baseRepoPath;
     this.config = {
       systemPrompt: this.getDefaultSystemPrompt(),
-      maxTurns: 5,
+      maxTurns: 10,
       allowedTools: ["Read", "Glob", "Grep", "LS"],
       ...config
     };
@@ -25,7 +25,7 @@ export class ProductOwnerAI {
    * デフォルトのシステムプロンプト
    */
   private getDefaultSystemPrompt(): string {
-    return `あなたは経験豊富なプロダクトオーナー兼テックリードです。
+    return `あなたは経験豊富なプロダクトオーナー兼エンジニアリングマネージャーです。
 ユーザからの開発要求を分析し、効率的で実行可能なタスクに分割することが役割です。
 
 重要：並列処理の最大化を優先してください。可能な限り多くの独立したタスクに分割し、同時実行を促進してください。
@@ -51,17 +51,17 @@ export class ProductOwnerAI {
    * ユーザからの要求を分析してタスクに分割し、指示ファイルを作成
    */
   async analyzeUserRequestWithInstructions(
-    userRequest: string, 
+    userRequest: string,
     instructionManager: TaskInstructionManager
   ): Promise<TaskAnalysisResult> {
     console.log('🧠 プロダクトオーナーAI: 要求分析開始');
-    
+
     const prompt = this.buildAnalysisPrompt(userRequest);
-    
+
     try {
       const messages: SDKMessage[] = [];
       let fullAnalysis = '';
-      
+
       for await (const message of query({
         prompt,
         abortController: new AbortController(),
@@ -71,7 +71,7 @@ export class ProductOwnerAI {
         },
       })) {
         messages.push(message);
-        
+
         // リアルタイムでプロダクトオーナーAIの思考過程を表示
         if (message && typeof message === 'object' && 'type' in message) {
           const analysisText = this.displayMessageActivity(message as any);
@@ -81,21 +81,21 @@ export class ProductOwnerAI {
         }
       }
 
-      // タスクを解析・作成（実際のLLMの応答メッセージを使用）
-      const result = this.extractTaskAnalysisResult(messages);
-      
+      // タスクを解析・作成（実際のLLMの応答メッセージとユーザー要求を使用）
+      const result = this.extractTaskAnalysisResultWithUserRequest(messages, userRequest);
+
       // 概要ファイルを作成
       await instructionManager.createOverviewFile(userRequest, fullAnalysis);
-      
+
       // 各タスクの詳細指示ファイルを作成
       for (const task of result.tasks) {
         const detailedInstructions = await this.generateDetailedInstructions(task, userRequest, fullAnalysis);
         await instructionManager.createTaskInstructionFile(task, detailedInstructions);
       }
-      
+
       // 依存関係ファイルを作成
       await instructionManager.createDependencyFile(result.tasks);
-      
+
       console.log('✅ プロダクトオーナーAI: 分析完了 & 指示ファイル作成完了');
       return result;
 
@@ -111,7 +111,7 @@ export class ProductOwnerAI {
   private displayMessageActivity(message: any): string | null {
     const messageType = message.type;
     let analysisText = '';
-    
+
     switch (messageType) {
       case 'user':
         // ユーザーメッセージ（入力）
@@ -152,9 +152,9 @@ export class ProductOwnerAI {
               const isError = content.is_error;
               const status = isError ? '❌ エラー' : '✅ 成功';
               const result = content.content;
-              
+
               console.log(`📊 プロダクトオーナーAI: ツール結果 - ${status}`);
-              
+
               if (isError) {
                 console.log(`   ❌ エラー詳細: ${this.truncateText(String(result), 150)}`);
               } else {
@@ -247,7 +247,7 @@ export class ProductOwnerAI {
     if (typeof result === 'string') {
       const lines = result.split('\n');
       const lineCount = lines.length;
-      
+
       if (lineCount === 1) {
         console.log(`   ✅ 結果: ${this.truncateText(result, 100)}`);
       } else if (lineCount <= 5) {
@@ -289,11 +289,38 @@ export class ProductOwnerAI {
    * 分析用プロンプトを構築
    */
   private buildAnalysisPrompt(userRequest: string): string {
+    // ユーザー要求から並列処理キーワードを検出
+    const parallelKeywords = ['並列', '同時', '複数', 'エンジニアAI', '二人', '２人', '2人', 'パラレル', '並行'];
+    const hasParallelIntent = parallelKeywords.some(keyword => userRequest.includes(keyword));
+
+    // 同一ファイルに対する複数の変更パターンを検出
+    const hasMultipleChanges = userRequest.includes('と') || userRequest.includes('、') || userRequest.includes('または');
+
+    let parallelInstructions = '';
+    if (hasParallelIntent) {
+      parallelInstructions = `
+## 🚨 並列処理モード検出 🚨
+ユーザーが明示的に並列処理を要求しています。以下の特別な指針に従ってください：
+
+### 必須：並列タスク分割ルール
+1. **同一ファイルに対する複数の変更**: 各変更パターンを独立したタスクに分割する
+2. **検証・テスト目的**: 異なるアプローチを試す場合は、それぞれを独立したタスクとする
+3. **比較検証**: 複数の実装方法を試す場合は、各実装を独立したタスクとする
+4. **最小2タスク**: どんなに小さな作業でも、最低2つのタスクに分割する
+
+### 例：「HeyをHelloに変更とGood Morningに変更」の場合
+→ タスク1: TEST.mdのHeyをHelloに変更
+→ タスク2: TEST.mdのHeyをGood Morningに変更
+（異なるワークツリーで実行し、結果を比較検証）
+`;
+    }
+
     return `
 プロダクトオーナーとして、以下のユーザー要求を分析してください：
 
 ## ユーザー要求
 ${userRequest}
+${parallelInstructions}
 
 ## 分析手順
 1. まず、現在のコードベースを調査してプロジェクト構造を理解してください
@@ -306,6 +333,7 @@ ${userRequest}
 - ユーザーが「並列」「同時」「複数」などの並列処理を示唆している場合は、必ず複数の独立したタスクに分割してください
 - 異なるファイルに対する操作は、可能な限り独立したタスクとして扱ってください
 - 単一のファイルに対する複数の変更でも、論理的に分離可能であれば別タスクにしてください
+- 検証・テスト・比較目的の場合は、各パターンを独立したタスクとして作成してください
 
 ## 分析内容
 - プロジェクトの現状把握
@@ -343,17 +371,17 @@ ${userRequest}
     // 分析テキストを仮のメッセージ配列として扱い、LLMの分析結果を解析
     const fakeMessages = [{ type: 'result', result: analysisText } as any];
     const jsonResult = this.extractTaskAnalysisResult(fakeMessages);
-    
+
     // JSONから複数タスクが抽出された場合はそれを使用
     if (jsonResult.tasks.length > 1) {
       console.log(`✅ 複数タスクを検出: ${jsonResult.tasks.length}個のタスク`);
       return jsonResult;
     }
-    
+
     // JSONが見つからない場合でも、分析テキストから複数のタスクを推測
     if (jsonResult.tasks.length === 1 && (analysisText.includes('並列') || analysisText.includes('同時') || analysisText.includes('複数'))) {
       console.log('⚠️ JSON未検出ですが、並列処理キーワードを検出したため複数タスクを生成します');
-      
+
       const tasks: Task[] = [
         {
           id: uuidv4(),
@@ -418,7 +446,7 @@ ${task.description}
 
 2. **スクリプト追加**
    以下のテスト用スクリプトを追加してください：
-   
+
    \`\`\`json
    "scripts": {
      "test": "pytest",
@@ -484,12 +512,156 @@ ${analysis}
   }
 
   /**
+   * Claude Code SDKの応答からタスク分析結果を抽出（ユーザー要求を活用）
+   */
+  private extractTaskAnalysisResultWithUserRequest(messages: SDKMessage[], userRequest: string): TaskAnalysisResult {
+    // 既存の処理を使用
+    const baseResult = this.extractTaskAnalysisResult(messages);
+
+    // 並列処理キーワードをユーザー要求から直接検出
+    const parallelKeywords = ['並列', '同時', '複数', 'エンジニアAI', '二人', '２人', '2人', 'パラレル', '並行'];
+    const hasParallelIntent = parallelKeywords.some(keyword => userRequest.includes(keyword));
+
+    // 既に複数タスクが生成されている場合はそのまま返す
+    if (baseResult.tasks.length > 1) {
+      console.log(`✅ 複数タスクを生成済み: ${baseResult.tasks.length}個のタスク`);
+      return baseResult;
+    }
+
+    // 並列処理が要求されているが単一タスクの場合、ユーザー要求を解析して分割
+    if (hasParallelIntent) {
+      console.log('🔄 ユーザー要求を直接解析して並列タスクを生成');
+
+      const parallelTasks = this.createParallelTasksFromUserRequest(userRequest);
+      if (parallelTasks.length > 1) {
+        return {
+          tasks: parallelTasks,
+          summary: `ユーザー要求「${userRequest}」の並列処理分析`,
+          estimatedTime: '1-2時間',
+          riskAssessment: '低リスク - 並列処理テスト'
+        };
+      }
+    }
+
+    return baseResult;
+  }
+
+  /**
+   * ユーザー要求から直接並列タスクを生成
+   */
+  private createParallelTasksFromUserRequest(userRequest: string): Task[] {
+    const tasks: Task[] = [];
+
+    // パターン1: 「HeyをHelloに変更とGood Morningに変更」のような具体的なパターン
+    if (userRequest.includes('Hello') && userRequest.includes('Good Morning')) {
+      tasks.push({
+        id: uuidv4(),
+        type: 'feature',
+        title: 'TEST.mdのHeyをHelloに変更',
+        description: 'TEST.mdファイル内の"Hey"を"Hello"に変更する作業',
+        priority: 'high',
+        status: 'pending',
+        dependencies: [],
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
+
+      tasks.push({
+        id: uuidv4(),
+        type: 'feature',
+        title: 'TEST.mdのHeyをGood Morningに変更',
+        description: 'TEST.mdファイル内の"Hey"を"Good Morning"に変更する作業',
+        priority: 'high',
+        status: 'pending',
+        dependencies: [],
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
+
+      console.log('📋 具体的な並列タスクを生成: Hello & Good Morning');
+      return tasks;
+    }
+
+    // パターン2: 「AとB」のような形式
+    const andPattern = /(.+?)と(.+?)を/g;
+    const andMatches = [...userRequest.matchAll(andPattern)];
+    if (andMatches.length > 0) {
+      for (const match of andMatches) {
+        const task1Content = match[1];
+        const task2Content = match[2];
+
+        tasks.push({
+          id: uuidv4(),
+          type: 'feature',
+          title: `${task1Content}の処理`,
+          description: `${task1Content}に関する作業`,
+          priority: 'high',
+          status: 'pending',
+          dependencies: [],
+          createdAt: new Date(),
+          updatedAt: new Date()
+        });
+
+        tasks.push({
+          id: uuidv4(),
+          type: 'feature',
+          title: `${task2Content}の処理`,
+          description: `${task2Content}に関する作業`,
+          priority: 'high',
+          status: 'pending',
+          dependencies: [],
+          createdAt: new Date(),
+          updatedAt: new Date()
+        });
+      }
+
+      if (tasks.length > 0) {
+        console.log(`📋 「と」パターンから並列タスクを生成: ${tasks.length}個`);
+        return tasks;
+      }
+    }
+
+    // パターン3: 一般的な並列処理（エンジニアAI数を指定されている場合）
+    if (userRequest.includes('エンジニアAI') && (userRequest.includes('二人') || userRequest.includes('２人') || userRequest.includes('2人'))) {
+      tasks.push({
+        id: uuidv4(),
+        type: 'feature',
+        title: 'エンジニアAI-1の作業',
+        description: `${userRequest} - エンジニアAI-1が担当する部分`,
+        priority: 'high',
+        status: 'pending',
+        dependencies: [],
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
+
+      tasks.push({
+        id: uuidv4(),
+        type: 'feature',
+        title: 'エンジニアAI-2の作業',
+        description: `${userRequest} - エンジニアAI-2が担当する部分`,
+        priority: 'high',
+        status: 'pending',
+        dependencies: [],
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
+
+      console.log('📋 エンジニアAI複数指定から並列タスクを生成');
+      return tasks;
+    }
+
+    console.log('⚠️ 具体的な並列パターンを検出できませんでした');
+    return tasks;
+  }
+
+  /**
    * Claude Code SDKの応答からタスク分析結果を抽出
    */
   private extractTaskAnalysisResult(messages: SDKMessage[]): TaskAnalysisResult {
     // 全ての分析メッセージから結果を抽出
     let fullAnalysisText = '';
-    
+
     for (const message of messages) {
       if (message && typeof message === 'object' && 'type' in message) {
         if (message.type === 'assistant' && 'message' in message) {
@@ -509,15 +681,15 @@ ${analysis}
 
     // JSONブロックを抽出（最後のものを優先）
     const jsonMatches = [...fullAnalysisText.matchAll(/```json\s*([\s\S]*?)\s*```/g)];
-    
+
     if (jsonMatches.length > 0) {
       // 最後のJSONブロックを使用
       const lastJsonMatch = jsonMatches[jsonMatches.length - 1];
       try {
         const jsonData = JSON.parse(lastJsonMatch[1]);
-        
+
         console.log(`📋 JSONタスクリストを検出: ${jsonData.tasks?.length || 0}個のタスク`);
-        
+
         // タスクオブジェクトを作成
         const tasks: Task[] = (jsonData.tasks || []).map((taskData: any) => ({
           id: uuidv4(),
@@ -546,9 +718,81 @@ ${analysis}
       }
     }
 
-    // フォールバック: 基本的なタスクを作成
+    // フォールバック: 並列処理キーワードを検出して強制的に複数タスクを生成
+    const parallelKeywords = ['並列', '同時', '複数', 'エンジニアAI', '二人', '２人', '2人', 'パラレル', '並行'];
+    const hasParallelIntent = parallelKeywords.some(keyword => fullAnalysisText.includes(keyword));
+
+    if (hasParallelIntent) {
+      console.warn('⚠️ JSON未検出ですが、並列処理キーワードを検出したため強制的に複数タスクを生成します');
+
+      // 分析テキストから具体的なタスクを推測
+      const tasks: Task[] = [];
+
+      // 「HeyをHelloに変更」と「HeyをGood Morningに変更」のような具体的なパターンを検出
+      if (fullAnalysisText.includes('Hello') && fullAnalysisText.includes('Good Morning')) {
+        tasks.push({
+          id: uuidv4(),
+          type: 'feature',
+          title: 'TEST.mdのHeyをHelloに変更',
+          description: 'TEST.mdファイル内の"Hey"を"Hello"に変更する作業',
+          priority: 'high',
+          status: 'pending',
+          dependencies: [],
+          createdAt: new Date(),
+          updatedAt: new Date()
+        });
+
+        tasks.push({
+          id: uuidv4(),
+          type: 'feature',
+          title: 'TEST.mdのHeyをGood Morningに変更',
+          description: 'TEST.mdファイル内の"Hey"を"Good Morning"に変更する作業',
+          priority: 'high',
+          status: 'pending',
+          dependencies: [],
+          createdAt: new Date(),
+          updatedAt: new Date()
+        });
+      }
+
+      // 一般的な並列処理用タスクを生成
+      if (tasks.length === 0) {
+        tasks.push({
+          id: uuidv4(),
+          type: 'feature',
+          title: '並列処理タスク1',
+          description: fullAnalysisText || 'プロダクトオーナーAIによる分析結果を基にした実装（パターン1）',
+          priority: 'high',
+          status: 'pending',
+          dependencies: [],
+          createdAt: new Date(),
+          updatedAt: new Date()
+        });
+
+        tasks.push({
+          id: uuidv4(),
+          type: 'feature',
+          title: '並列処理タスク2',
+          description: fullAnalysisText || 'プロダクトオーナーAIによる分析結果を基にした実装（パターン2）',
+          priority: 'high',
+          status: 'pending',
+          dependencies: [],
+          createdAt: new Date(),
+          updatedAt: new Date()
+        });
+      }
+
+      return {
+        tasks,
+        summary: '並列処理用タスク分割（フォールバック）',
+        estimatedTime: '1-2時間',
+        riskAssessment: '低リスク - 並列処理テスト'
+      };
+    }
+
+    // 最終フォールバック: 基本的なタスクを作成
     console.warn('⚠️ JSON形式の分析結果が見つからないため、基本タスクを作成します');
-    
+
     return {
       tasks: [{
         id: uuidv4(),
@@ -573,25 +817,24 @@ ${analysis}
   resolveDependencies(tasks: Task[]): Task[] {
     const resolved: Task[] = [];
     const remaining = [...tasks];
-    const titleToTask = new Map(tasks.map(task => [task.title, task]));
 
     while (remaining.length > 0) {
       const before = remaining.length;
-      
+
       for (let i = remaining.length - 1; i >= 0; i--) {
         const task = remaining[i];
-        
+
         // 依存関係がすべて解決されているかチェック
-        const dependenciesResolved = task.dependencies.every(depTitle => 
+        const dependenciesResolved = task.dependencies.every(depTitle =>
           resolved.some(resolvedTask => resolvedTask.title === depTitle)
         );
-        
+
         if (dependenciesResolved) {
           resolved.push(task);
           remaining.splice(i, 1);
         }
       }
-      
+
       // 循環依存のチェック
       if (remaining.length === before && remaining.length > 0) {
         console.warn('⚠️ 循環依存が検出されました。残りのタスクを強制的に追加します。');

@@ -98,10 +98,10 @@ export class ProductOwnerAI extends BaseAI {
 3. **設定ファイルの事前分割**: package.json、設定ファイルなどは1つのタスクで完結
 4. **テストファイルの独立**: 各機能のテストファイルは対応する実装タスクに含める
 
-### 例外的な並列処理（同一ファイル回避前提）
-- 「並列」「同時」「複数」キーワード検出時は、**異なるファイル**での実装に分割
-- 検証・比較目的の場合は、**別ディレクトリ**や**プロトタイプフォルダ**で実装
-- A/Bテストの場合は、**feature flags**や**条件分岐**での実装を推奨
+### 並列処理の考慮
+- 複数の独立した機能要件がある場合は、並列開発の可能性を検討
+- ただし、ファイル競合の回避を最優先とする
+- 適切な粒度でタスクを分割し、チームの生産性を最大化
 
 ## 📋 エンジニアへの指示品質
 
@@ -151,8 +151,8 @@ export class ProductOwnerAI extends BaseAI {
         }
       }
 
-      // タスクを解析・作成（実際のLLMの応答メッセージとユーザー要求を使用）
-      const result = this.extractTaskAnalysisResultWithUserRequest(messages, userRequest);
+      // タスクを解析・作成
+      const result = this.extractTaskAnalysisResult(messages);
 
       // 概要ファイルを作成
       await instructionManager.createOverviewFile(userRequest, fullAnalysis);
@@ -171,7 +171,7 @@ export class ProductOwnerAI extends BaseAI {
 
     } catch (error) {
       this.error('❌ 分析エラー', { error: error instanceof Error ? error.message : String(error) });
-      throw new Error(`プロダクトオーナーAIの分析に失敗しました: ${error}`);
+      throw error; // エラーをそのまま伝播
     }
   }
 
@@ -359,72 +359,28 @@ export class ProductOwnerAI extends BaseAI {
    * 分析用プロンプトを構築
    */
   private buildAnalysisPrompt(userRequest: string): string {
-    // ユーザー要求から並列処理キーワードを検出
-    const parallelKeywords = ['並列', '同時', '複数', 'エンジニアAI', '二人', '２人', '2人', 'パラレル', '並行'];
-    const hasParallelIntent = parallelKeywords.some(keyword => userRequest.includes(keyword));
-
-    // 同一ファイルに対する複数の変更パターンを検出
-    const hasMultipleChanges = userRequest.includes('と') || userRequest.includes('、') || userRequest.includes('または');
-
-    let parallelInstructions = '';
-    if (hasParallelIntent) {
-      parallelInstructions = `
-## 🚨 並列処理モード検出 🚨
-ユーザーが明示的に並列処理を要求しています。以下の特別な指針に従ってください：
-
-### 必須：並列タスク分割ルール
-1. **同一ファイルに対する複数の変更**: 各変更パターンを独立したタスクに分割する
-2. **検証・テスト目的**: 異なるアプローチを試す場合は、それぞれを独立したタスクとする
-3. **比較検証**: 複数の実装方法を試す場合は、各実装を独立したタスクとする
-4. **最小2タスク**: どんなに小さな作業でも、最低2つのタスクに分割する
-
-### 例：「HeyをHelloに変更とGood Morningに変更」の場合
-→ タスク1: TEST.mdのHeyをHelloに変更
-→ タスク2: TEST.mdのHeyをGood Morningに変更
-（異なるワークツリーで実行し、結果を比較検証）
-`;
-    }
-
     return `
 プロダクトオーナーとして、以下のユーザー要求を包括的に分析し、エンジニアチームに対する具体的な実装指示を策定してください：
 
 ## 📝 ユーザー要求
 ${userRequest}
-${parallelInstructions}
 
-## 🔍 段階的分析手順
+## 🔍 分析プロセス
 
-### Phase 1: コードベース理解 (必須)
-1. **プロジェクト構造の把握**
-   - Read、Glob、Grepツールを使用してコードベースを調査
-   - アーキテクチャパターン、フレームワーク、技術スタックの特定
-   - 既存の類似機能の実装方法とベストプラクティスの確認
+### 1. ユーザー要求の理解
+- 要求の本質的な目的と期待される成果を理解
+- 潜在的なニーズや制約条件を考慮
+- プロジェクトのコンテキストと優先順位を把握
 
-2. **品質基準の確認**
-   - テスト戦略、コーディング規約、デプロイメント手順の調査
-   - セキュリティ、パフォーマンス、可用性の要件確認
+### 2. 技術的実現可能性の検討
+- 既存のコードベースを調査し、最適な実装方法を検討
+- 必要な技術やツールを特定
+- リスクと制約事項を評価
 
-### Phase 2: 要件エンジニアリング
-1. **ニーズ分析**
-   - ユーザー要求の背景とビジネス価値の理解
-   - 明示的要件と暗黙的要件の識別
-   - ステークホルダーの期待値と制約条件の整理
-
-2. **技術要件定義**
-   - 機能要件と非機能要件の詳細化
-   - インターフェース設計、データモデル、API仕様の検討
-   - セキュリティ、スケーラビリティ、監視可能性の考慮
-
-### Phase 3: 設計とタスク分割戦略
-1. **アーキテクチャ設計**
-   - 既存システムとの整合性を考慮した設計
-   - 拡張性と保守性を重視したモジュール分割
-   - 技術負債の軽減とコード品質の向上
-
-2. **並列開発最適化**
-   - 独立性の高いコンポーネント単位での分割
-   - 依存関係の最小化とブロッカーの事前回避
-   - エンジニア間のコラボレーション効率の最大化
+### 3. タスク設計
+- 要求を実現するために必要な作業を洗い出し
+- 各作業を適切な粒度のタスクに分割
+- タスク間の依存関係を明確化
 
 ## 🎯 タスク分割とアサイン戦略
 
@@ -606,308 +562,25 @@ ${parallelInstructions}
    * タスクの詳細指示を生成
    */
   private async generateDetailedInstructions(task: Task, userRequest: string, analysis: string): Promise<string> {
-    // メタデータから詳細情報を取得
-    const metadata = task.metadata;
-    
-    let instructions = `
-# 📋 タスク実装指示書
+    // シンプルで明確な指示書を生成
+    return `
+# タスク: ${task.title}
 
-## 🎯 実装目標
-${task.description}
-
-## 📝 元のユーザー要求
+## ユーザー要求
 ${userRequest}
 
-## 🔧 技術要件と仕様
-${this.generateTechnicalSpecs(metadata)}
+## このタスクの内容
+${task.description}
 
-## 📐 実装手順
-${this.generateImplementationSteps(metadata)}
-
-## 🧪 品質基準とテスト要件
-${this.generateQualityStandards(metadata)}
-
-## ✅ 受け入れ基準
-${this.generateAcceptanceCriteria(metadata)}
-
-## 👨‍💻 必要スキルと前提知識
-${this.generateSkillRequirements(metadata)}
-
-## ⏱️ 見積もり時間
-${metadata?.estimatedHours ? `${metadata.estimatedHours}時間` : '未定'}
-
-## 🔗 依存関係とブロッカー
-${task.dependencies.length > 0 ? task.dependencies.map(dep => `- ${dep}`).join('\n') : '依存関係なし'}
-
-## 🎯 プロダクトオーナーAIによる分析
+## プロダクトオーナーによる分析
 ${analysis}
 
-## 🚨 重要な注意事項
-- 既存のコード規約とアーキテクチャパターンに従ってください
-- セキュリティ、パフォーマンス、保守性を考慮した実装を行ってください
-- 変更に対する適切なテストを作成してください
-- 実装完了前に必ず動作確認を行ってください
-
-## 📊 完了確認チェックリスト
-- [ ] 実装目標が達成されている
-- [ ] 全ての受け入れ基準を満たしている
-- [ ] 適切なテストが作成・実行されている
-- [ ] コード品質基準を満たしている
-- [ ] ドキュメントが更新されている（必要に応じて）
-- [ ] 変更がコミットされている
+## 実装における注意事項
+- 既存のコードベースの規約とパターンに従ってください
+- セキュリティとパフォーマンスを考慮してください
+- 適切なエラーハンドリングとテストを実装してください
+- 必要に応じてドキュメントを更新してください
 `;
-
-    return instructions;
-  }
-
-  /**
-   * 技術仕様セクションを生成
-   */
-  private generateTechnicalSpecs(metadata?: Task['metadata']): string {
-    if (!metadata?.technicalSpecs) {
-      return '詳細な技術仕様は実装時に決定してください。既存のコードベースのパターンに従ってください。';
-    }
-
-    let specs = '';
-    const tech = metadata.technicalSpecs;
-
-    if (tech.technologies) {
-      specs += `\n### 使用技術
-${tech.technologies.map(t => `- ${t}`).join('\n')}`;
-    }
-
-    if (tech.patterns) {
-      specs += `\n### 適用デザインパターン
-${tech.patterns.map(p => `- ${p}`).join('\n')}`;
-    }
-
-    if (tech.interfaces) {
-      specs += `\n### インターフェース定義
-${tech.interfaces.map(i => `- ${i}`).join('\n')}`;
-    }
-
-    return specs || '技術仕様の詳細は実装時に決定してください。';
-  }
-
-  /**
-   * 実装手順セクションを生成
-   */
-  private generateImplementationSteps(metadata?: Task['metadata']): string {
-    if (metadata?.implementation?.steps) {
-      let steps = '### 実装ステップ\n';
-      metadata.implementation.steps.forEach((step, index) => {
-        steps += `${index + 1}. ${step}\n`;
-      });
-
-      if (metadata.implementation.checkpoints) {
-        steps += '\n### チェックポイント\n';
-        metadata.implementation.checkpoints.forEach(checkpoint => {
-          steps += `- ${checkpoint}\n`;
-        });
-      }
-
-      return steps;
-    }
-
-    // デフォルトの実装手順
-    return `### 実装ステップ
-1. **要件分析**: タスクの要件を詳しく分析し、技術的な実現方法を検討
-2. **コードベース調査**: 既存のコードベースを調査し、類似機能の実装パターンを確認
-3. **設計**: 最適なアプローチを決定し、実装計画を策定
-4. **実装**: 段階的に機能を実装し、各段階で動作確認を実施
-5. **テスト**: 適切なテストを作成し、品質を確保
-6. **レビュー**: 実装内容をレビューし、改善点があれば修正`;
-  }
-
-  /**
-   * 品質基準セクションを生成
-   */
-  private generateQualityStandards(metadata?: Task['metadata']): string {
-    if (metadata?.implementation?.testRequirements) {
-      let standards = '### テスト要件\n';
-      metadata.implementation.testRequirements.forEach(req => {
-        standards += `- ${req}\n`;
-      });
-      return standards;
-    }
-
-    return `### 基本品質基準
-- コードの可読性と保守性を確保
-- 適切なエラーハンドリングを実装
-- セキュリティベストプラクティスを遵守
-- パフォーマンスを考慮した実装
-- 適切なテストカバレッジを維持`;
-  }
-
-  /**
-   * 受け入れ基準セクションを生成
-   */
-  private generateAcceptanceCriteria(metadata?: Task['metadata']): string {
-    if (metadata?.acceptanceCriteria) {
-      return metadata.acceptanceCriteria.map(criteria => `- ${criteria}`).join('\n');
-    }
-
-    return `- 実装が仕様通りに動作する
-- 既存機能に悪影響を与えない
-- 適切なテストが通過する
-- コード品質基準を満たす`;
-  }
-
-  /**
-   * スキル要件セクションを生成
-   */
-  private generateSkillRequirements(metadata?: Task['metadata']): string {
-    if (metadata?.skillRequirements) {
-      return metadata.skillRequirements.map(skill => `- ${skill}`).join('\n');
-    }
-
-    return `- 使用されている技術スタックの基本知識
-- 既存コードベースの理解
-- 基本的なソフトウェア開発スキル`;
-  }
-
-  /**
-   * Claude Code SDKの応答からタスク分析結果を抽出（ユーザー要求を活用）
-   */
-  private extractTaskAnalysisResultWithUserRequest(messages: SDKMessage[], userRequest: string): TaskAnalysisResult {
-    // 既存の処理を使用
-    const baseResult = this.extractTaskAnalysisResult(messages);
-
-    // 並列処理キーワードをユーザー要求から直接検出
-    const parallelKeywords = ['並列', '同時', '複数', 'エンジニアAI', '二人', '２人', '2人', 'パラレル', '並行'];
-    const hasParallelIntent = parallelKeywords.some(keyword => userRequest.includes(keyword));
-
-    // 既に複数タスクが生成されている場合はそのまま返す
-    if (baseResult.tasks.length > 1) {
-      this.success(`✅ 複数タスクを生成済み: ${baseResult.tasks.length}個のタスク`);
-      return baseResult;
-    }
-
-    // 並列処理が要求されているが単一タスクの場合、ユーザー要求を解析して分割
-    if (hasParallelIntent) {
-      this.info('🔄 ユーザー要求を直接解析して並列タスクを生成');
-
-      const parallelTasks = this.createParallelTasksFromUserRequest(userRequest);
-      if (parallelTasks.length > 1) {
-        return {
-          tasks: parallelTasks,
-          summary: `ユーザー要求「${userRequest}」の並列処理分析`,
-          estimatedTime: '1-2時間',
-          riskAssessment: '低リスク - 並列処理テスト'
-        };
-      }
-    }
-
-    return baseResult;
-  }
-
-  /**
-   * ユーザー要求から直接並列タスクを生成
-   */
-  private createParallelTasksFromUserRequest(userRequest: string): Task[] {
-    const tasks: Task[] = [];
-
-    // パターン1: 「HeyをHelloに変更とGood Morningに変更」のような具体的なパターン
-    if (userRequest.includes('Hello') && userRequest.includes('Good Morning')) {
-      tasks.push({
-        id: uuidv4(),
-        type: 'feature',
-        title: 'TEST.mdのHeyをHelloに変更',
-        description: 'TEST.mdファイル内の"Hey"を"Hello"に変更する作業',
-        priority: 'high',
-        status: 'pending',
-        dependencies: [],
-        createdAt: new Date(),
-        updatedAt: new Date()
-      });
-
-      tasks.push({
-        id: uuidv4(),
-        type: 'feature',
-        title: 'TEST.mdのHeyをGood Morningに変更',
-        description: 'TEST.mdファイル内の"Hey"を"Good Morning"に変更する作業',
-        priority: 'high',
-        status: 'pending',
-        dependencies: [],
-        createdAt: new Date(),
-        updatedAt: new Date()
-      });
-
-      this.info('📋 具体的な並列タスクを生成: Hello & Good Morning');
-      return tasks;
-    }
-
-    // パターン2: 「AとB」のような形式
-    const andPattern = /(.+?)と(.+?)を/g;
-    const andMatches = [...userRequest.matchAll(andPattern)];
-    if (andMatches.length > 0) {
-      for (const match of andMatches) {
-        const task1Content = match[1];
-        const task2Content = match[2];
-
-        tasks.push({
-          id: uuidv4(),
-          type: 'feature',
-          title: `${task1Content}の処理`,
-          description: `${task1Content}に関する作業`,
-          priority: 'high',
-          status: 'pending',
-          dependencies: [],
-          createdAt: new Date(),
-          updatedAt: new Date()
-        });
-
-        tasks.push({
-          id: uuidv4(),
-          type: 'feature',
-          title: `${task2Content}の処理`,
-          description: `${task2Content}に関する作業`,
-          priority: 'high',
-          status: 'pending',
-          dependencies: [],
-          createdAt: new Date(),
-          updatedAt: new Date()
-        });
-      }
-
-      if (tasks.length > 0) {
-        this.info(`📋 「と」パターンから並列タスクを生成: ${tasks.length}個`);
-        return tasks;
-      }
-    }
-
-    // パターン3: 一般的な並列処理（エンジニアAI数を指定されている場合）
-    if (userRequest.includes('エンジニアAI') && (userRequest.includes('二人') || userRequest.includes('２人') || userRequest.includes('2人'))) {
-      tasks.push({
-        id: uuidv4(),
-        type: 'feature',
-        title: 'エンジニアAI-1の作業',
-        description: `${userRequest} - エンジニアAI-1が担当する部分`,
-        priority: 'high',
-        status: 'pending',
-        dependencies: [],
-        createdAt: new Date(),
-        updatedAt: new Date()
-      });
-
-      tasks.push({
-        id: uuidv4(),
-        type: 'feature',
-        title: 'エンジニアAI-2の作業',
-        description: `${userRequest} - エンジニアAI-2が担当する部分`,
-        priority: 'high',
-        status: 'pending',
-        dependencies: [],
-        createdAt: new Date(),
-        updatedAt: new Date()
-      });
-
-      this.info('📋 エンジニアAI複数指定から並列タスクを生成');
-      return tasks;
-    }
-
-    this.warn('⚠️ 具体的な並列パターンを検出できませんでした');
-    return tasks;
   }
 
   /**
@@ -998,100 +671,13 @@ ${tech.interfaces.map(i => `- ${i}`).join('\n')}`;
       } catch (error) {
         this.error('❌ JSON解析エラー', { error: error instanceof Error ? error.message : String(error) });
         this.error('❌ 問題のあるJSON', { json: lastJsonMatch[1] });
+        throw new Error(`タスク分析結果のJSON解析に失敗しました: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
 
-    // フォールバック: 並列処理キーワードを検出して強制的に複数タスクを生成
-    const parallelKeywords = ['並列', '同時', '複数', 'エンジニアAI', '二人', '２人', '2人', 'パラレル', '並行'];
-    const hasParallelIntent = parallelKeywords.some(keyword => fullAnalysisText.includes(keyword));
-
-    if (hasParallelIntent) {
-      this.warn('⚠️ JSON未検出ですが、並列処理キーワードを検出したため強制的に複数タスクを生成します');
-
-      // 分析テキストから具体的なタスクを推測
-      const tasks: Task[] = [];
-
-      // 「HeyをHelloに変更」と「HeyをGood Morningに変更」のような具体的なパターンを検出
-      if (fullAnalysisText.includes('Hello') && fullAnalysisText.includes('Good Morning')) {
-        tasks.push({
-          id: uuidv4(),
-          type: 'feature',
-          title: 'TEST.mdのHeyをHelloに変更',
-          description: 'TEST.mdファイル内の"Hey"を"Hello"に変更する作業',
-          priority: 'high',
-          status: 'pending',
-          dependencies: [],
-          createdAt: new Date(),
-          updatedAt: new Date()
-        });
-
-        tasks.push({
-          id: uuidv4(),
-          type: 'feature',
-          title: 'TEST.mdのHeyをGood Morningに変更',
-          description: 'TEST.mdファイル内の"Hey"を"Good Morning"に変更する作業',
-          priority: 'high',
-          status: 'pending',
-          dependencies: [],
-          createdAt: new Date(),
-          updatedAt: new Date()
-        });
-      }
-
-      // 一般的な並列処理用タスクを生成
-      if (tasks.length === 0) {
-        tasks.push({
-          id: uuidv4(),
-          type: 'feature',
-          title: '並列処理タスク1',
-          description: fullAnalysisText || 'プロダクトオーナーAIによる分析結果を基にした実装（パターン1）',
-          priority: 'high',
-          status: 'pending',
-          dependencies: [],
-          createdAt: new Date(),
-          updatedAt: new Date()
-        });
-
-        tasks.push({
-          id: uuidv4(),
-          type: 'feature',
-          title: '並列処理タスク2',
-          description: fullAnalysisText || 'プロダクトオーナーAIによる分析結果を基にした実装（パターン2）',
-          priority: 'high',
-          status: 'pending',
-          dependencies: [],
-          createdAt: new Date(),
-          updatedAt: new Date()
-        });
-      }
-
-      return {
-        tasks,
-        summary: '並列処理用タスク分割（フォールバック）',
-        estimatedTime: '1-2時間',
-        riskAssessment: '低リスク - 並列処理テスト'
-      };
-    }
-
-    // 最終フォールバック: 基本的なタスクを作成
-    this.warn('⚠️ JSON形式の分析結果が見つからないため、基本タスクを作成します');
-
-    return {
-      tasks: [{
-        id: uuidv4(),
-        type: 'feature',
-        title: 'ユーザー要求の実装',
-        description: fullAnalysisText || 'プロダクトオーナーAIによる分析結果を基にした実装',
-        priority: 'high',
-        status: 'pending',
-        dependencies: [],
-        createdAt: new Date(),
-        updatedAt: new Date()
-      }],
-      summary: 'プロダクトオーナーAIによる基本分析',
-      estimatedTime: '未定',
-      riskAssessment: '要再評価'
-    };
+    // JSON形式の分析結果が見つからない場合はエラー
+    this.error('❌ JSON形式の分析結果が見つかりませんでした');
+    throw new Error('プロダクトオーナーAIがJSON形式でタスクリストを出力できませんでした。分析結果の形式を確認してください。');
   }
 
   /**

@@ -383,17 +383,40 @@ ${engineerResult.filesChanged.length > 0
 まず、変更されたファイルを詳しく確認してください：
 
 \`\`\`bash
-# 変更状況を確認
+# 1. 直近のコミット履歴を確認（重要）
+git log --oneline -n 10
+git log --oneline --graph -n 20
+
+# 2. 最新のコミットの詳細を確認
+git show HEAD
+git show HEAD~1
+git show HEAD~2
+
+# 3. 変更状況を確認
 git status
 git diff --staged
 
-# 元ブランチとの差分を確認（これが重要）
+# 4. 元ブランチとの差分を確認（これが重要）
 # まず、現在のブランチがどこから分岐したか確認
 git merge-base HEAD @{-1} 2>/dev/null || git merge-base HEAD main 2>/dev/null || git merge-base HEAD master
 
 # 分岐元との差分を確認
 git diff $(git merge-base HEAD @{-1} 2>/dev/null || git merge-base HEAD main 2>/dev/null || git merge-base HEAD master)...HEAD
+
+# 5. 変更されたファイルの内容を確認
+# 変更されたファイルごとに内容を読み込んで、実際の変更を理解してください
 \`\`\`
+
+**重要**: タスクの説明と実際のコミット内容が異なる場合があります。
+例：タスクで「HeyをGood Morningに変更」とあっても、実際には「HelloをGood Morningに変更」かもしれません。
+コミット履歴と実際のファイル内容を確認し、タスクの意図が達成されているかを判断してください。
+
+特に以下のケースに注意：
+- コンフリクト解消のコミットがある場合（"resolve:", "Merge branch" などのコミットメッセージ）
+- 複数のコミットで段階的に変更されている場合
+- 元のファイルの内容がタスク説明と異なっていた場合
+
+これらの場合は、最終的な状態がタスクの意図を満たしているかで判断してください。
 
 ### 2. 必須チェック項目の確認
 以下を順番に確認してください：
@@ -447,9 +470,19 @@ npm run lint
 
 以下の基準で判定してください：
 
-- **APPROVED**: 全ての必須項目をクリアし、品質基準を満たしている
-- **CHANGES_REQUESTED**: 修正が必要な問題がある
-- **COMMENTED**: 問題はないが改善提案がある
+- **APPROVED**: 
+  - タスクの意図が達成されている（文字通りの要求ではなく、意図を重視）
+  - 全ての必須項目をクリアし、品質基準を満たしている
+  - コンフリクト解消などで要求と実装が異なる場合でも、目的が達成されていればAPPROVED
+  
+- **CHANGES_REQUESTED**: 
+  - タスクの意図が達成されていない
+  - 修正が必要な問題がある
+  - ただし、単に文言が異なるだけで意図が達成されている場合は、CHANGES_REQUESTEDにしない
+  
+- **COMMENTED**: 
+  - タスクは達成されているが改善提案がある
+  - コードの品質向上のための提案がある場合
 
 ## 📋 レビューレポートの作成
 

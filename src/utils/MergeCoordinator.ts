@@ -63,6 +63,7 @@ export class MergeCoordinator {
   private readonly mergeMutex = new AsyncMutex();
   private readonly config: SystemConfig;
   private readonly pendingConflictResolutions = new Map<string, Promise<EngineerResult>>();
+  private readonly completedConflictResolutions = new Map<string, EngineerResult>();
   private readonly taskRegistry = new Map<string, Task>();
 
   constructor(config: SystemConfig) {
@@ -154,6 +155,8 @@ export class MergeCoordinator {
       // 結果に再レビューが必要であることを示すマーカーを追加
       result.needsReReview = true;
       
+      // 完了した結果を保存してから pending から削除
+      this.completedConflictResolutions.set(task.id, result);
       this.pendingConflictResolutions.delete(task.id);
       return result;
     } catch (error) {
@@ -395,7 +398,9 @@ export class MergeCoordinator {
     const pendingTaskIds = this.getPendingConflictResolutions();
     
     if (pendingTaskIds.length === 0) {
-      return results;
+      // 保留中のタスクがない場合は、完了済みの結果を返す
+      console.log(`ℹ️ 保留中のコンフリクト解消タスクはありません。完了済み: ${this.completedConflictResolutions.size}件`);
+      return new Map(this.completedConflictResolutions);
     }
 
     console.log(`🔄 保留中のコンフリクト解消処理を待機中: ${pendingTaskIds.length}件`);
@@ -410,6 +415,14 @@ export class MergeCoordinator {
     await Promise.all(promises);
     
     console.log(`✅ 全てのコンフリクト解消処理が完了しました`);
+    
+    // 完了済みの結果もマージして返す
+    for (const [taskId, result] of this.completedConflictResolutions) {
+      if (!results.has(taskId)) {
+        results.set(taskId, result);
+      }
+    }
+    
     return results;
   }
 

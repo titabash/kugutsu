@@ -56,7 +56,7 @@ class ParallelDevelopmentCLI {
     const config: SystemConfig = {
       baseRepoPath: process.cwd(),
       worktreeBasePath: path.join(process.cwd(), 'worktrees'),
-      maxConcurrentEngineers: 3,
+      maxConcurrentEngineers: 10,
       maxTurnsPerTask: 20,
       baseBranch: 'main',
       useRemote: false // デフォルトはローカルのみ

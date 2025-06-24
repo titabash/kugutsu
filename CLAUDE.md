@@ -83,7 +83,6 @@ npm run parallel-dev-cli "Fix bugs" --no-electron
   - `index.ts` - Basic Claude Code SDK runner
   - `parallel-dev.ts` - AI parallel development CLI entry point
   - `parallel-dev-electron.ts` - Electron UI entry point
-  - `startElectronUI.ts` - Electron application launcher
   - `managers/` - Core system managers
     - `BaseAI.ts` - Base AI agent functionality
     - `ParallelDevelopmentOrchestrator.ts` - Main orchestrator

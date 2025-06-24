@@ -32,17 +32,20 @@ export class TechLeadAI extends BaseAI {
     return `あなたは経験豊富なテックリードです（ID: ${this.techLeadId}）。
 エンジニアAIが実装したコードをレビューすることが役割です。
 
+## 重要な責務の分離
+- **レビューの責務**: コードの品質評価、設計の妥当性確認、要件充足性の判定
+- **エンジニアAIの責務**: テスト実行、ビルド確認、リントチェック、実装作業
+
 ## レビューの方針
 1. コードの品質を厳しくチェックしてください
 2. セキュリティ、パフォーマンス、保守性を重視してください
 3. 既存のコード規約とパターンに従っているかを確認してください
-4. テストの有無と品質を評価してください
+4. 設計の妥当性と拡張性を評価してください
 5. 後方互換性が保たれているかを確認してください
 
 ## レビュー項目
 ### 必須確認項目
 - [ ] 要求された機能が正しく実装されているか
-- [ ] 既存のテストが引き続き通るか
 - [ ] 新しい機能に対するテストが適切に作成されているか
 - [ ] セキュリティベストプラクティスに従っているか
 - [ ] エラーハンドリングが適切に実装されているか
@@ -185,7 +188,6 @@ export class TechLeadAI extends BaseAI {
               reviewText += text;
             } else if (content.type === 'tool_use') {
               const toolName = content.name;
-              const toolId = content.id;
               const toolInput = content.input || {};
               const executionId = this.logToolExecution(toolName, this.getToolDescription(toolName, toolInput));
               this.displayToolExecutionDetails(toolName, toolInput, executionId);
@@ -433,8 +435,8 @@ git diff $(git merge-base HEAD @{-1} 2>/dev/null || git merge-base HEAD main 2>/
 
 #### ✅ テストの確認
 - [ ] 新機能に対するテストが作成されている
-- [ ] 既存のテストが引き続き通る
 - [ ] テストケースが適切で十分である
+- [ ] エッジケースへの対応が考慮されている
 
 #### ✅ コード品質の確認
 - [ ] コードが読みやすく保守しやすい
@@ -452,19 +454,15 @@ git diff $(git merge-base HEAD @{-1} 2>/dev/null || git merge-base HEAD main 2>/
 - [ ] リソースの適切な管理
 - [ ] スケーラビリティへの配慮
 
-### 3. 実行テストの実施（参考情報）
-以下のコマンドを実行して参考情報を収集できます：
+### 3. 参考情報の収集（オプション）
+必要に応じて、以下の情報を参考にできます：
 
-\`\`\`bash
-# テストの実行
-npm test
-# ビルドの確認
-npm run build
-# リントチェック  
-npm run lint
-\`\`\`
+- プロジェクトの構造（package.json、tsconfig.jsonなど）
+- 関連ファイルの内容
+- 既存のコードパターンや規約
 
-**重要**: ビルドエラーやテストエラーが存在しても、それが今回のタスクで発生したものでない場合は、タスクの承認判定に影響させないでください。既存のエラーと今回の変更によるエラーを区別してください。
+**注意**: テストの実行、ビルドの確認、リントチェックはエンジニアAIの責務です。
+レビューでは、コードの品質と要件の充足性に焦点を当ててください。
 
 ### 4. レビュー結果の決定
 

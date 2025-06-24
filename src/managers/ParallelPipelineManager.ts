@@ -39,7 +39,11 @@ export class ParallelPipelineManager {
     this.developmentQueue = new TaskQueue<DevelopmentQueueItem>(config.maxConcurrentEngineers);
     
     const reviewWorkflow = new ReviewWorkflow(gitManager, config);
-    this.reviewQueue = new ReviewQueue(reviewWorkflow, config.maxConcurrentEngineers);
+    this.reviewQueue = new ReviewQueue(
+      reviewWorkflow, 
+      config.maxConcurrentEngineers,
+      config.maxReviewRetries ?? 5
+    );
     
     this.mergeQueue = new MergeQueue(gitManager, config);
 

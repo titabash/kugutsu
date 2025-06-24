@@ -25,13 +25,16 @@ export class ReviewQueue {
   private eventEmitter: TaskEventEmitter;
   private maxConcurrentReviews: number;
   private reviewHistory = new Map<string, ReviewResult[]>();
+  private maxRetries: number;
 
   constructor(
     reviewWorkflow: ReviewWorkflow, 
-    maxConcurrentReviews: number = 2
+    maxConcurrentReviews: number = 2,
+    maxRetries: number = 5
   ) {
     this.reviewWorkflow = reviewWorkflow;
     this.maxConcurrentReviews = maxConcurrentReviews;
+    this.maxRetries = maxRetries;
     this.queue = new TaskQueue<ReviewQueueItem>(maxConcurrentReviews);
     this.eventEmitter = TaskEventEmitter.getInstance();
     
@@ -102,7 +105,7 @@ export class ReviewQueue {
           r => r.status === 'CHANGES_REQUESTED'
         );
         
-        if (needsRevision && item.retryCount < 3) {
+        if (needsRevision && item.retryCount < this.maxRetries) {
           // 修正が必要な場合は開発キューに戻す
           console.log(`🔄 修正要求 - 開発キューに戻す: ${item.task.title}`);
           

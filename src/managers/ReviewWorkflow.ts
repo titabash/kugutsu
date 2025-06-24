@@ -13,13 +13,13 @@ export class ReviewWorkflow {
   private readonly gitManager: GitWorktreeManager;
   private readonly config: SystemConfig;
   private readonly maxRetries: number;
-  private readonly maxConflictResolutionRetries: number = 2;
+  private readonly maxConflictResolutionRetries: number = 5;
   private readonly mergeCoordinator: MergeCoordinator;
 
-  constructor(gitManager: GitWorktreeManager, config: SystemConfig, maxRetries: number = 3) {
+  constructor(gitManager: GitWorktreeManager, config: SystemConfig, maxRetries?: number) {
     this.gitManager = gitManager;
     this.config = config;
-    this.maxRetries = maxRetries;
+    this.maxRetries = maxRetries ?? config.maxReviewRetries ?? 5;
     this.mergeCoordinator = new MergeCoordinator(config);
   }
 

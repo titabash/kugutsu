@@ -79,6 +79,7 @@ export interface SystemConfig {
   maxTurnsPerTask: number;
   baseBranch: string;
   useRemote: boolean;
+  maxReviewRetries?: number; // レビューループの最大リトライ回数（デフォルト: 5）
 }
 
 /**

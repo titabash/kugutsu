@@ -10,7 +10,7 @@ import * as path from 'path';
  * AI並列開発システムのElectron対応エントリーポイント
  */
 class ParallelDevelopmentElectronCLI {
-  
+
   /**
    * 使用方法を表示
    */
@@ -27,7 +27,7 @@ class ParallelDevelopmentElectronCLI {
 オプション:
   --base-repo <path>        ベースリポジトリのパス (デフォルト: .)
   --worktree-base <path>    Worktreeベースパス (デフォルト: ./worktrees)
-  --max-engineers <num>     最大同時エンジニア数 (デフォルト: 3)
+  --max-engineers <num>     最大同時エンジニア数 (デフォルト: 10, 範囲: 1-100)
   --max-turns <num>         タスクあたりの最大ターン数 (デフォルト: 20)
   --base-branch <branch>    ベースブランチ (デフォルト: main)
   --use-remote              リモートリポジトリを使用 (デフォルト: ローカルのみ)
@@ -95,7 +95,7 @@ class ParallelDevelopmentElectronCLI {
       } else if (arg === '--worktree-base') {
         config.worktreeBasePath = path.resolve(args[++i] || './worktrees');
       } else if (arg === '--max-engineers') {
-        config.maxConcurrentEngineers = parseInt(args[++i] || '3', 10);
+        config.maxConcurrentEngineers = parseInt(args[++i] || '10', 10);
       } else if (arg === '--max-turns') {
         config.maxTurnsPerTask = parseInt(args[++i] || '20', 10);
       } else if (arg === '--base-branch') {
@@ -120,8 +120,8 @@ class ParallelDevelopmentElectronCLI {
       throw new Error(`指定されたパスはGitリポジトリではありません: ${config.baseRepoPath}`);
     }
 
-    if (config.maxConcurrentEngineers < 1 || config.maxConcurrentEngineers > 10) {
-      throw new Error('最大同時エンジニア数は1〜10の間で指定してください');
+    if (config.maxConcurrentEngineers < 1 || config.maxConcurrentEngineers > 100) {
+      throw new Error('最大同時エンジニア数は1〜100の間で指定してください');
     }
 
     if (config.maxTurnsPerTask < 1 || config.maxTurnsPerTask > 50) {
@@ -167,26 +167,26 @@ class ParallelDevelopmentElectronCLI {
 
       // オーケストレーターの作成
       const orchestrator = new ParallelDevelopmentOrchestratorWithElectron(config, visualUI, electronUI);
-      
+
       // シグナルハンドラーを設定（Ctrl+Cなどで適切にクリーンアップ）
       const cleanup_handler = async () => {
         console.log('\n🛑 システム停止中...');
-        
+
         // Electronプロセスを終了
         if (electronUI) {
           electronLogAdapter.stop();
         }
-        
+
         // オーケストレーターのクリーンアップ
         orchestrator.stopLogViewer();
         await orchestrator.cleanup(true);
-        
+
         process.exit(0);
       };
 
       process.on('SIGINT', cleanup_handler);
       process.on('SIGTERM', cleanup_handler);
-      
+
       // 並列開発を実行
       const result = await orchestrator.executeUserRequest(userRequest);
 

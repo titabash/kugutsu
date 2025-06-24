@@ -9,7 +9,7 @@ import * as path from 'path';
  * AI並列開発システムのメインエントリーポイント
  */
 class ParallelDevelopmentCLI {
-  
+
   /**
    * 使用方法を表示
    */
@@ -26,7 +26,7 @@ class ParallelDevelopmentCLI {
 オプション:
   --base-repo <path>        ベースリポジトリのパス (デフォルト: .)
   --worktree-base <path>    Worktreeベースパス (デフォルト: ./worktrees)
-  --max-engineers <num>     最大同時エンジニア数 (デフォルト: 3)
+  --max-engineers <num>     最大同時エンジニア数 (デフォルト: 10, 範囲: 1-100)
   --max-turns <num>         タスクあたりの最大ターン数 (デフォルト: 20)
   --base-branch <branch>    ベースブランチ (デフォルト: main)
   --use-remote              リモートリポジトリを使用 (デフォルト: ローカルのみ)
@@ -83,7 +83,7 @@ class ParallelDevelopmentCLI {
       } else if (arg === '--worktree-base') {
         config.worktreeBasePath = path.resolve(args[++i] || './worktrees');
       } else if (arg === '--max-engineers') {
-        config.maxConcurrentEngineers = parseInt(args[++i] || '3', 10);
+        config.maxConcurrentEngineers = parseInt(args[++i] || '10', 10);
       } else if (arg === '--max-turns') {
         config.maxTurnsPerTask = parseInt(args[++i] || '20', 10);
       } else if (arg === '--base-branch') {
@@ -112,8 +112,8 @@ class ParallelDevelopmentCLI {
     }
 
     // 数値の範囲チェック
-    if (config.maxConcurrentEngineers < 1 || config.maxConcurrentEngineers > 10) {
-      return { valid: false, error: '最大同時エンジニア数は1-10の範囲で指定してください' };
+    if (config.maxConcurrentEngineers < 1 || config.maxConcurrentEngineers > 100) {
+      return { valid: false, error: '最大同時エンジニア数は1-100の範囲で指定してください' };
     }
 
     if (config.maxTurnsPerTask < 5 || config.maxTurnsPerTask > 50) {
@@ -184,10 +184,10 @@ class ParallelDevelopmentCLI {
       console.log(`📝 分析概要: ${analysis.summary}`);
       console.log(`⏱️ 見積もり時間: ${analysis.estimatedTime}`);
       console.log(`📋 総タスク数: ${analysis.tasks.length}`);
-      
+
       const successCount = results.filter(r => r.success).length;
       const failCount = results.filter(r => !r.success).length;
-      
+
       console.log(`✅ 成功したタスク: ${successCount}`);
       console.log(`❌ 失敗したタスク: ${failCount}`);
 
@@ -204,7 +204,7 @@ class ParallelDevelopmentCLI {
       // ファイル変更のサマリー
       const allChangedFiles = new Set<string>();
       results.forEach(r => r.filesChanged.forEach(f => allChangedFiles.add(f)));
-      
+
       if (allChangedFiles.size > 0) {
         console.log(`\n📁 変更されたファイル (${allChangedFiles.size}件):`);
         Array.from(allChangedFiles).forEach(file => {

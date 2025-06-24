@@ -4,6 +4,7 @@ import { EngineerAI } from './EngineerAI';
 import { GitWorktreeManager } from './GitWorktreeManager';
 import { MergeCoordinator } from '../utils/MergeCoordinator';
 import { Task, EngineerResult, ReviewResult, SystemConfig } from '../types';
+import { electronLogAdapter } from '../utils/ElectronLogAdapter';
 
 /**
  * レビューワークフローの管理
@@ -49,43 +50,20 @@ export class ReviewWorkflow {
       const reviewResult = await this.performReview(task, currentResult);
       reviewHistory.push(reviewResult);
 
-      // Step 2: レビューがOKならマージを試行
+      // Step 2: レビュー結果の処理
       let needsChanges = false;
       let changeReason = '';
       
       if (reviewResult.status === 'APPROVED' || reviewResult.status === 'COMMENTED') {
         console.log(`✅ レビュー${reviewResult.status === 'APPROVED' ? '承認' : 'コメント付き承認'}: ${task.title}`);
         
-        // マージ試行
-        const mergeResult = await this.tryMerge(task);
-        
-        if (mergeResult.success) {
-          // マージ成功 - クリーンアップして完了
-          await this.cleanupAfterMerge(task);
-          
-          console.log(`✅ マージ完了: ${task.title}`);
-          return {
-            approved: true,
-            reviewHistory,
-            finalResult: currentResult,
-            merged: true
-          };
-        } else if (mergeResult.hasConflict) {
-          // コンフリクトを通常の修正として扱う
-          console.log(`⚠️ マージコンフリクト検出: ${task.title}`);
-          needsChanges = true;
-          changeReason = 'コンフリクト解消';
-          reviewResult.comments.push('マージ時にコンフリクトが発生しました。コンフリクトを解消してください。');
-        } else {
-          // その他のマージエラー
-          console.error(`❌ マージエラー: ${task.title} - ${mergeResult.error}`);
-          return {
-            approved: false,
-            reviewHistory,
-            finalResult: currentResult,
-            merged: false
-          };
-        }
+        // 新しいパイプラインシステムではマージはMergeQueueで行う
+        return {
+          approved: true,
+          reviewHistory,
+          finalResult: currentResult,
+          merged: false // マージは別プロセスで実行
+        };
       } else if (reviewResult.status === 'CHANGES_REQUESTED') {
         console.log(`🔄 修正要求: ${task.title}`);
         needsChanges = true;
@@ -149,7 +127,16 @@ export class ReviewWorkflow {
     const techLeadId = `techlead-${Date.now()}`;
     const techLead = new TechLeadAI(techLeadId);
 
-    console.log(`👔 テックリードAI[${techLeadId}]によるレビュー開始`);
+    // エンジニアとTechLeadの関連付けをElectronに通知
+    console.log(`[ReviewWorkflow] Associating TechLead ${techLeadId} with Engineer ${engineerResult.engineerId}`);
+    console.log(`[ReviewWorkflow] EngineerResult:`, engineerResult);
+    
+    electronLogAdapter.associateTechLeadWithEngineer(techLeadId, engineerResult.engineerId);
+    
+    // 関連付けがElectron側で処理されるまで少し待機
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    console.log(`👔 テックリードAI[${techLeadId}]によるレビュー開始（エンジニア: ${engineerResult.engineerId}）`);
     
     try {
       const reviewResult = await techLead.reviewEngineerWork(task, engineerResult);
@@ -218,148 +205,6 @@ export class ReviewWorkflow {
   }
 
   /**
-   * マージを試行（ベストプラクティス版）
-   */
-  private async tryMerge(task: Task): Promise<{
-    success: boolean;
-    hasConflict?: boolean;
-    error?: string;
-  }> {
-    if (!task.branchName || !task.worktreePath) {
-      return { success: false, error: 'ブランチ情報が不足しています' };
-    }
-
-    try {
-      console.log(`🔀 マージ試行: ${task.branchName} -> ${this.config.baseBranch}`);
-
-      // ベストプラクティス: フィーチャーブランチ側でメインブランチをマージしてコンフリクトを解消
-      // Step 1: worktreeで最新のメインブランチを取得
-      console.log(`📥 フィーチャーブランチで最新のメインブランチを取得中...`);
-      
-      // worktreeに移動してフィーチャーブランチが最新か確認
-      execSync(`git checkout ${task.branchName}`, {
-        cwd: task.worktreePath,
-        stdio: 'pipe'
-      });
-      
-      // リモートの最新情報を取得
-      try {
-        execSync(`git fetch origin`, {
-          cwd: task.worktreePath,
-          stdio: 'pipe'
-        });
-      } catch (e) {
-        console.log(`📝 リモート取得をスキップ（ローカル環境）`);
-      }
-      
-      // Step 2: フィーチャーブランチにメインブランチをマージ（ここでコンフリクトチェック）
-      try {
-        console.log(`🔄 フィーチャーブランチにメインブランチをマージ中...`);
-        execSync(`git merge ${this.config.baseBranch}`, {
-          cwd: task.worktreePath,
-          stdio: 'pipe'
-        });
-        console.log(`✅ フィーチャーブランチへのマージ成功`);
-      } catch (mergeError) {
-        // コンフリクトが発生した場合
-        const conflictInWorktree = await this.detectMergeConflict(task.worktreePath);
-        if (conflictInWorktree) {
-          console.log(`⚠️ フィーチャーブランチでコンフリクト検出`);
-          return { success: false, hasConflict: true };
-        }
-        throw mergeError;
-      }
-      
-      // Step 3: コンフリクトがなければ、メインブランチにフィーチャーブランチをマージ
-      console.log(`📤 メインブランチにフィーチャーブランチをマージ中...`);
-      
-      // メインリポジトリでメインブランチに切り替え
-      execSync(`git checkout ${this.config.baseBranch}`, {
-        cwd: this.config.baseRepoPath,
-        stdio: 'pipe'
-      });
-      
-      // フィーチャーブランチをマージ（fast-forwardを無効化）
-      execSync(`git merge --no-ff ${task.branchName}`, {
-        cwd: this.config.baseRepoPath,
-        stdio: 'pipe'
-      });
-
-      console.log(`✅ マージ成功: ${task.branchName}`);
-      return { success: true };
-
-    } catch (error) {
-      console.error(`❌ マージエラー:`, error);
-      
-      // worktreeでマージが進行中の場合は中止
-      try {
-        execSync(`git merge --abort`, {
-          cwd: task.worktreePath,
-          stdio: 'pipe'
-        });
-      } catch (e) {
-        // 中止エラーは無視
-      }
-      
-      return { success: false, error: 'マージに失敗しました' };
-    }
-  }
-
-  /**
-   * メインブランチにマージ（旧版・削除予定）
-   */
-  private async mergeToMainBranch(task: Task): Promise<boolean | 'CONFLICT'> {
-    if (!task.branchName || !task.worktreePath) {
-      console.error(`❌ ブランチ情報が不足: ${task.id}`);
-      return false;
-    }
-
-    try {
-      console.log(`🔀 メインブランチへのマージ開始: ${task.branchName}`);
-
-      // メインリポジトリで作業
-      const mainRepoPath = this.config.baseRepoPath;
-
-      // メインブランチに切り替え
-      execSync(`git checkout ${this.config.baseBranch}`, {
-        cwd: mainRepoPath,
-        stdio: 'pipe'
-      });
-
-      // フィーチャーブランチをマージ（ローカルのみ）
-      execSync(`git merge --no-ff ${task.branchName}`, {
-        cwd: mainRepoPath,
-        stdio: 'pipe'
-      });
-
-      console.log(`✅ マージ完了: ${task.branchName} -> ${this.config.baseBranch}`);
-      return true;
-
-    } catch (error) {
-      console.error(`❌ マージエラー:`, error);
-      
-      // マージコンフリクトかどうかを確認
-      const conflictDetected = await this.detectMergeConflict(this.config.baseRepoPath);
-      
-      if (conflictDetected) {
-        console.log(`⚠️ マージコンフリクト検出: ${task.branchName}`);
-        return 'CONFLICT';
-      } else {
-        // 通常のマージエラーの場合はマージを中止
-        try {
-          execSync(`git merge --abort`, {
-            cwd: this.config.baseRepoPath,
-            stdio: 'pipe'
-          });
-        } catch (abortError) {
-          // マージ中止のエラーは無視
-        }
-        return false;
-      }
-    }
-  }
-
-  /**
    * マージコンフリクトの検出
    */
   private async detectMergeConflict(repoPath: string): Promise<boolean> {
@@ -376,125 +221,6 @@ export class ReviewWorkflow {
     } catch (error) {
       return false;
     }
-  }
-
-  /**
-   * エンジニアAIにコンフリクト解消を依頼
-   */
-  private async resolveConflictWithEngineer(task: Task, engineerId: string, existingEngineer?: EngineerAI): Promise<EngineerResult> {
-    console.log(`🔧 コンフリクト解消作業開始: ${engineerId}`);
-
-    // 既存のエンジニアインスタンスを使用、なければ新規作成
-    const engineer = existingEngineer || new EngineerAI(engineerId, {
-      maxTurns: this.config.maxTurnsPerTask,
-      systemPrompt: this.getConflictResolutionPrompt()
-    });
-
-    console.log(`🔧 エンジニアAI[${engineerId}]にコンフリクト解消依頼 (セッションID: ${engineer.getSessionId() || 'なし'})`);
-
-    // コンフリクト解消用のタスクを作成
-    const conflictTask: Task = {
-      ...task,
-      title: `[コンフリクト解消] ${task.title}`,
-      description: this.buildConflictResolutionDescription(task)
-    };
-
-    try {
-      const result = await engineer.executeTask(conflictTask);
-      console.log(`✅ コンフリクト解消作業完了: ${engineerId}`);
-      return result;
-    } catch (error) {
-      console.error(`❌ コンフリクト解消作業失敗: ${engineerId}`, error);
-      return {
-        taskId: task.id,
-        engineerId: engineerId,
-        success: false,
-        output: [],
-        error: error instanceof Error ? error.message : String(error),
-        duration: 0,
-        filesChanged: []
-      };
-    }
-  }
-
-  /**
-   * コンフリクト解消用のシステムプロンプト
-   */
-  private getConflictResolutionPrompt(): string {
-    return `あなたは経験豊富なソフトウェアエンジニアです。
-Gitマージコンフリクトの解消を専門とします。
-
-## 役割
-マージコンフリクトが発生したコードを適切に解消して、正常にマージできる状態にすることです。
-
-## コンフリクト解消の手順
-
-### 1. 現状確認
-まず現在の状況を把握してください：
-\`\`\`bash
-git status
-git diff
-\`\`\`
-
-### 2. コンフリクトファイルの特定
-コンフリクトが発生しているファイルを確認：
-\`\`\`bash
-git diff --name-only --diff-filter=U
-\`\`\`
-
-### 3. コンフリクト内容の分析
-各ファイルのコンフリクトマーカーを確認：
-- \`<<<<<<< HEAD\` : 現在のブランチ（メインブランチ）の内容
-- \`=======\` : 区切り
-- \`>>>>>>> [ブランチ名]\` : マージしようとしているブランチの内容
-
-### 4. 適切な解消方法の選択
-以下の原則に従って解消してください：
-
-#### 基本原則
-- **既存機能を壊さない**: メインブランチの既存機能は保持
-- **新機能を活かす**: マージしようとしている新機能も適切に統合
-- **コード品質を維持**: 一貫性のあるコードスタイルを保持
-- **テストを考慮**: 既存テストが通り、新機能のテストも動作する状態に
-
-#### 解消戦略
-1. **単純な追加**: 両方の変更が独立している場合は両方を保持
-2. **設定の統合**: 設定ファイルの場合は論理的に統合
-3. **機能の統合**: 機能追加の場合は適切に統合
-4. **優先順位**: 不明な場合は安全性を優先
-
-### 5. 解消の実行
-1. コンフリクトファイルを手動で編集
-2. コンフリクトマーカー（\`<<<<<<<\`, \`=======\`, \`>>>>>>>\`）を完全に削除
-3. 動作確認とテスト実行
-4. ステージングとコミット
-
-### 6. 最終確認
-\`\`\`bash
-# テストの実行（可能であれば）
-npm test
-# または
-pytest
-
-# ビルドの確認（可能であれば）
-npm run build
-
-# 最終的なコミット
-git add .
-git commit -m "resolve: マージコンフリクトを解消
-
-- [具体的な解消内容を記載]
-- 既存機能への影響なし
-- 新機能を適切に統合"
-\`\`\`
-
-## 重要事項
-- コンフリクトマーカーを残さない
-- 両方の変更の意図を尊重する
-- 解消理由を明確にコミットメッセージに記載
-- 疑問があれば保守的に解消する
-
-確実で安全なコンフリクト解消を心がけてください。`;
   }
 
   /**
@@ -624,6 +350,7 @@ Gitのベストプラクティスに従って、フィーチャーブランチ�
 
   /**
    * マージ後のクリーンアップ
+   * @deprecated 新しいパイプラインではMergeQueueで実行
    */
   private async cleanupAfterMerge(task: Task): Promise<void> {
     if (!task.branchName) {
@@ -680,22 +407,6 @@ Gitのベストプラクティスに従って、フィーチャーブランチ�
     };
   }
 
-  /**
-   * 全ての保留中のコンフリクト解消処理の完了を待機（削除予定）
-   */
-  async waitForAllConflictResolutions(): Promise<void> {
-    // 単一ループ化により不要になったが、互換性のため一時的に保持
-    console.log(`⚠️ waitForAllConflictResolutions は非推奨です`);
-  }
-
-  /**
-   * コンフリクト解消完了後の再レビュー処理（削除予定）
-   */
-  async handleConflictResolutionResults(): Promise<Map<string, boolean>> {
-    // 単一ループ化により不要になったが、互換性のため空のMapを返す
-    console.log(`⚠️ handleConflictResolutionResults は非推奨です`);
-    return new Map<string, boolean>();
-  }
 
   /**
    * コンフリクト解消に対する再レビューとマージの実行（削除予定）

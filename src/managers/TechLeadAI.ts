@@ -87,8 +87,13 @@ export class TechLeadAI extends BaseAI {
    * エンジニアAIの成果物をレビュー
    */
   async reviewEngineerWork(task: Task, engineerResult: EngineerResult): Promise<ReviewResult> {
+    // ログを出す前に少し待機して、関連付けが確実に設定されるようにする
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
     this.info(`👔 レビュー開始`);
     this.info(`📋 タスク: ${task.title}`);
+    this.info(`🆔 タスクID: ${task.id}`);
+    this.info(`👨‍💻 レビュー対象エンジニア: ${engineerResult.engineerId}`);
 
     const startTime = Date.now();
     const prompt = this.buildReviewPrompt(task, engineerResult);
@@ -447,24 +452,19 @@ git diff $(git merge-base HEAD @{-1} 2>/dev/null || git merge-base HEAD main 2>/
 - [ ] リソースの適切な管理
 - [ ] スケーラビリティへの配慮
 
-### 3. 実行テストの実施
-可能であれば以下を実行してください：
+### 3. 実行テストの実施（参考情報）
+以下のコマンドを実行して参考情報を収集できます：
 
 \`\`\`bash
 # テストの実行
 npm test
-# または
-pytest
-# または該当するテストコマンド
-
 # ビルドの確認
 npm run build
-# または該当するビルドコマンド
-
-# リントチェック
+# リントチェック  
 npm run lint
-# または該当するリントコマンド
 \`\`\`
+
+**重要**: ビルドエラーやテストエラーが存在しても、それが今回のタスクで発生したものでない場合は、タスクの承認判定に影響させないでください。既存のエラーと今回の変更によるエラーを区別してください。
 
 ### 4. レビュー結果の決定
 
@@ -512,22 +512,50 @@ npm run lint
    * レビューコメントからステータスを解析
    */
   private parseReviewStatus(comments: string[]): 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED' | 'ERROR' {
-    const fullText = comments.join(' ').toUpperCase();
+    const fullText = comments.join(' ');
+    const upperText = fullText.toUpperCase();
     
-    if (fullText.includes('CHANGES_REQUESTED') || fullText.includes('修正が必要')) {
-      return 'CHANGES_REQUESTED';
-    } else if (fullText.includes('APPROVED') || fullText.includes('承認')) {
+    // 明示的なステータス宣言を最優先
+    if (upperText.includes('レビュー結果: APPROVED') || upperText.includes('## レビュー結果: APPROVED')) {
       return 'APPROVED';
-    } else if (fullText.includes('COMMENTED') || fullText.includes('コメント')) {
-      return 'COMMENTED';
-    } else {
-      // デフォルトとして、問題の指摘があるかどうかで判定
-      if (fullText.includes('問題') || fullText.includes('エラー') || fullText.includes('修正')) {
-        return 'CHANGES_REQUESTED';
-      } else {
-        return 'APPROVED';
-      }
     }
+    if (upperText.includes('レビュー結果: CHANGES_REQUESTED') || upperText.includes('## レビュー結果: CHANGES_REQUESTED')) {
+      return 'CHANGES_REQUESTED';
+    }
+    if (upperText.includes('レビュー結果: COMMENTED') || upperText.includes('## レビュー結果: COMMENTED')) {
+      return 'COMMENTED';
+    }
+    
+    // 次に、文脈を考慮した判定
+    // 「修正が必要」「修正してください」など明確な指示がある場合
+    if (fullText.includes('修正が必要') || fullText.includes('修正してください') || 
+        fullText.includes('変更が必要') || fullText.includes('実装してください')) {
+      return 'CHANGES_REQUESTED';
+    }
+    
+    // 「承認」「問題ありません」など承認を示す表現
+    if (upperText.includes('APPROVED') || fullText.includes('承認') || 
+        fullText.includes('問題ありません') || fullText.includes('正しく実装されて')) {
+      return 'APPROVED';
+    }
+    
+    // 「改善提案」「将来的に」など、必須ではない提案
+    if (fullText.includes('改善提案') || fullText.includes('将来的に') || 
+        fullText.includes('検討してください') || upperText.includes('COMMENTED')) {
+      return 'COMMENTED';  
+    }
+    
+    // キーワードベースの判定（最後の手段）
+    // ただし、「ビルドエラーが存在している」のような状況説明は除外
+    const hasRequiredChanges = (fullText.includes('エラーを修正') || fullText.includes('問題を解決') || 
+                                fullText.includes('バグ') || fullText.includes('失敗'));
+    
+    if (hasRequiredChanges && !fullText.includes('既存の') && !fullText.includes('確認しました')) {
+      return 'CHANGES_REQUESTED';
+    }
+    
+    // デフォルトはAPPROVED（タスクが達成されていると仮定）
+    return 'APPROVED';
   }
 
   /**

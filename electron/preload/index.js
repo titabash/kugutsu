@@ -27,6 +27,10 @@ const electronAPI = {
     onConnectionStatus: (callback) => {
         electron_1.ipcRenderer.on('connection-status', (event, connected) => callback(connected));
     },
+    // TechLeadとEngineerの関連付け
+    onAssociateTechLeadEngineer: (callback) => {
+        electron_1.ipcRenderer.on('associate-techlead-engineer', (event, data) => callback(data));
+    },
     // イベントリスナーの削除
     removeAllListeners: (channel) => {
         electron_1.ipcRenderer.removeAllListeners(channel);

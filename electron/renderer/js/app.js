@@ -69,19 +69,109 @@ const themes = {
 const terminals = {};
 const fitAddons = {};
 
-// エンジニアIDのマッピング（タスクID → 連番）
-const engineerIdMapping = {};
-let engineerCounter = 0;
+// エンジニアとTechLeadのペア管理
+const engineerPairMapping = {}; // engineerId -> pairIndexのマッピング
+const techLeadToEngineerMapping = {}; // techLeadId -> engineerIdのマッピング
+const engineerToTechLeadMapping = {}; // engineerId -> techLeadId[]のマッピング
+let pairCounter = 0;
 
-// エンジニアIDマッピングの管理
-function getOrCreateEngineerTerminalId(taskId) {
-    if (!engineerIdMapping[taskId]) {
-        // 新しいエンジニアの場合、次の連番を割り当て
-        engineerCounter++;
-        engineerIdMapping[taskId] = `engineer-${engineerCounter}`;
-        console.log(`[Renderer] New engineer mapping: ${taskId} -> ${engineerIdMapping[taskId]}`);
+// エンジニアIDとTechLeadIDの関連付けを設定
+window.associateTechLeadWithEngineer = function(techLeadId, engineerId) {
+    console.log(`[Renderer] associateTechLeadWithEngineer called: TechLead=${techLeadId}, Engineer=${engineerId}`);
+    
+    techLeadToEngineerMapping[techLeadId] = engineerId;
+    if (!engineerToTechLeadMapping[engineerId]) {
+        engineerToTechLeadMapping[engineerId] = [];
     }
-    return engineerIdMapping[taskId];
+    engineerToTechLeadMapping[engineerId].push(techLeadId);
+    
+    // エンジニアのペアがまだ存在しない場合は作成
+    const pairIndex = getOrCreateEngineerPair(engineerId);
+    
+    // TechLeadのマッピングを更新
+    const terminalId = `tech-lead-${pairIndex}`;
+    techLeadTerminalMapping[techLeadId] = terminalId;
+    console.log(`[Renderer] Set TechLead ${techLeadId} terminal mapping to ${terminalId}`);
+    
+    // ターミナルが存在するか確認
+    setTimeout(() => {
+        if (terminals[terminalId]) {
+            console.log(`[Renderer] Terminal ${terminalId} exists and ready`);
+        } else {
+            console.error(`[Renderer] Terminal ${terminalId} not found after association!`);
+        }
+    }, 200);
+}
+
+// エンジニアのペアを取得または作成
+function getOrCreateEngineerPair(engineerId) {
+    if (!engineerPairMapping[engineerId]) {
+        pairCounter++;
+        engineerPairMapping[engineerId] = pairCounter;
+        createEngineerPair(pairCounter, engineerId);
+        console.log(`[Renderer] Created new engineer pair ${pairCounter} for ${engineerId}`);
+    }
+    return engineerPairMapping[engineerId];
+}
+
+// エンジニアターミナルIDの取得または作成
+function getOrCreateEngineerTerminalId(engineerId) {
+    const pairIndex = getOrCreateEngineerPair(engineerId);
+    return `engineer-${pairIndex}`;
+}
+
+// TechLeadターミナルIDの取得または作成
+const techLeadTerminalMapping = {}; // techLeadId -> terminalIdのキャッシュ
+let techLeadCounter = 0;
+
+function getOrCreateTechLeadTerminalId(techLeadId) {
+    // 既にターミナルIDが割り当てられている場合はそれを返す
+    if (techLeadTerminalMapping[techLeadId]) {
+        return techLeadTerminalMapping[techLeadId];
+    }
+    
+    // 新しいTechLeadターミナルを作成
+    techLeadCounter++;
+    const terminalId = `tech-lead-${techLeadCounter}`;
+    techLeadTerminalMapping[techLeadId] = terminalId;
+    
+    // TechLeadターミナルを作成
+    createTechLeadTerminal(techLeadCounter);
+    
+    console.log(`[Renderer] Created new TechLead terminal ${terminalId} for ${techLeadId}`);
+    return terminalId;
+}
+
+function createTechLeadTerminal(index) {
+    const container = document.getElementById('tech-lead-panes');
+    if (!container) {
+        console.error('[Renderer] tech-lead-panes container not found');
+        return;
+    }
+    
+    const paneDiv = document.createElement('div');
+    paneDiv.id = `tech-lead-${index}-pane`;
+    paneDiv.className = 'terminal-pane tech-lead';
+    paneDiv.innerHTML = `
+        <div class="terminal-header">
+            <span class="terminal-title">🔍 Tech Lead AI #${index}</span>
+            <div class="terminal-actions">
+                <span class="terminal-action" data-terminal="tech-lead-${index}">Clear</span>
+            </div>
+        </div>
+        <div class="terminal-container" id="tech-lead-${index}-terminal"></div>
+    `;
+    container.appendChild(paneDiv);
+    
+    // ターミナルを初期化
+    setTimeout(() => {
+        initializeTerminal(
+            `tech-lead-${index}`,
+            document.getElementById(`tech-lead-${index}-terminal`),
+            themes.techLead
+        );
+        console.log(`[Renderer] Initialized TechLead terminal tech-lead-${index}`);
+    }, 50);
 }
 
 // エンジニアIDマッピングのクリア（必要に応じて）
@@ -127,48 +217,94 @@ function initializeTerminal(id, container, theme) {
     return term;
 }
 
-// エンジニアターミナルの動的作成
-function createEngineerTerminals(count) {
-    const container = document.getElementById('engineer-panes');
-    container.innerHTML = '';
-
-    const engineerTerminals = [];
-
-    for (let i = 1; i <= count; i++) {
-        const paneDiv = document.createElement('div');
-        paneDiv.id = `engineer-${i}-pane`;
-        paneDiv.className = 'terminal-pane engineer';
-        paneDiv.innerHTML = `
-            <div class="terminal-header">
-                <span class="terminal-title">👨‍💻 Engineer AI #${i}</span>
-                <div class="terminal-actions">
-                    <span class="terminal-action" data-terminal="engineer-${i}">Clear</span>
-                </div>
-            </div>
-            <div class="terminal-container" id="engineer-${i}-terminal"></div>
-        `;
-        container.appendChild(paneDiv);
-        engineerTerminals.push(`#engineer-${i}-pane`);
-
-        // ターミナルを初期化
-        setTimeout(() => {
-            initializeTerminal(
-                `engineer-${i}`,
-                document.getElementById(`engineer-${i}-terminal`),
-                themes.engineer
-            );
-        }, 100);
+// エンジニアとTechLeadのペアを作成
+function createEngineerPair(pairIndex, engineerId) {
+    const container = document.getElementById('engineer-pairs-container');
+    
+    // 既に同じIDのペアが存在する場合はスキップ
+    if (document.getElementById(`engineer-pair-${pairIndex}`)) {
+        console.warn(`[Renderer] Engineer pair ${pairIndex} already exists, skipping creation`);
+        return;
     }
+    
+    const pairDiv = document.createElement('div');
+    pairDiv.id = `engineer-pair-${pairIndex}`;
+    pairDiv.className = 'engineer-pair';
+    
+    // エンジニアペイン
+    const engineerPane = document.createElement('div');
+    engineerPane.id = `engineer-${pairIndex}-pane`;
+    engineerPane.className = 'terminal-pane engineer engineer-pane';
+    engineerPane.innerHTML = `
+        <div class="terminal-header">
+            <span class="terminal-title">👨‍💻 Engineer AI #${pairIndex}</span>
+            <div class="terminal-actions">
+                <span class="terminal-action" data-terminal="engineer-${pairIndex}">Clear</span>
+            </div>
+        </div>
+        <div class="terminal-container" id="engineer-${pairIndex}-terminal"></div>
+    `;
+    
+    // TechLeadペイン
+    const techLeadPane = document.createElement('div');
+    techLeadPane.id = `tech-lead-${pairIndex}-pane`;
+    techLeadPane.className = 'terminal-pane tech-lead tech-lead-pane';
+    techLeadPane.innerHTML = `
+        <div class="terminal-header">
+            <span class="terminal-title">🔍 Tech Lead AI #${pairIndex}</span>
+            <div class="terminal-actions">
+                <span class="terminal-action" data-terminal="tech-lead-${pairIndex}">Clear</span>
+            </div>
+        </div>
+        <div class="terminal-container" id="tech-lead-${pairIndex}-terminal"></div>
+    `;
+    
+    pairDiv.appendChild(engineerPane);
+    pairDiv.appendChild(techLeadPane);
+    container.appendChild(pairDiv);
+    
+    // ターミナルを初期化
+    setTimeout(() => {
+        const engineerTerm = initializeTerminal(
+            `engineer-${pairIndex}`,
+            document.getElementById(`engineer-${pairIndex}-terminal`),
+            themes.engineer
+        );
+        const techLeadTerm = initializeTerminal(
+            `tech-lead-${pairIndex}`,
+            document.getElementById(`tech-lead-${pairIndex}-terminal`),
+            themes.techLead
+        );
+        
+        console.log(`[Renderer] Initialized terminals for pair ${pairIndex}`);
+        console.log(`[Renderer] Engineer terminal: ${engineerTerm ? 'OK' : 'FAILED'}`);
+        console.log(`[Renderer] TechLead terminal: ${techLeadTerm ? 'OK' : 'FAILED'}`);
+    }, 50);
+    
+    // ペア間のSplit.jsを更新
+    updatePairSplits();
+}
 
-    // Split.jsで動的に分割
-    if (engineerTerminals.length > 1) {
-        Split(engineerTerminals, {
-            sizes: Array(count).fill(100 / count),
-            minSize: 200,
+// ペア間の水平分割を更新
+function updatePairSplits() {
+    const container = document.getElementById('engineer-pairs-container');
+    const pairs = Array.from(container.querySelectorAll('.engineer-pair'));
+    
+    if (pairs.length > 1) {
+        const pairSelectors = pairs.map(pair => `#${pair.id}`);
+        Split(pairSelectors, {
+            sizes: Array(pairs.length).fill(100 / pairs.length),
+            minSize: 300,
             gutterSize: 5,
             cursor: 'col-resize'
         });
     }
+}
+
+// レガシー関数（互換性のため）
+function createEngineerTerminals(count) {
+    // 新しいペアシステムでは使用しない
+    console.log(`[Renderer] createEngineerTerminals called with count=${count}, but using pair system instead`);
 }
 
 // ターミナルクリア
@@ -181,12 +317,17 @@ function clearTerminal(id) {
 
 // 構造化ログからターミナルIDを決定
 function getTerminalIdFromStructuredLog(executor, context) {
+    console.log(`[Renderer] getTerminalIdFromStructuredLog: type=${executor.type}, id=${executor.id}`);
+    
     // executorの型に基づいてターミナルIDを決定
     switch (executor.type) {
         case 'ProductOwner':
             return 'product-owner';
         case 'TechLead':
-            return 'tech-lead';
+            // TechLeadのIDをマッピング
+            const techLeadTerminalId = getOrCreateTechLeadTerminalId(executor.id);
+            console.log(`[Renderer] TechLead terminal ID resolved to: ${techLeadTerminalId}`);
+            return techLeadTerminalId;
         case 'MergeCoordinator':
             return 'merge-coordinator';
         case 'System':
@@ -208,6 +349,17 @@ function displayStructuredLogMessage(terminalId, level, message, timestamp, cont
     const terminal = terminals[terminalId];
     if (!terminal) {
         console.warn(`[Renderer] Terminal not found: ${terminalId}`);
+        console.warn(`[Renderer] Available terminals: ${Object.keys(terminals).join(', ')}`);
+        
+        // ターミナルがまだ初期化されていない場合は、少し待って再試行
+        if (terminalId.startsWith('tech-lead-')) {
+            setTimeout(() => {
+                const retryTerminal = terminals[terminalId];
+                if (retryTerminal) {
+                    displayStructuredLogMessage(terminalId, level, message, timestamp, context);
+                }
+            }, 100);
+        }
         return;
     }
 
@@ -273,24 +425,10 @@ document.addEventListener('DOMContentLoaded', () => {
     productOwnerTerm.writeln('Waiting for logs...');
 
     initializeTerminal(
-        'tech-lead',
-        document.getElementById('tech-lead-terminal'),
-        themes.techLead
-    );
-
-    initializeTerminal(
         'merge-coordinator',
         document.getElementById('merge-coordinator-terminal'),
         themes.mergeCoordinator
     );
-
-    // Split.jsでペイン分割を設定
-    Split(['#product-owner-pane', '#tech-lead-pane'], {
-        sizes: [50, 50],
-        minSize: 200,
-        gutterSize: 5,
-        cursor: 'col-resize'
-    });
 
     // クリアボタンのイベントリスナー
     document.addEventListener('click', (e) => {
@@ -318,7 +456,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (component === 'ProductOwner' || component === 'Analysis') {
                 terminalId = 'product-owner';
             } else if (component === 'TechLead') {
-                terminalId = 'tech-lead';
+                // TechLeadの場合、engineerIdがtechlead-xxx形式のTechLeadIDである
+                console.log(`[Renderer] TechLead log: engineerId=${engineerId}`);
+                terminalId = getOrCreateTechLeadTerminalId(engineerId);
             } else if (component === 'MergeCoordinator') {
                 terminalId = 'merge-coordinator';
             } else if (component === 'System' || component === 'Orchestrator') {
@@ -408,6 +548,24 @@ document.addEventListener('DOMContentLoaded', () => {
         window.electronAPI.onConnectionStatus((connected) => {
             const indicator = document.getElementById('connection-status');
             indicator.style.backgroundColor = connected ? '#4CAF50' : '#f44336';
+        });
+
+        // TechLeadとEngineerの関連付け
+        window.electronAPI.onAssociateTechLeadEngineer((data) => {
+            const { techLeadId, engineerId } = data;
+            console.log(`[Renderer] ========== ASSOCIATION EVENT ==========`);
+            console.log(`[Renderer] Associating TechLead ${techLeadId} with Engineer ${engineerId}`);
+            console.log(`[Renderer] Current mappings:`);
+            console.log(`[Renderer] - techLeadToEngineerMapping:`, techLeadToEngineerMapping);
+            console.log(`[Renderer] - engineerPairMapping:`, engineerPairMapping);
+            console.log(`[Renderer] - techLeadTerminalMapping:`, techLeadTerminalMapping);
+            
+            window.associateTechLeadWithEngineer(techLeadId, engineerId);
+            
+            console.log(`[Renderer] After association:`);
+            console.log(`[Renderer] - techLeadToEngineerMapping:`, techLeadToEngineerMapping);
+            console.log(`[Renderer] - techLeadTerminalMapping:`, techLeadTerminalMapping);
+            console.log(`[Renderer] ========================================`);
         });
     } else {
         console.error('[Renderer] window.electronAPI is not available!');
@@ -513,6 +671,24 @@ document.addEventListener('DOMContentLoaded', () => {
             ipcRenderer.on('task-status-update', (event, data) => {
                 const { completed, total } = data;
                 document.getElementById('task-status').textContent = `Tasks: ${completed}/${total}`;
+            });
+            
+            // TechLeadとEngineerの関連付け (フォールバック)
+            ipcRenderer.on('associate-techlead-engineer', (event, data) => {
+                const { techLeadId, engineerId } = data;
+                console.log(`[Renderer] ========== ASSOCIATION EVENT (Fallback) ==========`);
+                console.log(`[Renderer] Associating TechLead ${techLeadId} with Engineer ${engineerId}`);
+                console.log(`[Renderer] Current mappings:`);
+                console.log(`[Renderer] - techLeadToEngineerMapping:`, techLeadToEngineerMapping);
+                console.log(`[Renderer] - engineerPairMapping:`, engineerPairMapping);
+                console.log(`[Renderer] - techLeadTerminalMapping:`, techLeadTerminalMapping);
+                
+                window.associateTechLeadWithEngineer(techLeadId, engineerId);
+                
+                console.log(`[Renderer] After association:`);
+                console.log(`[Renderer] - techLeadToEngineerMapping:`, techLeadToEngineerMapping);
+                console.log(`[Renderer] - techLeadTerminalMapping:`, techLeadTerminalMapping);
+                console.log(`[Renderer] ========================================`);
             });
         } catch (e) {
             console.error('[Renderer] Cannot use direct ipcRenderer:', e);

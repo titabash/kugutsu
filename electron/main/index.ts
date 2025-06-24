@@ -108,6 +108,13 @@ if (process.send) {
           mainWindow.webContents.send('task-status-update', message.data);
         }
         break;
+        
+      case 'associate-techlead-engineer':
+        // TechLeadとEngineerの関連付けを伝える
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('associate-techlead-engineer', message.data);
+        }
+        break;
     }
   });
 

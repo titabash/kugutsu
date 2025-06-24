@@ -2,6 +2,7 @@
 
 import { ParallelDevelopmentOrchestratorWithElectron } from './managers/ParallelDevelopmentOrchestratorWithElectron';
 import { SystemConfig } from './types';
+import { electronLogAdapter } from './utils/ElectronLogAdapter';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -162,8 +163,29 @@ class ParallelDevelopmentElectronCLI {
       console.log(`📡 リモート使用: ${config.useRemote ? 'はい' : 'いいえ'}`);
       console.log('');
 
-      // オーケストレーターの作成と実行
+      // オーケストレーターの作成
       const orchestrator = new ParallelDevelopmentOrchestratorWithElectron(config, visualUI, electronUI);
+      
+      // シグナルハンドラーを設定（Ctrl+Cなどで適切にクリーンアップ）
+      const cleanup_handler = async () => {
+        console.log('\n🛑 システム停止中...');
+        
+        // Electronプロセスを終了
+        if (electronUI) {
+          electronLogAdapter.stop();
+        }
+        
+        // オーケストレーターのクリーンアップ
+        orchestrator.stopLogViewer();
+        await orchestrator.cleanup(true);
+        
+        process.exit(0);
+      };
+
+      process.on('SIGINT', cleanup_handler);
+      process.on('SIGTERM', cleanup_handler);
+      
+      // 並列開発を実行
       const result = await orchestrator.executeUserRequest(userRequest);
 
       // 結果のサマリー表示

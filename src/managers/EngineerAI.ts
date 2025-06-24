@@ -12,6 +12,11 @@ export class EngineerAI extends BaseAI {
   private readonly engineerId: string;
   private sessionId?: string;
 
+  // 新しいパイプラインシステムのためのidプロパティ
+  get id(): string {
+    return this.engineerId;
+  }
+
   constructor(engineerId: string, config?: Partial<AgentConfig>) {
     super();
     this.engineerId = engineerId;
@@ -52,22 +57,22 @@ export class EngineerAI extends BaseAI {
 
 ## コミットメッセージの形式
 必ず以下の形式でコミットしてください：
-```
+\`\`\`
 <タイプ>: <変更内容の要約>
 
 - 変更の詳細（具体的に）
 - 変更前 → 変更後の状態
 - ファイル名と変更箇所
-```
+\`\`\`
 
 例:
-```
+\`\`\`
 feat: ユーザー認証機能を追加
 
 - /api/auth エンドポイントを新規作成
 - JWTトークンによる認証を実装
 - User.tsにauthenticate()メソッドを追加
-```
+\`\`\`
 
 **重要**: レビュアーが変更内容を正確に理解できるよう、具体的で詳細な説明を含めてください
 
@@ -402,22 +407,22 @@ cat "${instructionFile}"
    ### 📝 コミットメッセージの書き方
    以下の形式で、**何を変更したのか具体的に**記載してください：
    
-   ```
+   \`\`\`
    <タイプ>: <変更内容の要約>
    
    - 変更の詳細1
    - 変更の詳細2
    - 元の状態 → 変更後の状態（具体的に）
-   ```
+   \`\`\`
    
    例：
-   ```
+   \`\`\`
    feat: TEST.mdのHelloをGood Morningに変更
    
    - TEST.md内の挨拶文を更新
    - "Hello World!" → "Good Morning World!"
    - タスク要件に従って朝の挨拶に変更
-   ```
+   \`\`\`
    
    **重要**: レビュアーが変更内容を理解しやすいよう、以下を含めてください：
    - 変更前と変更後の具体的な内容
@@ -459,13 +464,13 @@ ${task.worktreePath}
 ### 📝 コミットメッセージの書き方
 以下の形式で、**何を変更したのか具体的に**記載してください：
 
-```
+\`\`\`
 <タイプ>: <変更内容の要約>
 
 - 変更の詳細1
 - 変更の詳細2
 - 元の状態 → 変更後の状態（具体的に）
-```
+\`\`\`
 
 タイプの例：
 - feat: 新機能追加

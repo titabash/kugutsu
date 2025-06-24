@@ -2,9 +2,11 @@ import { ProductOwnerAI } from './ProductOwnerAI';
 import { GitWorktreeManager } from './GitWorktreeManager';
 import { EngineerAI } from './EngineerAI';
 import { ReviewWorkflow } from './ReviewWorkflow';
+import { ParallelPipelineManager } from './ParallelPipelineManager';
 import { TaskInstructionManager } from '../utils/TaskInstructionManager';
 import { ImprovedParallelLogViewer } from '../utils/ImprovedParallelLogViewer';
 import { LogFormatter } from '../utils/LogFormatter';
+import { TaskEventEmitter, TaskEvent, TaskFailedPayload, MergeCompletedPayload, ReviewCompletedPayload } from '../utils/TaskEventEmitter';
 import { Task, TaskAnalysisResult, EngineerResult, ReviewResult, SystemConfig } from '../types';
 
 /**
@@ -12,15 +14,21 @@ import { Task, TaskAnalysisResult, EngineerResult, ReviewResult, SystemConfig } 
  * プロダクトオーナーAI、git worktree、エンジニアAIを統合管理
  */
 export class ParallelDevelopmentOrchestrator {
-  private readonly productOwnerAI: ProductOwnerAI;
-  private readonly gitManager: GitWorktreeManager;
-  private readonly reviewWorkflow: ReviewWorkflow;
-  private readonly config: SystemConfig;
-  private readonly engineerPool: Map<string, EngineerAI> = new Map();
-  private activeTasks: Map<string, Task> = new Map();
-  private instructionManager?: TaskInstructionManager;
-  private logViewer?: ImprovedParallelLogViewer;
-  private useVisualUI: boolean;
+  protected readonly productOwnerAI: ProductOwnerAI;
+  protected readonly gitManager: GitWorktreeManager;
+  protected readonly reviewWorkflow: ReviewWorkflow;
+  protected readonly pipelineManager: ParallelPipelineManager;
+  protected readonly config: SystemConfig;
+  protected readonly engineerPool: Map<string, EngineerAI> = new Map();
+  protected activeTasks: Map<string, Task> = new Map();
+  protected instructionManager?: TaskInstructionManager;
+  protected logViewer?: ImprovedParallelLogViewer;
+  protected useVisualUI: boolean;
+  protected eventEmitter: TaskEventEmitter;
+  protected completedTasks: Set<string> = new Set();
+  protected failedTasks: Map<string, string> = new Map();
+  protected taskResults: Map<string, EngineerResult> = new Map();
+  protected reviewResults: Map<string, ReviewResult[]> = new Map();
 
   constructor(config: SystemConfig, useVisualUI: boolean = false) {
     this.config = config;
@@ -28,10 +36,53 @@ export class ParallelDevelopmentOrchestrator {
     this.productOwnerAI = new ProductOwnerAI(config.baseRepoPath);
     this.gitManager = new GitWorktreeManager(config.baseRepoPath, config.worktreeBasePath);
     this.reviewWorkflow = new ReviewWorkflow(this.gitManager, config);
+    this.pipelineManager = new ParallelPipelineManager(this.gitManager, config);
+    this.eventEmitter = TaskEventEmitter.getInstance();
     
     if (this.useVisualUI) {
       this.logViewer = new ImprovedParallelLogViewer();
     }
+    
+    // イベントリスナーの設定
+    this.setupEventListeners();
+  }
+
+  /**
+   * イベントリスナーの設定
+   */
+  protected setupEventListeners(): void {
+    // マージ完了イベント
+    this.eventEmitter.onMergeCompleted((event: TaskEvent) => {
+      const payload = event.payload as MergeCompletedPayload;
+      if (payload.success) {
+        this.completedTasks.add(payload.task.id);
+        this.log('system', 'success', `✅ タスク完了: ${payload.task.title}`, 'Merge', 'Completion');
+      } else {
+        this.failedTasks.set(payload.task.id, payload.error || 'マージに失敗しました');
+        this.log('system', 'error', `❌ タスク失敗: ${payload.task.title}`, 'Merge', 'Failure');
+      }
+    });
+
+    // タスク失敗イベント
+    this.eventEmitter.onTaskFailed((event: TaskEvent) => {
+      const payload = event.payload as TaskFailedPayload;
+      this.failedTasks.set(payload.task.id, payload.error);
+      this.log('system', 'error', `❌ タスク失敗: ${payload.task.title} (${payload.phase})`, 'Task', 'Failure');
+    });
+
+    // タスクイベントの統計用
+    this.eventEmitter.onAnyTaskEvent((event: TaskEvent) => {
+      if (event.type === 'DEVELOPMENT_COMPLETED') {
+        const result = event.payload.result as EngineerResult;
+        this.taskResults.set(event.taskId, result);
+      } else if (event.type === 'REVIEW_COMPLETED') {
+        const payload = event.payload as ReviewCompletedPayload;
+        // レビュー履歴を保存
+        const history = this.reviewResults.get(event.taskId) || [];
+        history.push(payload.reviewResult);
+        this.reviewResults.set(event.taskId, history);
+      }
+    });
   }
 
   /**
@@ -74,49 +125,50 @@ export class ParallelDevelopmentOrchestrator {
       const orderedTasks = this.productOwnerAI.resolveDependencies(analysis.tasks);
       this.log('ProductOwner', 'info', `🔗 依存関係解決完了`, 'Dependencies', 'Phase 1: Analysis');
 
-      // 3. 並列実行グループの作成
-      const executionGroups = this.createExecutionGroups(orderedTasks);
-      this.log('system', 'info', `🏗️ フェーズ2: 並列実行準備`, 'Orchestrator', 'Phase 2: Preparation');
-      this.log('system', 'info', `実行グループ作成: ${executionGroups.length}グループ`, 'Orchestrator', 'Phase 2: Preparation');
+      // 3. パイプラインマネージャーを開始
+      this.log('system', 'info', '🏗️ フェーズ2: 並列パイプライン開始', 'Orchestrator', 'Phase 2: Pipeline');
+      await this.pipelineManager.start();
       
       if (this.logViewer) {
-        this.updateMainInfo(`並列実行準備中... | グループ数: ${executionGroups.length} | ${new Date().toLocaleString()}`);
+        this.updateMainInfo(`並列パイプライン実行中... | タスク数: ${orderedTasks.length} | ${new Date().toLocaleString()}`);
       }
 
-      // 4. 並列開発
-      this.log('system', 'info', '⚡ フェーズ3: 並列開発', 'Orchestrator', 'Phase 3: Development');
-      const { results, reviewResults, completedTasks, failedTasks } = await this.executeTasksInParallel(executionGroups);
-
-      this.log('system', 'info', '🔍 フェーズ4: レビュー（コンフリクト解消含む）', 'Orchestrator', 'Phase 4: Review');
-      
-      // 5. 全ての保留中のコンフリクト解消処理の完了を待機
-      this.log('system', 'info', '🔄 コンフリクト解消処理の確認中...', 'Orchestrator', 'Phase 4: Review');
-      await this.reviewWorkflow.waitForAllConflictResolutions();
-      
-      // 6. コンフリクト解消後の再レビューとマージ
-      this.log('system', 'info', '🔍 コンフリクト解消結果の処理中...', 'Orchestrator', 'Phase 4: Review');
-      const reReviewResults = await this.reviewWorkflow.handleConflictResolutionResults();
-      
-      // 再レビュー結果のログ出力
-      if (reReviewResults.size > 0) {
-        this.log('system', 'info', `📊 コンフリクト解消後の再レビュー結果: ${reReviewResults.size}件`, 'Orchestrator', 'Phase 4: Review');
-        for (const [taskId, success] of reReviewResults) {
-          if (success) {
-            this.log('system', 'success', `✅ 再レビュー承認・マージ完了: ${taskId}`, 'Orchestrator', 'Phase 4: Review');
-          } else {
-            this.log('system', 'error', `❌ 再レビュー失敗: ${taskId}`, 'Orchestrator', 'Phase 4: Review');
-          }
-        }
-      } else {
-        this.log('system', 'info', `ℹ️ コンフリクト解消が必要なタスクはありませんでした`, 'Orchestrator', 'Phase 4: Review');
+      // 4. 全タスクをパイプラインに投入
+      this.log('system', 'info', '⚡ フェーズ3: タスク投入', 'Orchestrator', 'Phase 3: Task Enqueue');
+      for (const task of orderedTasks) {
+        this.activeTasks.set(task.id, task);
+        await this.pipelineManager.enqueueDevelopment(task);
+        this.log('system', 'info', `📥 タスク投入: ${task.title}`, 'Pipeline', 'Task Enqueue');
       }
+
+      // 5. 全パイプラインの完了を待機
+      this.log('system', 'info', '⏳ フェーズ4: パイプライン完了待機', 'Orchestrator', 'Phase 4: Waiting');
+      await this.pipelineManager.waitForCompletion();
       
-      this.log('system', 'success', '✅ フェーズ5: 完了', 'Orchestrator', 'Phase 5: Completion');
-      this.log('system', 'info', `📊 完了タスク: ${completedTasks.length}個`, 'Orchestrator', 'Phase 5: Completion');
-      this.log('system', 'info', `📊 失敗タスク: ${failedTasks.length}個`, 'Orchestrator', 'Phase 5: Completion');
+      // 6. 結果の集計
+      this.log('system', 'info', '📊 フェーズ5: 結果集計', 'Orchestrator', 'Phase 5: Results');
+      
+      // 結果のまとめ
+      const results: EngineerResult[] = Array.from(this.taskResults.values());
+      const reviewResults: ReviewResult[][] = Array.from(this.reviewResults.values());
+      const completedTasks = Array.from(this.completedTasks);
+      const failedTasks = Array.from(this.failedTasks.keys());
+      
+      // 7. 最終結果の集計
+      this.log('system', 'info', '📊 最終結果集計', 'Orchestrator', 'Final Results');
+      this.log('system', 'success', `✅ 完了タスク: ${completedTasks.length}件`, 'Orchestrator', 'Final Results');
+      this.log('system', 'error', `❌ 失敗タスク: ${failedTasks.length}件`, 'Orchestrator', 'Final Results');
+      
+      // パイプライン統計
+      const pipelineStats = this.pipelineManager.getStats();
+      this.log('system', 'info', `📊 パイプライン統計:`, 'Pipeline', 'Statistics');
+      this.log('system', 'info', `  - 開発: 待機=${pipelineStats.development.waiting}, 処理中=${pipelineStats.development.processing}`, 'Pipeline', 'Statistics');
+      this.log('system', 'info', `  - レビュー: 待機=${pipelineStats.review.waiting}, 処理中=${pipelineStats.review.processing}, 完了=${pipelineStats.review.totalReviewed}`, 'Pipeline', 'Statistics');
+      this.log('system', 'info', `  - マージ: 待機=${pipelineStats.merge.queueLength}, 処理中=${pipelineStats.merge.isProcessing}`, 'Pipeline', 'Statistics');
       
       if (this.logViewer) {
-        this.updateMainInfo(`完了 | 成功: ${completedTasks.length} | 失敗: ${failedTasks.length} | ${new Date().toLocaleString()}`);
+        this.updateMainInfo(`完了 | 成功: ${completedTasks.length}件, 失敗: ${failedTasks.length}件 | ${new Date().toLocaleString()}`);
+        this.logViewer.destroy();
       }
       
       return { analysis, results, reviewResults, completedTasks, failedTasks };
@@ -127,287 +179,20 @@ export class ParallelDevelopmentOrchestrator {
     }
   }
 
-  /**
-   * タスクを依存関係に基づいて実行グループに分割
-   */
-  private createExecutionGroups(tasks: Task[]): Task[][] {
-    const groups: Task[][] = [];
-    const processed = new Set<string>();
 
-    for (const task of tasks) {
-      if (processed.has(task.id)) continue;
 
-      // 同時実行可能なタスクを見つける
-      const currentGroup: Task[] = [task];
-      processed.add(task.id);
 
-      // 残りのタスクで依存関係がないものを同じグループに追加
-      for (const otherTask of tasks) {
-        if (processed.has(otherTask.id)) continue;
 
-        // 依存関係チェック
-        const hasDependencyConflict = this.hasDependencyConflict(
-          currentGroup.concat([otherTask])
-        );
 
-        if (!hasDependencyConflict && currentGroup.length < this.config.maxConcurrentEngineers) {
-          currentGroup.push(otherTask);
-          processed.add(otherTask.id);
-        }
-      }
-
-      if (currentGroup.length > 0) {
-        groups.push(currentGroup);
-      }
-    }
-
-    return groups;
-  }
-
-  /**
-   * タスクグループ内に依存関係の競合があるかチェック
-   */
-  private hasDependencyConflict(tasks: Task[]): boolean {
-    const taskTitles = new Set(tasks.map(t => t.title));
-    
-    for (const task of tasks) {
-      for (const dependency of task.dependencies) {
-        if (taskTitles.has(dependency)) {
-          return true; // 同じグループ内のタスクに依存している
-        }
-      }
-    }
-    
-    return false;
-  }
-
-  /**
-   * タスクグループを並列実行（開発とレビューを含む）
-   */
-  private async executeTasksInParallel(executionGroups: Task[][]): Promise<{
-    results: EngineerResult[];
-    reviewResults: ReviewResult[][];
-    completedTasks: string[];
-    failedTasks: string[];
-  }> {
-    const allResults: EngineerResult[] = [];
-    const allReviewResults: ReviewResult[][] = [];
-    const completedTasks: string[] = [];
-    const failedTasks: string[] = [];
-
-    for (let groupIndex = 0; groupIndex < executionGroups.length; groupIndex++) {
-      const group = executionGroups[groupIndex];
-      this.log('system', 'info', `🔥 グループ ${groupIndex + 1}/${executionGroups.length} 開発開始 (${group.length}タスク)`, 'Orchestrator', 'Phase 3: Development');
-
-      // 各タスクにworktreeを作成
-      await this.setupWorktreesForGroup(group);
-
-      // エンジニアAIを並列実行
-      const groupResults = await this.executeGroupInParallel(group);
-      allResults.push(...groupResults);
-
-      // レビューワークフローを実行（フェーズ4の一部として）
-      this.log('system', 'info', `🔍 グループ ${groupIndex + 1} レビュー開始`, 'Orchestrator', 'Phase 4: Review');
-      const groupReviewResults = await this.executeReviewWorkflow(group, groupResults);
-      allReviewResults.push(...groupReviewResults);
-
-      // 結果の分類
-      for (const result of groupResults) {
-        if (result.success) {
-          const reviewResult = groupReviewResults.find(r => r.some(review => review.taskId === result.taskId));
-          if (reviewResult && reviewResult.length > 0) {
-            const lastReview = reviewResult[reviewResult.length - 1];
-            if (lastReview.status === 'APPROVED' || lastReview.status === 'COMMENTED') {
-              completedTasks.push(result.taskId);
-            } else {
-              failedTasks.push(result.taskId);
-            }
-          } else {
-            failedTasks.push(result.taskId);
-          }
-        } else {
-          failedTasks.push(result.taskId);
-        }
-      }
-
-      this.log('system', 'success', `✅ グループ ${groupIndex + 1} 完了`, 'Orchestrator', groupIndex === executionGroups.length - 1 ? 'Phase 4: Review' : 'Phase 3: Development');
-    }
-
-    return {
-      results: allResults,
-      reviewResults: allReviewResults,
-      completedTasks,
-      failedTasks
-    };
-  }
-
-  /**
-   * グループのレビューワークフローを実行
-   */
-  private async executeReviewWorkflow(tasks: Task[], results: EngineerResult[]): Promise<ReviewResult[][]> {
-    const reviewResults: ReviewResult[][] = [];
-
-    // 成功したタスクのみレビュー対象とする
-    const successfulTasks = tasks.filter(task => {
-      const result = results.find(r => r.taskId === task.id);
-      return result && result.success;
-    });
-
-    if (successfulTasks.length === 0) {
-      console.log('⚠️ レビュー対象のタスクがありません');
-      return reviewResults;
-    }
-
-    console.log(`📝 ${successfulTasks.length}個のタスクをレビュー中...`);
-
-    // 各タスクのレビューを並列実行
-    const reviewPromises = successfulTasks.map(async (task) => {
-      const engineerResult = results.find(r => r.taskId === task.id);
-      if (!engineerResult) {
-        return [];
-      }
-
-      try {
-        // エンジニアIDを結果から取得
-        const engineerId = engineerResult.engineerId;
-        
-        // レビューワークフローを実行
-        const workflowResult = await this.reviewWorkflow.executeReviewWorkflow(
-          task,
-          engineerResult,
-          engineerId,
-          this.engineerPool.get(engineerId) // エンジニアインスタンスを渡す
-        );
-
-        console.log(`🔍 タスク ${task.id} レビュー完了: ${workflowResult.approved ? '承認' : '未承認'}`);
-        
-        return workflowResult.reviewHistory;
-
-      } catch (error) {
-        console.error(`❌ タスク ${task.id} レビューエラー:`, error);
-        return [{
-          taskId: task.id,
-          status: 'ERROR' as const,
-          comments: [`レビューワークフローエラー: ${error}`],
-          reviewer: 'system',
-          reviewedAt: new Date(),
-          duration: 0,
-          error: error instanceof Error ? error.message : String(error)
-        }];
-      }
-    });
-
-    const allReviewResults = await Promise.all(reviewPromises);
-    reviewResults.push(...allReviewResults);
-
-    return reviewResults;
-  }
-
-  /**
-   * グループ内のタスクにworktreeを設定
-   */
-  private async setupWorktreesForGroup(tasks: Task[]): Promise<void> {
-    console.log(`🌿 Worktree設定中...`);
-    
-    const setupPromises = tasks.map(async (task) => {
-      try {
-        const worktreePath = await this.gitManager.createWorktree(task, this.config.baseBranch);
-        task.worktreePath = worktreePath;
-        task.status = 'in_progress';
-        this.activeTasks.set(task.id, task);
-        
-        this.log('system', 'info', `✅ ${task.title}: ${worktreePath}`, 'GitWorktree');
-      } catch (error) {
-        this.log('system', 'error', `❌ ${task.title}: Worktree作成失敗 - ${error}`, 'GitWorktree');
-        task.status = 'failed';
-      }
-    });
-
-    await Promise.all(setupPromises);
-  }
-
-  /**
-   * グループ内のタスクを並列実行
-   */
-  private async executeGroupInParallel(tasks: Task[]): Promise<EngineerResult[]> {
-    // 有効なタスクのみを実行
-    const validTasks = tasks.filter(task => task.status === 'in_progress' && task.worktreePath);
-    
-    if (validTasks.length === 0) {
-      this.log('system', 'warn', '⚠️ 実行可能なタスクがありません', 'Orchestrator');
-      return [];
-    }
-
-    this.log('system', 'info', `👥 ${validTasks.length}名のエンジニアAIを並列起動...`, 'Orchestrator');
-
-    // 各タスクにエンジニアAIを割り当てて並列実行
-    const executionPromises = validTasks.map(async (task, index) => {
-      const engineerId = `engineer-${Date.now()}-${index}`;
-      const engineer = new EngineerAI(engineerId, {
-        maxTurns: this.config.maxTurnsPerTask
-      });
-
-      this.engineerPool.set(engineerId, engineer);
-      this.registerEngineerInViewer(engineerId, task.title);
-
-      try {
-        // タスクの事前チェック
-        const validation = await engineer.validateTask(task);
-        if (!validation.valid) {
-          throw new Error(`タスク検証失敗: ${validation.reason}`);
-        }
-
-        // タスク実行
-        const result = await engineer.executeTask(task);
-        
-        if (result.success) {
-          task.status = 'completed';
-          this.log(engineerId, 'success', `✅ ${task.title} 完了`, 'EngineerAI', `Task: ${task.title}`);
-        } else {
-          task.status = 'failed';
-          this.log(engineerId, 'error', `❌ ${task.title} 失敗: ${result.error}`, 'EngineerAI', `Task: ${task.title}`);
-        }
-
-        return result;
-
-      } catch (error) {
-        task.status = 'failed';
-        this.log(engineerId, 'error', `❌ ${task.title} 実行エラー: ${error instanceof Error ? error.message : String(error)}`, 'EngineerAI', `Task: ${task.title}`);
-        
-        return {
-          taskId: task.id,
-          engineerId: engineerId,
-          success: false,
-          output: [],
-          error: error instanceof Error ? error.message : String(error),
-          duration: 0,
-          filesChanged: []
-        };
-      } finally {
-        // セッションIDを記録
-        if (engineer.getSessionId()) {
-          this.log(engineerId, 'info', `💾 セッションID保存: ${engineer.getSessionId()}`, 'EngineerAI');
-        }
-        
-        // エンジニアをログビューアーから削除
-        this.unregisterEngineerFromViewer(engineerId);
-        
-        // 作業完了後もエンジニアをプールに保持（修正作業のため）
-        // this.engineerPool.delete(engineerId); // コメントアウト
-      }
-    });
-
-    // 全タスクの完了を待機
-    const results = await Promise.all(executionPromises);
-    
-    return results;
-  }
 
   /**
    * システムクリーンアップ
    */
   async cleanup(cleanupWorktrees: boolean = false): Promise<void> {
     console.log('🧹 システムクリーンアップ開始');
+
+    // パイプラインマネージャーを停止
+    await this.pipelineManager.stop();
 
     // アクティブなタスクをクリア
     this.activeTasks.clear();
@@ -474,7 +259,7 @@ export class ParallelDevelopmentOrchestrator {
   /**
    * ログ出力ヘルパーメソッド
    */
-  private log(engineerId: string, level: 'info' | 'error' | 'warn' | 'debug' | 'success', message: string, component?: string, group?: string): void {
+  protected log(engineerId: string, level: 'info' | 'error' | 'warn' | 'debug' | 'success', message: string, component?: string, group?: string): void {
     if (this.logViewer) {
       this.logViewer.log(engineerId, level, message, component, group);
     } else {

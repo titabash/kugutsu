@@ -86,13 +86,25 @@ npm run parallel-dev "Bug fixes for login flow" --cleanup
 6. **Merge Coordination**: Intelligent conflict resolution and merge management
 
 ### Core Components
-1. **ParallelDevelopmentOrchestrator**: Main system coordinator
+1. **ParallelPipelineManager**: Event-driven pipeline orchestrator
 2. **ProductOwnerAI**: Requirements analysis and task decomposition
 3. **EngineerAI**: Code implementation with Claude Code SDK
 4. **TechLeadAI**: Technical oversight and architecture guidance
 5. **ReviewWorkflow**: Automated code review process
 6. **GitWorktreeManager**: Git operations and branch management
-7. **MergeCoordinator**: Conflict resolution and integration
+7. **TaskQueue/ReviewQueue/MergeQueue**: Priority-based processing queues
+
+### Parallel Development Workflow
+The system implements a true parallel processing workflow with three independent pipelines:
+
+**📊 Detailed Workflow Documentation**: See [docs/parallel-development-workflow.md](docs/parallel-development-workflow.md)
+
+Key Features:
+- **Event-Driven Architecture**: Tasks flow through development → review → merge pipelines
+- **True Parallelism**: No waiting for all tasks to complete before starting reviews
+- **Conflict Resolution**: Original EngineerAI handles merge conflicts with preserved context
+- **Priority Queues**: High-priority tasks (including conflict resolution) are processed first
+- **Mutex-Protected Merging**: Sequential merging ensures main branch integrity
 
 ### Testing Strategy
 - TypeScript-based testing framework

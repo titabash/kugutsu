@@ -316,6 +316,19 @@ export class ElectronLogAdapter {
         }
     }
 
+    /**
+     * Electronプロセスを停止
+     */
+    stop() {
+        if (this.electronProcess && !this.electronProcess.killed) {
+            console.log('🛑 Electronプロセスを停止中...');
+            this.electronProcess.kill('SIGTERM');
+            this.electronProcess = null;
+            this.isElectronMode = false;
+            this.isReady = false;
+        }
+    }
+
     updateTaskStatus(completed: number, total: number) {
         if (this.isElectronMode && this.electronProcess && !this.electronProcess.killed) {
             try {
@@ -326,6 +339,27 @@ export class ElectronLogAdapter {
             } catch (error) {
                 console.error('Failed to update task status:', error);
             }
+        }
+    }
+
+    associateTechLeadWithEngineer(techLeadId: string, engineerId: string) {
+        console.log(`[ElectronLogAdapter] associateTechLeadWithEngineer called: ${techLeadId} -> ${engineerId}`);
+        
+        if (this.isElectronMode && this.electronProcess && !this.electronProcess.killed) {
+            try {
+                console.log('[ElectronLogAdapter] Sending association to Electron main process');
+                this.electronProcess.send({
+                    type: 'associate-techlead-engineer',
+                    data: { techLeadId, engineerId }
+                });
+            } catch (error) {
+                console.error('Failed to associate TechLead with Engineer:', error);
+            }
+        } else {
+            console.warn('[ElectronLogAdapter] Cannot send association - Electron not available');
+            console.log(`  isElectronMode: ${this.isElectronMode}`);
+            console.log(`  electronProcess: ${this.electronProcess}`);
+            console.log(`  killed: ${this.electronProcess?.killed}`);
         }
     }
 

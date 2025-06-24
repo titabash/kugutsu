@@ -33,6 +33,28 @@ export interface Task {
     reviewHistory: ReviewResult[];
     originalEngineerId: string;
   };
+  // 拡張メタデータ（プロダクトオーナーAIの分析結果）
+  metadata?: {
+    estimatedHours?: number;
+    skillRequirements?: string[];
+    fileScope?: {
+      primaryFiles?: string[];
+      newFiles?: string[];
+      readOnlyFiles?: string[];
+      conflictRisk?: 'none' | 'low' | 'medium' | 'high';
+    };
+    technicalSpecs?: {
+      technologies?: string[];
+      patterns?: string[];
+      interfaces?: string[];
+    };
+    implementation?: {
+      steps?: string[];
+      checkpoints?: string[];
+      testRequirements?: string[];
+    };
+    acceptanceCriteria?: string[];
+  };
 }
 
 /**
@@ -43,6 +65,13 @@ export interface TaskAnalysisResult {
   summary: string;
   estimatedTime: string;
   riskAssessment: string;
+  // 拡張分析情報
+  analysisDetails?: {
+    codebaseAssessment?: string;
+    technicalRequirements?: string;
+    architecturalDecisions?: string;
+    parallelizationStrategy?: string;
+  };
 }
 
 /**

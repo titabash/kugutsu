@@ -1,4 +1,4 @@
-import { Task, EngineerResult, SystemConfig } from '../types';
+import { Task, SystemConfig } from '../types';
 import { EngineerAI } from './EngineerAI';
 import { GitWorktreeManager } from './GitWorktreeManager';
 import { ReviewWorkflow } from './ReviewWorkflow';

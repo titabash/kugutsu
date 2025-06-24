@@ -1,7 +1,7 @@
 {
-  "name": "multi-engineer-claude-sdk",
+  "name": "kugutsu",
   "version": "1.0.0",
-  "description": "Claude Code SDK for multi-engineer project",
+  "description": "AI-powered parallel development system with multiple AI engineers",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
@@ -37,5 +37,26 @@
   },
   "engines": {
     "node": ">=18.0.0"
-  }
+  },
+  "bin": {
+    "kugutsu": "./bin/kugutsu.js"
+  },
+  "keywords": [
+    "ai",
+    "development",
+    "parallel",
+    "claude",
+    "automation",
+    "cli"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/titabash/kugutsu.git"
+  },
+  "bugs": {
+    "url": "https://github.com/titabash/kugutsu/issues"
+  },
+  "homepage": "https://github.com/titabash/kugutsu#readme"
 }

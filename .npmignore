@@ -1,0 +1,42 @@
+# Source files
+src/
+electron/renderer/
+electron/main/
+electron/preload/
+
+# Development files
+*.ts
+!dist/**/*.d.ts
+tsconfig.json
+.gitignore
+.git/
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Test files
+tests/
+test/
+*.test.js
+*.spec.js
+
+# Development directories
+worktrees/
+node_modules/
+.vscode/
+.idea/
+
+# Build files
+*.log
+*.tsbuildinfo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+.cache/

@@ -105,9 +105,17 @@ export class ParallelPipelineManager {
       // コンフリクト解消タスクとして修正
       const conflictTask: Task = {
         ...payload.task,
+        type: 'conflict-resolution',
         title: `[コンフリクト解消] ${payload.task.title}`,
         description: this.buildConflictResolutionDescription(payload.task),
-        priority: 'high' // コンフリクト解消は高優先度
+        priority: 'high', // コンフリクト解消は高優先度
+        isConflictResolution: true,
+        originalTaskId: payload.task.id,
+        conflictContext: {
+          originalEngineerResult: payload.finalResult,
+          reviewHistory: payload.reviewHistory,
+          originalEngineerId: payload.engineerId
+        }
       };
       
       // 元のエンジニアAIを取得
@@ -275,7 +283,7 @@ export class ParallelPipelineManager {
     
     // リソースクリーンアップ
     try {
-      if (task.worktreePath && !task.title.includes('[コンフリクト解消]')) {
+      if (task.worktreePath && !(task.isConflictResolution || task.type === 'conflict-resolution')) {
         // コンフリクト解消タスクでない場合のみworktreeを削除
         // コンフリクト解消タスクはworktreeを保持する
         await this.gitManager.removeWorktree(task.id);

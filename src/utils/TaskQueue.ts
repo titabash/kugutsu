@@ -41,7 +41,16 @@ export class TaskQueue<T> extends EventEmitter {
   async enqueue(id: string, data: T, priority: number = 0): Promise<void> {
     // 重複チェック
     if (this.has(id)) {
-      console.warn(`⚠️ アイテムは既にキューに存在します: ${id}`);
+      // コンフリクト解消タスクの場合はより詳細な警告
+      const isConflictResolution = typeof data === 'object' && data !== null && 
+        (('isConflictResolution' in data && (data as any).isConflictResolution) ||
+        ('type' in data && (data as any).type === 'conflict-resolution'));
+      
+      if (isConflictResolution) {
+        console.warn(`⚠️ コンフリクト解消タスクが既にキューに存在します: ${id} - リトライをスキップ`);
+      } else {
+        console.warn(`⚠️ アイテムは既にキューに存在します: ${id}`);
+      }
       return;
     }
 

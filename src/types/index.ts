@@ -14,7 +14,7 @@ export enum DevelopmentPhase {
  */
 export interface Task {
   id: string;
-  type: 'feature' | 'bugfix' | 'refactor' | 'test' | 'docs';
+  type: 'feature' | 'bugfix' | 'refactor' | 'test' | 'docs' | 'conflict-resolution';
   title: string;
   description: string;
   priority: 'high' | 'medium' | 'low';
@@ -25,6 +25,14 @@ export interface Task {
   worktreePath?: string;
   createdAt: Date;
   updatedAt: Date;
+  // コンフリクト解消関連
+  isConflictResolution?: boolean;
+  originalTaskId?: string; // コンフリクト解消の場合、元のタスクID
+  conflictContext?: {
+    originalEngineerResult: EngineerResult;
+    reviewHistory: ReviewResult[];
+    originalEngineerId: string;
+  };
 }
 
 /**

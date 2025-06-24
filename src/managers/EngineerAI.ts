@@ -101,7 +101,8 @@ feat: ユーザー認証機能を追加
           cwd: task.worktreePath,
           permissionMode: 'acceptEdits',
           allowedTools: this.config.allowedTools,
-          resume: this.sessionId // 既存セッションがあれば再利用
+          // コンフリクト解消タスクは新しいセッションで実行
+          resume: (task.isConflictResolution || task.type === 'conflict-resolution') ? undefined : this.sessionId
         },
       })) {
         messages.push(message);
@@ -134,14 +135,88 @@ feat: ユーザー認証機能を追加
     } catch (error) {
       const duration = Date.now() - startTime;
 
-      this.error(`❌ タスク失敗: ${error instanceof Error ? error.message : String(error)}`, { taskId: task.id, error: error instanceof Error ? error.stack : String(error) });
+      // エラーの詳細情報を取得
+      let errorMessage = '';
+      let errorDetails = '';
+      
+      if (error instanceof Error) {
+        errorMessage = error.message;
+        errorDetails = error.stack || '';
+        
+        // Claude Code特有のエラーの詳細を追加
+        if (error.message.includes('process exited with code')) {
+          const isConflictResolution = task.isConflictResolution || task.type === 'conflict-resolution';
+          
+          // より詳細なエラーオブジェクトの情報を取得
+          const errorInfo = {
+            name: error.name,
+            message: error.message,
+            stack: error.stack,
+            ...(error as any) // 追加のプロパティがあれば含める
+          };
+          
+          this.error(`❌ Claude Codeプロセスエラー詳細:`, { 
+            taskId: task.id, 
+            taskTitle: task.title,
+            taskType: task.type,
+            worktreePath: task.worktreePath,
+            sessionId: this.sessionId,
+            resumeUsed: isConflictResolution ? false : !!this.sessionId,
+            isConflictResolution,
+            errorInfo
+          });
+          
+          // ワークツリーの状態確認
+          if (task.worktreePath) {
+            try {
+              console.log(`\n🔍 ワークツリー状態確認: ${task.worktreePath}`);
+              const fs = require('fs');
+              const worktreeExists = fs.existsSync(task.worktreePath);
+              console.log(`- ワークツリー存在: ${worktreeExists}`);
+              
+              if (worktreeExists) {
+                const { execSync } = require('child_process');
+                const gitStatus = execSync('git status --porcelain', { 
+                  cwd: task.worktreePath, 
+                  encoding: 'utf-8',
+                  stdio: 'pipe'
+                }).toString();
+                console.log(`- Git状態: ${gitStatus || '(クリーン)'}`);
+              }
+            } catch (statusError) {
+              console.log(`- 状態確認エラー: ${statusError}`);
+            }
+          }
+          
+          // コンフリクト解消タスクの場合、より詳細なエラー情報を追加
+          if (isConflictResolution) {
+            console.log(`\n🔍 コンフリクト解消タスクでのエラー詳細:`);
+            console.log(`- タスクID: ${task.id}`);
+            console.log(`- タスクタイプ: ${task.type}`);
+            console.log(`- 元タスクID: ${task.originalTaskId}`);
+            console.log(`- ワークツリーパス: ${task.worktreePath}`);
+            console.log(`- セッション復帰なし（新規セッション）`);
+            console.log(`- エラー詳細: ${JSON.stringify(errorInfo, null, 2)}`);
+          }
+        }
+      } else {
+        errorMessage = String(error);
+        errorDetails = JSON.stringify(error, null, 2);
+      }
+
+      this.error(`❌ タスク失敗: ${errorMessage}`, { 
+        taskId: task.id, 
+        error: errorDetails,
+        taskTitle: task.title,
+        engineerId: this.engineerId
+      });
 
       return {
         taskId: task.id,
         engineerId: this.engineerId,
         success: false,
         output: [],
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage,
         duration,
         filesChanged: []
       };

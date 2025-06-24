@@ -1,7 +1,6 @@
 import { execSync } from 'child_process';
 import { Task, EngineerResult, ReviewResult, SystemConfig } from '../types';
 import { GitWorktreeManager } from '../managers/GitWorktreeManager';
-import { EngineerAI } from '../managers/EngineerAI';
 import { TaskEventEmitter } from './TaskEventEmitter';
 
 /**
@@ -13,6 +12,7 @@ interface MergeQueueItem {
   reviewHistory: ReviewResult[];
   retryCount: number;
   engineerId: string;
+  conflictDetected?: boolean; // コンフリクト検出フラグ
 }
 
 /**
@@ -56,7 +56,6 @@ export class MergeQueue {
   private config: SystemConfig;
   private eventEmitter: TaskEventEmitter;
   private maxRetries = 3;
-  private maxConflictResolutionRetries = 2;
 
   constructor(gitManager: GitWorktreeManager, config: SystemConfig) {
     this.gitManager = gitManager;
@@ -122,6 +121,10 @@ export class MergeQueue {
         
         // クリーンアップ
         await this.cleanup(item.task);
+      } else if (item.conflictDetected) {
+        console.log(`⚠️ コンフリクト検出によりマージ中断: ${item.task.title}`);
+        // コンフリクト検出時はcleanup処理を行わない（ワークツリーを保持）
+        // イベントも発火しない（既に emitMergeConflictDetected で発火済み）
       } else {
         console.error(`❌ マージ失敗: ${item.task.title}`);
         this.eventEmitter.emitMergeCompleted(item.task, false, 'マージに失敗しました');
@@ -164,7 +167,7 @@ export class MergeQueue {
         // Step 2: コンフリクトチェック
         const hasConflict = await this.detectConflict(item.task.worktreePath!);
         if (hasConflict) {
-          console.log(`⚠️ コンフリクト検出 - レビューキューに戻します`);
+          console.log(`⚠️ コンフリクト検出 - コンフリクト解消タスクを作成`);
           // コンフリクト検出イベントを発火
           this.eventEmitter.emitMergeConflictDetected(
             item.task,
@@ -172,7 +175,10 @@ export class MergeQueue {
             item.reviewHistory,
             item.engineerId
           );
-          return true; // マージキューから除外
+          // コンフリクト検出フラグを設定
+          item.conflictDetected = true;
+          // コンフリクト検出時はマージを中断し、cleanup処理は行わない
+          return false;
         }
 
         // Step 3: 最終マージ実行
@@ -314,11 +320,20 @@ export class MergeQueue {
         if (isCheckedOut) {
           console.log(`⚠️ ブランチ ${task.branchName} はworktreeで使用中のため削除をスキップ`);
         } else {
-          execSync(`git branch -d ${task.branchName}`, {
-            cwd: this.config.baseRepoPath,
-            stdio: 'pipe'
-          });
-          console.log(`🗑️ ブランチ削除完了: ${task.branchName}`);
+          // コンフリクト解消タスクの場合はブランチを削除しない
+          const isConflictResolution = task.isConflictResolution || task.type === 'conflict-resolution';
+          
+          console.log(`🔍 ブランチ削除判定: タスクタイプ="${task.type}" isConflictResolution=${task.isConflictResolution} 削除スキップ=${isConflictResolution}`);
+          
+          if (isConflictResolution) {
+            console.log(`🔄 コンフリクト解消タスクのためブランチを保持: ${task.branchName}`);
+          } else {
+            execSync(`git branch -d ${task.branchName}`, {
+              cwd: this.config.baseRepoPath,
+              stdio: 'pipe'
+            });
+            console.log(`🗑️ ブランチ削除完了: ${task.branchName}`);
+          }
         }
       } catch (branchError) {
         console.warn(`⚠️ ブランチ削除中にエラー: ${branchError}`);

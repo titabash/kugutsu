@@ -25,14 +25,29 @@ npm run build
 # Build the project
 npm run build
 
+# Build Electron components
+npm run build:electron
+
 # Start the main CLI (after build)
 npm start
 
 # Run in development mode with TypeScript
 npm run dev "<prompt>" [directory]
 
-# Run parallel development system
+# Run parallel development system (CLI version)
+npm run parallel-dev-cli "<development request>" [options]
+
+# Run parallel development system (Electron UI - default)
 npm run parallel-dev "<development request>" [options]
+
+# Run parallel development system with GUI explicitly
+npm run parallel-dev-gui "<development request>" [options]
+
+# Start Electron app
+npm run electron
+
+# Build and start Electron
+npm run electron:build
 ```
 
 ### Type Checking and Linting
@@ -50,10 +65,15 @@ npx tsc --noEmit
 npm run dev "Please analyze this codebase"
 npm run dev "Fix TypeScript errors" ./src
 
-# AI Parallel Development System
+# AI Parallel Development System (Electron UI)
 npm run parallel-dev "Implement user authentication system"
 npm run parallel-dev "Add API endpoints for user management" --max-engineers 2
 npm run parallel-dev "Bug fixes for login flow" --cleanup
+npm run parallel-dev "Performance improvements" --electron
+
+# AI Parallel Development System (CLI version)
+npm run parallel-dev-cli "Implement authentication" --visual-ui
+npm run parallel-dev-cli "Fix bugs" --no-electron
 ```
 
 ## Architecture
@@ -62,8 +82,13 @@ npm run parallel-dev "Bug fixes for login flow" --cleanup
 - `src/` - Main source directory
   - `index.ts` - Basic Claude Code SDK runner
   - `parallel-dev.ts` - AI parallel development CLI entry point
+  - `parallel-dev-electron.ts` - Electron UI entry point
+  - `startElectronUI.ts` - Electron application launcher
   - `managers/` - Core system managers
+    - `BaseAI.ts` - Base AI agent functionality
     - `ParallelDevelopmentOrchestrator.ts` - Main orchestrator
+    - `ParallelDevelopmentOrchestratorWithElectron.ts` - Electron-enhanced orchestrator
+    - `ParallelPipelineManager.ts` - Event-driven pipeline orchestrator
     - `EngineerAI.ts` - AI engineer implementation
     - `ProductOwnerAI.ts` - Task analysis and planning
     - `TechLeadAI.ts` - Technical review and guidance
@@ -72,7 +97,30 @@ npm run parallel-dev "Bug fixes for login flow" --cleanup
   - `utils/` - Utility functions
     - `MergeCoordinator.ts` - Merge conflict resolution
     - `TaskInstructionManager.ts` - Task instruction management
+    - `TaskQueue.ts` - Priority-based task queue
+    - `ReviewQueue.ts` - Review queue management
+    - `MergeQueue.ts` - Merge queue with mutex
+    - `TaskEventEmitter.ts` - Event-driven communication
+    - `ParallelLogViewer.ts` - Terminal-based log viewer
+    - `ImprovedParallelLogViewer.ts` - Enhanced log viewer
+    - `ElectronLogAdapter.ts` - Electron logging adapter
+    - `LogFormatter.ts` - Log formatting utilities
   - `types/` - TypeScript type definitions
+    - `index.ts` - Core type definitions
+    - `logging.ts` - Logging-related types
+- `electron/` - Electron application
+  - `main/` - Main process
+    - `index.ts` - Electron main process
+  - `preload/` - Preload scripts
+    - `index.ts` - Preload script for IPC
+  - `renderer/` - Renderer process (UI)
+    - `index.html` - Main UI
+    - `js/` - JavaScript files
+    - `styles/` - CSS styles
+- `docs/` - Documentation
+  - `parallel-development-workflow.md` - Detailed workflow documentation
+  - `AI_PARALLEL_DEVELOPMENT_DESIGN.md` - System design document
+  - Other technical documentation
 - `tests/` - Test suite
 - `dist/` - Compiled JavaScript output
 - `worktrees/` - Git worktree directories (created during execution)
@@ -86,18 +134,23 @@ npm run parallel-dev "Bug fixes for login flow" --cleanup
 6. **Merge Coordination**: Intelligent conflict resolution and merge management
 
 ### Core Components
-1. **ParallelPipelineManager**: Event-driven pipeline orchestrator
+1. **ParallelPipelineManager**: Event-driven pipeline orchestrator with true parallel processing
 2. **ProductOwnerAI**: Requirements analysis and task decomposition
-3. **EngineerAI**: Code implementation with Claude Code SDK
+3. **EngineerAI**: Code implementation with Claude Code SDK and context preservation
 4. **TechLeadAI**: Technical oversight and architecture guidance
-5. **ReviewWorkflow**: Automated code review process
+5. **ReviewWorkflow**: Automated code review process with parallel reviewers
 6. **GitWorktreeManager**: Git operations and branch management
-7. **TaskQueue/ReviewQueue/MergeQueue**: Priority-based processing queues
+7. **TaskQueue/ReviewQueue/MergeQueue**: Priority-based processing queues with mutex protection
+8. **ElectronLogAdapter**: Real-time log streaming to Electron UI
+9. **ParallelLogViewer**: Terminal-based visual log monitoring
+10. **BaseAI**: Shared functionality for all AI agents
 
 ### Parallel Development Workflow
 The system implements a true parallel processing workflow with three independent pipelines:
 
 **📊 Detailed Workflow Documentation**: See [docs/parallel-development-workflow.md](docs/parallel-development-workflow.md)
+
+**🏗️ System Design Documentation**: See [docs/AI_PARALLEL_DEVELOPMENT_DESIGN.md](docs/AI_PARALLEL_DEVELOPMENT_DESIGN.md)
 
 Key Features:
 - **Event-Driven Architecture**: Tasks flow through development → review → merge pipelines
@@ -109,5 +162,51 @@ Key Features:
 ### Testing Strategy
 - TypeScript-based testing framework
 - Integration tests for AI workflows
-- Git worktree operation testing
+- Git worktree operation testing  
 - Mock Claude Code SDK for unit tests
+- Electron UI testing
+- Event-driven pipeline testing
+- Queue system testing
+- Conflict resolution testing
+
+### UI Options
+The system supports multiple UI modes:
+- **Electron UI** (default): Modern desktop application with real-time log streaming
+- **Terminal Visual UI**: Split-pane terminal interface using blessed
+- **Standard CLI**: Traditional command-line output
+
+### Event-Driven Architecture
+The system uses a sophisticated event-driven architecture with three independent pipelines:
+- **Development Pipeline**: Parallel task execution by multiple AI engineers
+- **Review Pipeline**: Parallel code review by multiple tech leads
+- **Merge Pipeline**: Sequential merging with conflict resolution
+
+Key events: `DEVELOPMENT_COMPLETED`, `REVIEW_COMPLETED`, `MERGE_READY`, `MERGE_CONFLICT_DETECTED`, `MERGE_COMPLETED`, `TASK_FAILED`
+
+### Configuration Options
+The system supports extensive configuration through command-line options:
+
+```bash
+# Core options
+--base-repo <path>        # Base repository path
+--worktree-base <path>    # Worktree base directory  
+--max-engineers <num>     # Maximum concurrent engineers (1-10)
+--max-turns <num>         # Maximum turns per task (5-50)
+--base-branch <branch>    # Base branch for development
+
+# UI options
+--electron               # Use Electron UI (default)
+--no-electron           # Disable Electron UI
+--visual-ui             # Use terminal split UI
+
+# System options
+--use-remote            # Use remote repository
+--cleanup               # Clean up worktrees after completion
+```
+
+### Parallel Processing Features
+- **True Parallelism**: Development, review, and merge pipelines run independently
+- **Context Preservation**: Engineer AI maintains context for conflict resolution
+- **Priority Queues**: High-priority tasks (conflicts) are processed first
+- **Mutex Protection**: Sequential merging ensures main branch integrity
+- **Real-time Monitoring**: Live progress tracking through multiple UI options

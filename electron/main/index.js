@@ -36,6 +36,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const electron_1 = require("electron");
 const path = __importStar(require("path"));
 let mainWindow = null;
+// コマンドライン引数をチェック
+const shouldOpenDevTools = process.argv.includes('--devtools');
 function createWindow() {
     mainWindow = new electron_1.BrowserWindow({
         width: 1600,
@@ -50,8 +52,10 @@ function createWindow() {
     });
     // HTMLを読み込む
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
-    // DevToolsを開く（デバッグ用）
-    mainWindow.webContents.openDevTools();
+    // --devtoolsオプションが指定されている場合はDevToolsを開く
+    if (shouldOpenDevTools) {
+        mainWindow.webContents.openDevTools();
+    }
     // レンダラープロセスの準備が完了したらログを確認
     mainWindow.webContents.once('did-finish-load', () => {
         console.log('[Electron Main] Renderer loaded successfully');

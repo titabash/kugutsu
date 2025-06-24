@@ -35,12 +35,14 @@ class ParallelDevelopmentElectronCLI {
   --visual-ui               旧ターミナル分割表示を使用（非推奨）
   --electron                Electron UIを使用（デフォルト）
   --no-electron             Electron UIを無効化
+  --devtools                Electron DevToolsを自動的に開く
   --help, -h                このヘルプを表示
 
 例:
   npm run parallel-dev "ユーザー認証機能を実装してください" --electron
   npm run parallel-dev "バグ修正: ログイン時のエラーハンドリング" --max-engineers 2
   npm run parallel-dev "新しいAPI endpointを3つ追加" --cleanup --electron
+  npm run parallel-dev "デバッグ作業" --devtools
 `);
   }
 

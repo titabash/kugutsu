@@ -49,7 +49,14 @@ export class ElectronLogAdapter {
             console.log(`   実行ファイル: ${electronExecutable}`);
             console.log(`   アプリケーションパス: ${electronAppPath}`);
             
-            this.electronProcess = spawn(electronExecutable as string, [electronAppPath], {
+            // コマンドライン引数から--devtoolsフラグを探す
+            const extraArgs: string[] = [];
+            if (process.argv.includes('--devtools')) {
+                extraArgs.push('--devtools');
+                console.log('🔧 DevToolsモードが有効です');
+            }
+            
+            this.electronProcess = spawn(electronExecutable as string, [electronAppPath, ...extraArgs], {
                 stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
                 env: { ...process.env },
                 cwd: electronAppPath

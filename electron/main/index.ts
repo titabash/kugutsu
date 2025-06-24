@@ -3,6 +3,9 @@ import * as path from 'path';
 
 let mainWindow: BrowserWindow | null = null;
 
+// コマンドライン引数をチェック
+const shouldOpenDevTools = process.argv.includes('--devtools');
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1600,
@@ -18,9 +21,11 @@ function createWindow() {
 
   // HTMLを読み込む
   mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
-  
-  // DevToolsを開く（デバッグ用）
-  mainWindow.webContents.openDevTools();
+
+  // --devtoolsオプションが指定されている場合はDevToolsを開く
+  if (shouldOpenDevTools) {
+    mainWindow.webContents.openDevTools();
+  }
 
   // レンダラープロセスの準備が完了したらログを確認
   mainWindow.webContents.once('did-finish-load', () => {

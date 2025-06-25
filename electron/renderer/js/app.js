@@ -1,8 +1,8 @@
 // Electronのrequireを使用してモジュールを読み込む
-const { Terminal } = require('xterm');
-const { FitAddon } = require('xterm-addon-fit');
-const { SearchAddon } = require('xterm-addon-search');
-const { WebLinksAddon } = require('xterm-addon-web-links');
+const { Terminal } = require('@xterm/xterm');
+const { FitAddon } = require('@xterm/addon-fit');
+const { SearchAddon } = require('@xterm/addon-search');
+const { WebLinksAddon } = require('@xterm/addon-web-links');
 const Split = require('split.js');
 
 // カラーテーマ定義

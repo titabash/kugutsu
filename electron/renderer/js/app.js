@@ -674,12 +674,19 @@ document.addEventListener('DOMContentLoaded', () => {
             const { completed, total } = data;
             document.getElementById('task-status').textContent = `Tasks: ${completed}/${total}`;
             
-            // プログレスバーを更新
-            updateProgressBar(completed, total);
+            // プログレスバーは非表示にしたため更新しない
+            // updateProgressBar(completed, total);
+        });
+        
+        // 全タスク完了通知
+        window.electronAPI.onAllTasksCompleted((status) => {
+            console.log('[onAllTasksCompleted] All tasks completed!', status);
+            const { completedTasks, totalTasks, percentage } = status;
+            showCompletionDialog(completedTasks, totalTasks);
             
-            // 全タスク完了をチェック
-            if (total > 0 && completed === total) {
-                showCompletionDialog(completed, total);
+            // システムターミナルに完了メッセージを表示
+            if (state.terminals['system']) {
+                state.terminals['system'].writeln(`\x1b[1;32m\n🎉 全タスクが完了しました！ (${completedTasks}/${totalTasks} - ${percentage}%)\x1b[0m\n`);
             }
         });
         
@@ -783,6 +790,13 @@ function updateProgressBar(completed, total) {
     const progressFill = document.getElementById('task-progress-fill');
     const progressBar = document.getElementById('task-progress-bar');
     
+    console.log(`[updateProgressBar] Updating progress: ${completed}/${total}`);
+    
+    if (!progressFill || !progressBar) {
+        console.error('[updateProgressBar] Progress bar elements not found');
+        return;
+    }
+    
     if (total === 0) {
         progressFill.style.width = '0%';
         progressBar.style.display = 'none';
@@ -792,6 +806,7 @@ function updateProgressBar(completed, total) {
     progressBar.style.display = 'inline-block';
     const percentage = (completed / total) * 100;
     progressFill.style.width = `${percentage}%`;
+    console.log(`[updateProgressBar] Set progress bar width to ${percentage}%`);
     
     // 完了時の特別なスタイル
     if (completed === total) {

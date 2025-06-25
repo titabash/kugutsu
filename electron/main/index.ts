@@ -132,6 +132,13 @@ if (process.send) {
           mainWindow.webContents.send('associate-techlead-engineer', message.data);
         }
         break;
+        
+      case 'all-tasks-completed':
+        // 全タスク完了通知
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('all-tasks-completed', message.data);
+        }
+        break;
     }
   });
 

@@ -17,6 +17,10 @@ const electronAPI = {
     onTaskStatusUpdate: (callback) => {
         ipcRenderer.on('task-status-update', (event, data) => callback(data));
     },
+    // 全タスク完了通知
+    onAllTasksCompleted: (callback) => {
+        ipcRenderer.on('all-tasks-completed', (event, data) => callback(data));
+    },
     // ターミナルクリア
     onClearTerminal: (callback) => {
         ipcRenderer.on('clear-terminal', (event, terminalId) => callback(terminalId));

@@ -63,6 +63,15 @@ export class ParallelDevelopmentOrchestratorWithElectron extends ParallelDevelop
         const completedCount = this.completedTasks.size + this.failedTasks.size;
         electronLogAdapter.updateTaskStatus(completedCount, this.totalTaskCount);
       });
+      
+      // 全タスク完了時にElectronに通知
+      this.eventEmitter.on('allTasksCompleted', (status) => {
+        electronLogAdapter.log('system', 'success', `🎉 全タスクが完了しました！ (${status.completedTasks}/${status.totalTasks})`, 'System');
+        // 完了通知をElectronに送信
+        electronLogAdapter.sendCompletionNotification(status);
+      });
+      
+      // CompletionReporterのイベントリスナー設定は後で行う（initialize後に設定）
 
       // 開発完了時にエンジニア数を更新
       this.eventEmitter.onDevelopmentCompleted((event) => {
@@ -111,9 +120,44 @@ export class ParallelDevelopmentOrchestratorWithElectron extends ParallelDevelop
     }
 
     // 親クラスのメソッドを呼び出す
+    // これにより、CompletionReporterの初期化とsetupCompletionReporterListenersが呼ばれる
     const result = await super.executeUserRequest(userRequest);
 
     return result;
+  }
+  
+  /**
+   * CompletionReporterのイベントリスナーを設定
+   * executeUserRequest内でinitialize後に呼び出される
+   */
+  protected setupCompletionReporterListeners(): void {
+    console.log(`[Electron] setupCompletionReporterListeners called. useElectronUI=${this.useElectronUI}, completionReporter=${!!this.completionReporter}`);
+    
+    if (this.useElectronUI && this.completionReporter) {
+      console.log('[Electron] Setting up CompletionReporter listeners...');
+      
+      // 既存のリスナーを削除
+      this.completionReporter.removeAllListeners('taskCompleted');
+      this.completionReporter.removeAllListeners('allTasksCompleted');
+      
+      // タスク完了イベントをリッスン
+      this.completionReporter.on('taskCompleted', ({ taskId, status }) => {
+        console.log(`[Electron] Task completed event received: ${taskId} (${status.completedTasks}/${status.totalTasks})`);
+        // Electron UIに進捗を通知
+        electronLogAdapter.updateTaskStatus(status.completedTasks, status.totalTasks);
+        this.log('system', 'success', `✅ タスク完了: ${taskId} (${status.completedTasks}/${status.totalTasks} - ${status.percentage}%)`, 'System');
+      });
+      
+      // 全タスク完了イベントもここで登録
+      this.completionReporter.on('allTasksCompleted', (status) => {
+        console.log('[Electron] All tasks completed event from CompletionReporter');
+        electronLogAdapter.sendCompletionNotification(status);
+      });
+      
+      console.log('[Electron] CompletionReporter listeners setup complete');
+    } else {
+      console.log('[Electron] Skipping CompletionReporter listener setup');
+    }
   }
 
   /**

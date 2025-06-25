@@ -352,26 +352,15 @@ body {
 
 /* プログレスバー */
 .progress-bar {
-    width: 150px;
-    height: 6px;
-    background-color: #3e3e3e;
-    border-radius: 3px;
-    margin-left: 10px;
-    overflow: hidden;
-    display: inline-block;
-    vertical-align: middle;
+    display: none !important; /* プログレスバーを非表示 */
 }
 
 .progress-bar-fill {
-    height: 100%;
-    background-color: #4EC9B0;
-    transition: width 0.3s ease, background-color 0.3s ease;
-    width: 0%;
+    display: none !important;
 }
 
 .progress-bar-fill.completed {
-    background-color: #4EC9B0;
-    animation: pulse 1s infinite;
+    display: none !important;
 }
 
 /* 完了ダイアログ */

@@ -6,6 +6,7 @@ import { TaskQueue } from '../utils/TaskQueue.js';
 import { ReviewQueue } from '../utils/ReviewQueue.js';
 import { MergeQueue } from '../utils/MergeQueue.js';
 import { TaskEventEmitter, TaskEvent, DevelopmentCompletedPayload, ReviewCompletedPayload, MergeReadyPayload, MergeConflictDetectedPayload } from '../utils/TaskEventEmitter.js';
+import { CompletionReporter } from '../utils/CompletionReporter.js';
 
 /**
  * 開発キューアイテム
@@ -30,7 +31,7 @@ export class ParallelPipelineManager {
   private engineers = new Map<string, EngineerAI>();
   private isRunning = false;
 
-  constructor(gitManager: GitWorktreeManager, config: SystemConfig) {
+  constructor(gitManager: GitWorktreeManager, config: SystemConfig, completionReporter?: CompletionReporter) {
     this.gitManager = gitManager;
     this.config = config;
     this.eventEmitter = TaskEventEmitter.getInstance();
@@ -45,7 +46,7 @@ export class ParallelPipelineManager {
       config.maxReviewRetries ?? 5
     );
     
-    this.mergeQueue = new MergeQueue(gitManager, config);
+    this.mergeQueue = new MergeQueue(gitManager, config, completionReporter);
 
     // イベントリスナーの設定
     this.setupEventListeners();

@@ -3,6 +3,7 @@ import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { StructuredLogMessage } from '../types/logging.js';
+import { CompletionStatus } from './CompletionReporter.js';
 
 // ESM用の__dirname代替
 const __filename = fileURLToPath(import.meta.url);
@@ -377,6 +378,19 @@ export class ElectronLogAdapter {
                 });
             } catch (error) {
                 console.error('Failed to update task status:', error);
+            }
+        }
+    }
+    
+    sendCompletionNotification(status: CompletionStatus) {
+        if (this.isElectronMode && this.electronProcess && !this.electronProcess.killed) {
+            try {
+                this.electronProcess.send({
+                    type: 'all-tasks-completed',
+                    data: status
+                });
+            } catch (error) {
+                console.error('Failed to send completion notification:', error);
             }
         }
     }

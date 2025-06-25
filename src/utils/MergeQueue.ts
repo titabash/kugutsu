@@ -2,6 +2,7 @@ import { execSync } from 'child_process';
 import { Task, EngineerResult, ReviewResult, SystemConfig } from '../types/index.js';
 import { GitWorktreeManager } from '../managers/GitWorktreeManager.js';
 import { TaskEventEmitter } from './TaskEventEmitter.js';
+import { CompletionReporter } from './CompletionReporter.js';
 
 /**
  * マージキューアイテム
@@ -56,11 +57,13 @@ export class MergeQueue {
   private config: SystemConfig;
   private eventEmitter: TaskEventEmitter;
   private maxRetries = 3;
+  private completionReporter?: CompletionReporter;
 
-  constructor(gitManager: GitWorktreeManager, config: SystemConfig) {
+  constructor(gitManager: GitWorktreeManager, config: SystemConfig, completionReporter?: CompletionReporter) {
     this.gitManager = gitManager;
     this.config = config;
     this.eventEmitter = TaskEventEmitter.getInstance();
+    this.completionReporter = completionReporter;
   }
 
   /**
@@ -121,6 +124,28 @@ export class MergeQueue {
         
         // クリーンアップ
         await this.cleanup(item.task);
+        
+        // タスク完了を記録
+        if (this.completionReporter) {
+          // コンフリクト解消タスクの場合、元のタスクタイトルを使用
+          let taskTitleForCompletion = item.task.title;
+          if (item.task.isConflictResolution && item.task.title.startsWith('[コンフリクト解消] ')) {
+            taskTitleForCompletion = item.task.title.replace('[コンフリクト解消] ', '');
+            console.log(`[MergeQueue] Conflict resolution task detected. Using original title: "${taskTitleForCompletion}"`);
+          }
+          
+          console.log(`[MergeQueue] Recording task completion for: "${taskTitleForCompletion}"`);
+          const status = await this.completionReporter.markTaskCompletedByTitle(taskTitleForCompletion);
+          console.log(`📊 タスク完了: ${item.task.title} (${status.completedTasks}/${status.totalTasks} - ${status.percentage}%)`);
+          
+          // 全タスク完了時の処理
+          if (status.percentage === 100) {
+            console.log(`🎉 全タスクが完了しました！`);
+            this.eventEmitter.emit('allTasksCompleted', status);
+          }
+        } else {
+          console.log(`[MergeQueue] CompletionReporter not available`);
+        }
       } else if (item.conflictDetected) {
         console.log(`⚠️ コンフリクト検出によりマージ中断: ${item.task.title}`);
         // コンフリクト検出時はcleanup処理を行わない（ワークツリーを保持）

@@ -1,3 +1,5 @@
+![Kugutsu Logo](logos/kugutsu.png)
+
 # Kugutsu 🎭
 
 AI-powered parallel development system that orchestrates multiple AI engineers to work simultaneously on different tasks using git worktrees for isolation.
@@ -20,6 +22,18 @@ AI-powered parallel development system that orchestrates multiple AI engineers t
 
 ## Installation
 
+### Install from npm (Recommended)
+
+```bash
+# Install globally
+npm install -g @titabash/kugutsu
+
+# Or use with npx
+npx @titabash/kugutsu "Your development request"
+```
+
+### Install from Source
+
 ```bash
 # Clone the repository
 git clone https://github.com/titabash/kugutsu.git
@@ -30,6 +44,9 @@ npm install
 
 # Build TypeScript
 npm run build
+
+# Link globally for development
+npm link
 ```
 
 ## Usage
@@ -38,13 +55,16 @@ npm run build
 
 ```bash
 # Run with Electron UI (default)
-npm run parallel-dev "Implement user authentication system"
+kugutsu "Implement user authentication system"
 
 # Run with CLI interface
-npm run parallel-dev-cli "Fix all TypeScript errors"
+kugutsu "Fix all TypeScript errors" --no-electron
+
+# Run with terminal visual UI
+kugutsu "Add API endpoints" --visual-ui
 
 # Run with specific options
-npm run parallel-dev "Add API endpoints" --max-engineers 3 --cleanup
+kugutsu "Performance improvements" --max-engineers 3 --cleanup
 ```
 
 ### Command Options
@@ -66,7 +86,9 @@ npm run parallel-dev "Add API endpoints" --max-engineers 3 --cleanup
 --cleanup               # Clean up worktrees after completion
 ```
 
-### Development Commands
+### Development from Source
+
+When developing or running from source:
 
 ```bash
 # Build the project
@@ -75,14 +97,17 @@ npm run build
 # Build Electron components
 npm run build:electron
 
-# Start in development mode
+# Run the parallel development system
+npm run parallel-dev "Your development request"
+
+# Run with CLI interface (no Electron)
+npm run parallel-dev-cli "Your development request"
+
+# Run basic Claude Code SDK runner
 npm run dev "<prompt>" [directory]
 
-# Run Electron app separately
+# Start Electron app separately
 npm run electron
-
-# Build and start Electron
-npm run electron:build
 ```
 
 ## Architecture
@@ -90,12 +115,17 @@ npm run electron:build
 ### Core Components
 
 - **ParallelPipelineManager**: Event-driven pipeline orchestrator with true parallel processing
+- **ParallelDevelopmentOrchestrator**: Main orchestrator for coordinating all AI agents
+- **ParallelDevelopmentOrchestratorWithElectron**: Electron-enhanced orchestrator with UI integration
 - **ProductOwnerAI**: Requirements analysis and task decomposition
-- **EngineerAI**: Code implementation with Claude Code SDK
+- **EngineerAI**: Code implementation with Claude Code SDK and context preservation
 - **TechLeadAI**: Technical oversight and code review
-- **ReviewWorkflow**: Automated review process
+- **ReviewWorkflow**: Automated review process with parallel reviewers
 - **GitWorktreeManager**: Git operations and branch management
 - **MergeCoordinator**: Intelligent conflict resolution
+- **TaskQueue/ReviewQueue/MergeQueue**: Priority-based processing queues with mutex protection
+- **ElectronLogAdapter**: Real-time log streaming to Electron UI
+- **BaseAI**: Shared functionality for all AI agents
 
 ### Workflow
 
@@ -112,27 +142,59 @@ The system uses three independent pipelines:
 - **Review Pipeline**: Parallel code review
 - **Merge Pipeline**: Sequential merging with mutex protection
 
+## Project Structure
+
+```
+kugutsu/
+├── src/                    # Main source directory
+│   ├── index.ts           # Basic Claude Code SDK runner
+│   ├── parallel-dev.ts    # AI parallel development CLI entry point
+│   ├── parallel-dev-electron.ts  # Electron UI entry point
+│   ├── managers/          # Core system managers
+│   ├── utils/             # Utility functions
+│   └── types/             # TypeScript type definitions
+├── electron/              # Electron application
+│   ├── main/             # Main process
+│   ├── preload/          # Preload scripts
+│   └── renderer/         # Renderer process (UI)
+├── docs/                 # Documentation
+├── tests/                # Test suite
+├── dist/                 # Compiled JavaScript output
+├── worktrees/            # Git worktree directories (created during execution)
+└── logos/                # Project assets
+```
+
 ## Documentation
 
-- [Parallel Development Workflow](docs/parallel-development-workflow.md)
-- [System Design](docs/AI_PARALLEL_DEVELOPMENT_DESIGN.md)
-- [CLAUDE.md](CLAUDE.md) - AI assistant instructions
+- [Parallel Development Workflow](docs/parallel-development-workflow.md) - Detailed workflow documentation
+- [System Design](docs/AI_PARALLEL_DEVELOPMENT_DESIGN.md) - Architecture and design patterns
+- [CLAUDE.md](CLAUDE.md) - AI assistant instructions for Claude Code
 
 ## Examples
 
 ### Implement a Feature
 ```bash
-npm run parallel-dev "Implement a REST API for user management with CRUD operations"
+kugutsu "Implement a REST API for user management with CRUD operations"
 ```
 
 ### Bug Fixes
 ```bash
-npm run parallel-dev-cli "Fix all linting errors and TypeScript issues" --max-engineers 2
+kugutsu "Fix all linting errors and TypeScript issues" --max-engineers 2
 ```
 
 ### Refactoring
 ```bash
-npm run parallel-dev "Refactor the authentication module to use JWT tokens" --cleanup
+kugutsu "Refactor the authentication module to use JWT tokens" --cleanup
+```
+
+### Performance Optimization
+```bash
+kugutsu "Optimize database queries and add caching layer" --visual-ui
+```
+
+### Multiple Features
+```bash
+kugutsu "Add user authentication, implement API rate limiting, and create admin dashboard" --max-engineers 4
 ```
 
 ## License

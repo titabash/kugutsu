@@ -8,7 +8,8 @@ import { ImprovedParallelLogViewer } from '../utils/ImprovedParallelLogViewer.js
 import { LogFormatter } from '../utils/LogFormatter.js';
 import { TaskEventEmitter, TaskEvent, TaskFailedPayload, MergeCompletedPayload, ReviewCompletedPayload } from '../utils/TaskEventEmitter.js';
 import { Task, TaskAnalysisResult, EngineerResult, ReviewResult, SystemConfig } from '../types/index.js';
-import { CompletionReporter } from '../utils/CompletionReporter.js';
+import { CompletionReporter, CompletionStatus } from '../utils/CompletionReporter.js';
+import * as os from 'os';
 
 /**
  * 並列開発オーケストレーター
@@ -38,9 +39,15 @@ export class ParallelDevelopmentOrchestrator {
     this.productOwnerAI = new ProductOwnerAI(config.baseRepoPath);
     this.gitManager = new GitWorktreeManager(config.baseRepoPath, config.worktreeBasePath);
     this.reviewWorkflow = new ReviewWorkflow(this.gitManager, config);
-    this.pipelineManager = new ParallelPipelineManager(this.gitManager, config);
+    
+    // CompletionReporterを作成
+    const tmpDir = os.tmpdir();
+    const projectId = `parallel-dev-${Date.now()}`;
+    this.completionReporter = new CompletionReporter(tmpDir, projectId);
+    
+    // MergeQueueにCompletionReporterを渡してPipelineManagerを作成
+    this.pipelineManager = new ParallelPipelineManager(this.gitManager, config, this.completionReporter);
     this.eventEmitter = TaskEventEmitter.getInstance();
-    this.completionReporter = new CompletionReporter(config.baseRepoPath);
     
     if (this.useVisualUI) {
       this.logViewer = new ImprovedParallelLogViewer();
@@ -64,6 +71,19 @@ export class ParallelDevelopmentOrchestrator {
         this.failedTasks.set(payload.task.id, payload.error || 'マージに失敗しました');
         this.log('system', 'error', `❌ タスク失敗: ${payload.task.title}`, 'Merge', 'Failure');
       }
+    });
+    
+    // 全タスク完了イベント
+    this.eventEmitter.on('allTasksCompleted', (status: CompletionStatus) => {
+      this.log('system', 'success', `🎉 全タスクが完了しました！ (${status.completedTasks}/${status.totalTasks})`, 'System', 'All Completed');
+      
+      // Electronへの通知を送信
+      this.eventEmitter.emit('task-event', {
+        type: 'ALL_TASKS_COMPLETED',
+        taskId: 'system',
+        timestamp: new Date(),
+        payload: { status }
+      });
     });
 
     // タスク失敗イベント
@@ -127,6 +147,14 @@ export class ParallelDevelopmentOrchestrator {
       // 2. タスクの依存関係を解決
       const orderedTasks = this.productOwnerAI.resolveDependencies(analysis.tasks);
       this.log('ProductOwner', 'info', `🔗 依存関係解決完了`, 'Dependencies', 'Phase 1: Analysis');
+      
+      // CompletionReporterを初期化
+      const taskTitles = orderedTasks.map(t => t.title);
+      await this.completionReporter.initialize(taskTitles);
+      this.log('system', 'info', `📊 タスク完了レポーターを初期化 (${taskTitles.length}タスク)`, 'System', 'Initialization');
+      
+      // CompletionReporterのイベントリスナーを設定（サブクラスでオーバーライド可能）
+      this.setupCompletionReporterListeners();
 
       // 3. パイプラインマネージャーを開始
       this.log('system', 'info', '🏗️ フェーズ2: 並列パイプライン開始', 'Orchestrator', 'Phase 2: Pipeline');
@@ -225,6 +253,14 @@ export class ParallelDevelopmentOrchestrator {
     }
 
     console.log('✅ クリーンアップ完了');
+  }
+
+  /**
+   * CompletionReporterのイベントリスナーを設定
+   * サブクラスでオーバーライドして拡張可能
+   */
+  protected setupCompletionReporterListeners(): void {
+    // デフォルトでは何もしない（サブクラスで実装）
   }
 
   /**

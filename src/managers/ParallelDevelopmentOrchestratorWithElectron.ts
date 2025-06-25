@@ -8,6 +8,7 @@ import { SystemConfig } from '../types/index.js';
  */
 export class ParallelDevelopmentOrchestratorWithElectron extends ParallelDevelopmentOrchestrator {
   private useElectronUI: boolean;
+  private totalTaskCount: number = 0;
 
   constructor(config: SystemConfig, useVisualUI: boolean = false, useElectronUI: boolean = false) {
     // ElectronUI使用時は既存のVisualUIを無効化
@@ -45,22 +46,41 @@ export class ParallelDevelopmentOrchestratorWithElectron extends ParallelDevelop
       // タスク完了時にElectronに通知
       this.eventEmitter.onMergeCompleted((event) => {
         const completedCount = this.completedTasks.size;
-        const totalCount = this.activeTasks.size;
-        electronLogAdapter.updateTaskStatus(completedCount, totalCount);
+        electronLogAdapter.updateTaskStatus(completedCount, this.totalTaskCount);
       });
 
       // タスク失敗時にElectronに通知
       this.eventEmitter.onTaskFailed((event) => {
-        const completedCount = this.completedTasks.size;
-        const totalCount = this.activeTasks.size;
-        electronLogAdapter.updateTaskStatus(completedCount, totalCount);
+        const completedCount = this.completedTasks.size + this.failedTasks.size;
+        electronLogAdapter.updateTaskStatus(completedCount, this.totalTaskCount);
       });
 
       // 開発完了時にエンジニア数を更新
       this.eventEmitter.onDevelopmentCompleted((event) => {
-        // 現在のアクティブなエンジニア数を計算
-        const activeEngineers = this.engineerPool.size;
-        electronLogAdapter.updateEngineerCount(activeEngineers);
+        // パイプラインマネージャーの統計情報から取得
+        if (this.pipelineManager) {
+          const stats = this.pipelineManager.getStats();
+          const activeEngineers = stats.development.processing;
+          electronLogAdapter.updateEngineerCount(activeEngineers);
+        }
+      });
+
+      // 定期的にステータスを更新
+      const updateInterval = setInterval(() => {
+        if (this.pipelineManager) {
+          const stats = this.pipelineManager.getStats();
+          const activeEngineers = stats.development.processing;
+          electronLogAdapter.updateEngineerCount(activeEngineers);
+          
+          // タスクステータスも更新
+          const completedCount = this.completedTasks.size + this.failedTasks.size;
+          electronLogAdapter.updateTaskStatus(completedCount, this.totalTaskCount);
+        }
+      }, 1000); // 1秒ごとに更新
+
+      // クリーンアップ時にインターバルをクリア
+      this.eventEmitter.once('cleanup', () => {
+        clearInterval(updateInterval);
       });
     }
   }
@@ -78,14 +98,18 @@ export class ParallelDevelopmentOrchestratorWithElectron extends ParallelDevelop
     if (this.useElectronUI) {
       // 初期状態をElectronに通知
       electronLogAdapter.updateTaskStatus(0, 0);
+      electronLogAdapter.updateEngineerCount(0);
     }
 
     // 親クラスのメソッドを呼び出す
     const result = await super.executeUserRequest(userRequest);
 
     if (this.useElectronUI) {
-      // 最終状態をElectronに通知
-      electronLogAdapter.updateTaskStatus(result.completedTasks.length, result.analysis.tasks.length);
+      // タスク総数を保存
+      this.totalTaskCount = result.analysis.tasks.length;
+      
+      // タスク数を更新
+      electronLogAdapter.updateTaskStatus(0, this.totalTaskCount);
     }
 
     return result;

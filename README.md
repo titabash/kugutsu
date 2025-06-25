@@ -1,116 +1,153 @@
-# Hello CLI 🚀
+# Kugutsu 🎭
 
-A modern Python CLI tool example built with Typer and Rich.
+AI-powered parallel development system that orchestrates multiple AI engineers to work simultaneously on different tasks using git worktrees for isolation.
 
 ## Features
 
-- ✨ Beautiful, rich terminal output
-- 🎯 Type-safe command definitions
-- 🔧 Auto-generated help and completion
-- 📊 Multiple output formats (simple, fancy, table)
-- 🐍 Modern Python practices (3.9+)
+- 🤖 **Parallel AI Development**: Multiple AI engineers work simultaneously on different tasks
+- 🌳 **Git Worktree Isolation**: Each task runs in an isolated git worktree
+- 📊 **Task-Based Architecture**: Automatic task decomposition and prioritization
+- 🔄 **Automated Review Process**: AI-powered code review with parallel reviewers
+- 🔧 **Intelligent Merge Coordination**: Conflict resolution with context preservation
+- 🖥️ **Multiple UI Options**: Electron desktop app, terminal visual UI, or standard CLI
+- 📡 **Real-time Monitoring**: Live progress tracking and log streaming
+
+## Requirements
+
+- Node.js 18+ 
+- npm (as package manager)
+- Git
 
 ## Installation
 
-### Using uv (recommended)
-
 ```bash
 # Clone the repository
-git clone <your-repo-url>
-cd hello-cli
+git clone https://github.com/titabash/kugutsu.git
+cd kugutsu
 
-# Install with uv
-uv sync
+# Install dependencies
+npm install
 
-# Install in development mode
-uv pip install -e .
-```
-
-### Using pip
-
-```bash
-pip install -e .
+# Build TypeScript
+npm run build
 ```
 
 ## Usage
 
-### Basic greeting
+### Basic Usage
 
 ```bash
-hello-cli hello
-# Output: Hello World!
+# Run with Electron UI (default)
+npm run parallel-dev "Implement user authentication system"
 
-hello-cli hello Alice
-# Output: Hello Alice!
+# Run with CLI interface
+npm run parallel-dev-cli "Fix all TypeScript errors"
+
+# Run with specific options
+npm run parallel-dev "Add API endpoints" --max-engineers 3 --cleanup
 ```
 
-### Multiple greetings
+### Command Options
 
 ```bash
-hello-cli hello --count 3
-hello-cli hello Alice -c 5
+--base-repo <path>        # Base repository path (default: current directory)
+--worktree-base <path>    # Worktree base directory (default: ./worktrees)
+--max-engineers <num>     # Maximum concurrent engineers (1-10, default: 3)
+--max-turns <num>         # Maximum turns per task (5-50, default: 20)
+--base-branch <branch>    # Base branch for development (default: main)
+
+# UI options
+--electron               # Use Electron UI (default)
+--no-electron           # Disable Electron UI
+--visual-ui             # Use terminal split UI
+
+# System options
+--use-remote            # Use remote repository
+--cleanup               # Clean up worktrees after completion
 ```
 
-### Styling options
+### Development Commands
 
 ```bash
-# Uppercase greeting
-hello-cli hello --uppercase
+# Build the project
+npm run build
 
-# Fancy style with panels
-hello-cli hello --style fancy
+# Build Electron components
+npm run build:electron
 
-# Table format
-hello-cli hello --style table --count 3
+# Start in development mode
+npm run dev "<prompt>" [directory]
+
+# Run Electron app separately
+npm run electron
+
+# Build and start Electron
+npm run electron:build
 ```
 
-### Get information
+## Architecture
 
+### Core Components
+
+- **ParallelPipelineManager**: Event-driven pipeline orchestrator with true parallel processing
+- **ProductOwnerAI**: Requirements analysis and task decomposition
+- **EngineerAI**: Code implementation with Claude Code SDK
+- **TechLeadAI**: Technical oversight and code review
+- **ReviewWorkflow**: Automated review process
+- **GitWorktreeManager**: Git operations and branch management
+- **MergeCoordinator**: Intelligent conflict resolution
+
+### Workflow
+
+1. **Task Analysis**: ProductOwnerAI analyzes requirements and creates task breakdown
+2. **Parallel Development**: Multiple EngineerAI instances work on tasks simultaneously
+3. **Automated Review**: TechLeadAI reviews completed tasks in parallel
+4. **Merge Coordination**: Sequential merging with conflict resolution
+5. **Final Integration**: All changes merged back to main branch
+
+### Event-Driven Architecture
+
+The system uses three independent pipelines:
+- **Development Pipeline**: Parallel task execution
+- **Review Pipeline**: Parallel code review
+- **Merge Pipeline**: Sequential merging with mutex protection
+
+## Documentation
+
+- [Parallel Development Workflow](docs/parallel-development-workflow.md)
+- [System Design](docs/AI_PARALLEL_DEVELOPMENT_DESIGN.md)
+- [CLAUDE.md](CLAUDE.md) - AI assistant instructions
+
+## Examples
+
+### Implement a Feature
 ```bash
-hello-cli info
-hello-cli --version
+npm run parallel-dev "Implement a REST API for user management with CRUD operations"
 ```
 
-### Help
-
+### Bug Fixes
 ```bash
-hello-cli --help
-hello-cli hello --help
+npm run parallel-dev-cli "Fix all linting errors and TypeScript issues" --max-engineers 2
 ```
 
-## Development
-
-### Setup development environment
-
+### Refactoring
 ```bash
-# Install with development dependencies
-uv sync --group dev
-
-# Install pre-commit hooks
-pre-commit install
+npm run parallel-dev "Refactor the authentication module to use JWT tokens" --cleanup
 ```
-
-### Code quality
-
-```bash
-# Format code
-ruff format
-
-# Lint code
-ruff check
-
-# Type checking
-mypy hello_cli
-
-# Run tests
-pytest
-```
-
-## Requirements
-
-- Python 3.9+
-- Dependencies managed with `uv`
 
 ## License
 
 MIT License
+
+## Contributing
+
+Contributions are welcome! Please read the documentation and follow the existing patterns.
+
+## Author
+
+titabash
+
+## Links
+
+- [GitHub Repository](https://github.com/titabash/kugutsu)
+- [Issues](https://github.com/titabash/kugutsu/issues)

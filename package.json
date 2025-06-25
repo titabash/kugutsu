@@ -1,11 +1,11 @@
 {
-  "name": "kugutsu",
+  "name": "@titabash/kugutsu",
   "version": "1.0.0",
   "description": "AI-powered parallel development system with multiple AI engineers",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && npm run build:electron",
     "build:electron": "cd electron && tsc",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
@@ -54,7 +54,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/titabash/kugutsu.git"
+    "url": "git://github.com/titabash/kugutsu.git"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://npm.pkg.github.com/"
   },
   "bugs": {
     "url": "https://github.com/titabash/kugutsu/issues"

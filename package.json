@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "AI-powered parallel development system with multiple AI engineers",
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
     "build:electron": "cd electron && tsc",
@@ -39,7 +40,7 @@
     "node": ">=18.0.0"
   },
   "bin": {
-    "kugutsu": "./bin/kugutsu.js"
+    "kugutsu": "./dist/parallel-dev-electron.js"
   },
   "keywords": [
     "ai",
@@ -49,7 +50,7 @@
     "automation",
     "cli"
   ],
-  "author": "",
+  "author": "titabash",
   "license": "MIT",
   "repository": {
     "type": "git",

@@ -1,9 +1,9 @@
 import { query, type SDKMessage } from "@anthropic-ai/claude-code";
-import { Task, EngineerResult, AgentConfig } from '../types';
-import { BaseAI } from './BaseAI';
-import { ComponentType } from '../types/logging';
-const fs = require('fs');
-const { execSync } = require('child_process');
+import { Task, EngineerResult, AgentConfig } from '../types/index.js';
+import { BaseAI } from './BaseAI.js';
+import { ComponentType } from '../types/logging.js';
+import * as fs from 'fs';
+import { execSync } from 'child_process';
 
 /**
  * エンジニアAIクラス

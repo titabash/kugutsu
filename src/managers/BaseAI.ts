@@ -1,5 +1,5 @@
-import { ComponentType, LogLevel, LogContext, StructuredLogMessage, ILogger } from '../types/logging';
-import { ElectronLogAdapter } from '../utils/ElectronLogAdapter';
+import { ComponentType, LogLevel, LogContext, StructuredLogMessage, ILogger } from '../types/logging.js';
+import { ElectronLogAdapter } from '../utils/ElectronLogAdapter.js';
 import { v4 as uuidv4 } from 'uuid';
 
 export abstract class BaseAI implements ILogger {

@@ -1,5 +1,5 @@
-import { Task, EngineerResult, SystemConfig } from '../types';
-import { EngineerAI } from '../managers/EngineerAI';
+import { Task, EngineerResult, SystemConfig } from '../types/index.js';
+import { EngineerAI } from '../managers/EngineerAI.js';
 import { execSync } from 'child_process';
 
 /**

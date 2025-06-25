@@ -1,5 +1,11 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+// ESM用の__dirname代替
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -30,6 +36,12 @@ function createWindow() {
   // レンダラープロセスの準備が完了したらログを確認
   mainWindow.webContents.once('did-finish-load', () => {
     console.log('[Electron Main] Renderer loaded successfully');
+    
+    // 親プロセスに準備完了を通知
+    if (process.send) {
+      process.send({ type: 'ready' });
+      console.log('[Electron Main] Sent ready message to parent process');
+    }
     
     // テストメッセージを送信
     setTimeout(() => {

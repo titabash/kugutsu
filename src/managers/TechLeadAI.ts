@@ -1,9 +1,9 @@
 import { query, type SDKMessage } from "@anthropic-ai/claude-code";
-import { Task, EngineerResult, AgentConfig, ReviewResult } from '../types';
-import { MergeCoordinator } from '../utils/MergeCoordinator';
-import { EngineerAI } from './EngineerAI';
-import { BaseAI } from './BaseAI';
-import { ComponentType } from '../types/logging';
+import { Task, EngineerResult, AgentConfig, ReviewResult } from '../types/index.js';
+import { MergeCoordinator } from '../utils/MergeCoordinator.js';
+import { EngineerAI } from './EngineerAI.js';
+import { BaseAI } from './BaseAI.js';
+import { ComponentType } from '../types/logging.js';
 
 /**
  * テックリードAIクラス

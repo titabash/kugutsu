@@ -1,7 +1,7 @@
 import { execSync, spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { WorktreeInfo, Task } from '../types';
+import { WorktreeInfo, Task } from '../types/index.js';
 
 /**
  * Git Worktree管理クラス

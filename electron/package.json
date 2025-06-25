@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Electron UI for Multi-Engineer Parallel Development",
   "main": "main/index.js",
+  "type": "module",
   "scripts": {
     "start": "electron .",
     "build": "tsc"

@@ -1,6 +1,6 @@
-import { ParallelDevelopmentOrchestrator } from './ParallelDevelopmentOrchestrator';
-import { electronLogAdapter } from '../utils/ElectronLogAdapter';
-import { SystemConfig } from '../types';
+import { ParallelDevelopmentOrchestrator } from './ParallelDevelopmentOrchestrator.js';
+import { electronLogAdapter } from '../utils/ElectronLogAdapter.js';
+import { SystemConfig } from '../types/index.js';
 
 /**
  * Electron対応並列開発オーケストレーター
@@ -69,9 +69,9 @@ export class ParallelDevelopmentOrchestratorWithElectron extends ParallelDevelop
    * 開発開始時にElectronに初期状態を通知
    */
   async executeUserRequest(userRequest: string): Promise<{
-    analysis: import('../types').TaskAnalysisResult;
-    results: import('../types').EngineerResult[];
-    reviewResults: import('../types').ReviewResult[][];
+    analysis: import('../types/index.js').TaskAnalysisResult;
+    results: import('../types/index.js').EngineerResult[];
+    reviewResults: import('../types/index.js').ReviewResult[][];
     completedTasks: string[];
     failedTasks: string[];
   }> {

@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { promisify } from 'util';
-import { Task } from '../types';
+import { Task } from '../types/index.js';
 
 const mkdtemp = promisify(fs.mkdtemp);
 

@@ -1,10 +1,10 @@
 import { execSync } from 'child_process';
-import { TechLeadAI } from './TechLeadAI';
-import { EngineerAI } from './EngineerAI';
-import { GitWorktreeManager } from './GitWorktreeManager';
-import { MergeCoordinator } from '../utils/MergeCoordinator';
-import { Task, EngineerResult, ReviewResult, SystemConfig } from '../types';
-import { electronLogAdapter } from '../utils/ElectronLogAdapter';
+import { TechLeadAI } from './TechLeadAI.js';
+import { EngineerAI } from './EngineerAI.js';
+import { GitWorktreeManager } from './GitWorktreeManager.js';
+import { MergeCoordinator } from '../utils/MergeCoordinator.js';
+import { Task, EngineerResult, ReviewResult, SystemConfig } from '../types/index.js';
+import { electronLogAdapter } from '../utils/ElectronLogAdapter.js';
 
 /**
  * レビューワークフローの管理

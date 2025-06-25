@@ -1,8 +1,8 @@
-import { Task, EngineerResult, ReviewResult } from '../types';
-import { ReviewWorkflow } from '../managers/ReviewWorkflow';
-import { EngineerAI } from '../managers/EngineerAI';
-import { TaskQueue } from './TaskQueue';
-import { TaskEventEmitter, ReviewCompletedPayload } from './TaskEventEmitter';
+import { Task, EngineerResult, ReviewResult } from '../types/index.js';
+import { ReviewWorkflow } from '../managers/ReviewWorkflow.js';
+import { EngineerAI } from '../managers/EngineerAI.js';
+import { TaskQueue } from './TaskQueue.js';
+import { TaskEventEmitter, ReviewCompletedPayload } from './TaskEventEmitter.js';
 
 /**
  * レビューキューアイテム

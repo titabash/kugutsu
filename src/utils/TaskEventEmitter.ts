@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import { Task, EngineerResult, ReviewResult } from '../types';
+import { Task, EngineerResult, ReviewResult } from '../types/index.js';
 
 /**
  * タスクイベントの型定義

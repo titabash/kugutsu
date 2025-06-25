@@ -1,13 +1,13 @@
-import { ProductOwnerAI } from './ProductOwnerAI';
-import { GitWorktreeManager } from './GitWorktreeManager';
-import { EngineerAI } from './EngineerAI';
-import { ReviewWorkflow } from './ReviewWorkflow';
-import { ParallelPipelineManager } from './ParallelPipelineManager';
-import { TaskInstructionManager } from '../utils/TaskInstructionManager';
-import { ImprovedParallelLogViewer } from '../utils/ImprovedParallelLogViewer';
-import { LogFormatter } from '../utils/LogFormatter';
-import { TaskEventEmitter, TaskEvent, TaskFailedPayload, MergeCompletedPayload, ReviewCompletedPayload } from '../utils/TaskEventEmitter';
-import { Task, TaskAnalysisResult, EngineerResult, ReviewResult, SystemConfig } from '../types';
+import { ProductOwnerAI } from './ProductOwnerAI.js';
+import { GitWorktreeManager } from './GitWorktreeManager.js';
+import { EngineerAI } from './EngineerAI.js';
+import { ReviewWorkflow } from './ReviewWorkflow.js';
+import { ParallelPipelineManager } from './ParallelPipelineManager.js';
+import { TaskInstructionManager } from '../utils/TaskInstructionManager.js';
+import { ImprovedParallelLogViewer } from '../utils/ImprovedParallelLogViewer.js';
+import { LogFormatter } from '../utils/LogFormatter.js';
+import { TaskEventEmitter, TaskEvent, TaskFailedPayload, MergeCompletedPayload, ReviewCompletedPayload } from '../utils/TaskEventEmitter.js';
+import { Task, TaskAnalysisResult, EngineerResult, ReviewResult, SystemConfig } from '../types/index.js';
 
 /**
  * 並列開発オーケストレーター

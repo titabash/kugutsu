@@ -1,6 +1,12 @@
 import { spawn, ChildProcess } from 'child_process';
 import * as path from 'path';
-import { StructuredLogMessage } from '../types/logging';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+import { StructuredLogMessage } from '../types/logging.js';
+
+// ESM用の__dirname代替
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 export interface ElectronLogMessage {
     engineerId: string;
@@ -42,7 +48,11 @@ export class ElectronLogAdapter {
         
         try {
             // Electronプロセスを起動
-            const electronExecutable = require('electron');
+            // ESMではrequire('electron')が使えないため、実際のElectron実行ファイルのパスを構築
+            // macOSの場合のパス
+            const electronExecutable = process.platform === 'darwin'
+                ? path.join(__dirname, '../../node_modules/electron/dist/Electron.app/Contents/MacOS/Electron')
+                : path.join(__dirname, '../../node_modules/.bin/electron');
             const electronAppPath = path.join(__dirname, '../../electron');
             
             console.log('📱 Electronアプリを起動中...');
@@ -205,7 +215,7 @@ export class ElectronLogAdapter {
             
             // エンジニアIDとコンポーネントを推測
             let engineerId = 'system';
-            let component = undefined;
+            let component: string | undefined = undefined;
             
             // ログメッセージからコンポーネントを特定
             if (message.includes('🧠') || message.includes('💭') || message.includes('プロダクトオーナーAI')) {

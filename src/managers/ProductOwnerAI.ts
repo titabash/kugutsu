@@ -1,9 +1,9 @@
 import { query, type SDKMessage } from "@anthropic-ai/claude-code";
-import { Task, TaskAnalysisResult, AgentConfig } from '../types';
-import { TaskInstructionManager } from '../utils/TaskInstructionManager';
+import { Task, TaskAnalysisResult, AgentConfig } from '../types/index.js';
+import { TaskInstructionManager } from '../utils/TaskInstructionManager.js';
 import { v4 as uuidv4 } from 'uuid';
-import { BaseAI } from './BaseAI';
-import { ComponentType } from '../types/logging';
+import { BaseAI } from './BaseAI.js';
+import { ComponentType } from '../types/logging.js';
 
 /**
  * プロダクトオーナーAIクラス

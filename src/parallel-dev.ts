@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
-import { ParallelDevelopmentOrchestrator } from './managers/ParallelDevelopmentOrchestrator';
-import { ParallelDevelopmentOrchestratorWithElectron } from './managers/ParallelDevelopmentOrchestratorWithElectron';
-import { SystemConfig } from './types';
-import { electronLogAdapter } from './utils/ElectronLogAdapter';
+import { ParallelDevelopmentOrchestrator } from './managers/ParallelDevelopmentOrchestrator.js';
+import { ParallelDevelopmentOrchestratorWithElectron } from './managers/ParallelDevelopmentOrchestratorWithElectron.js';
+import { SystemConfig } from './types/index.js';
+import { electronLogAdapter } from './utils/ElectronLogAdapter.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -277,7 +277,8 @@ class ParallelDevelopmentCLI {
 }
 
 // スクリプトが直接実行された場合のみmain関数を呼び出し
-if (require.main === module) {
+// ESMではimport.meta.urlを使用
+if (import.meta.url === `file://${process.argv[1]}`) {
   ParallelDevelopmentCLI.main().catch((error) => {
     console.error('💥 予期しないエラー:', error);
     process.exit(1);

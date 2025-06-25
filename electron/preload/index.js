@@ -1,43 +1,41 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-const electron_1 = require("electron");
+import { contextBridge, ipcRenderer } from 'electron';
 const electronAPI = {
     // ログ関連
-    sendLog: (data) => electron_1.ipcRenderer.invoke('log-message', data),
+    sendLog: (data) => ipcRenderer.invoke('log-message', data),
     onLogData: (callback) => {
-        electron_1.ipcRenderer.on('log-data', (event, data) => callback(data));
+        ipcRenderer.on('log-data', (event, data) => callback(data));
     },
     onStructuredLogData: (callback) => {
-        electron_1.ipcRenderer.on('structured-log-data', (event, data) => callback(data));
+        ipcRenderer.on('structured-log-data', (event, data) => callback(data));
     },
     // レイアウト関連
-    updateLayout: (engineerCount) => electron_1.ipcRenderer.invoke('update-layout', engineerCount),
+    updateLayout: (engineerCount) => ipcRenderer.invoke('update-layout', engineerCount),
     onLayoutUpdate: (callback) => {
-        electron_1.ipcRenderer.on('layout-update', (event, engineerCount) => callback(engineerCount));
+        ipcRenderer.on('layout-update', (event, engineerCount) => callback(engineerCount));
     },
     // タスクステータス関連
     onTaskStatusUpdate: (callback) => {
-        electron_1.ipcRenderer.on('task-status-update', (event, data) => callback(data));
+        ipcRenderer.on('task-status-update', (event, data) => callback(data));
     },
     // ターミナルクリア
     onClearTerminal: (callback) => {
-        electron_1.ipcRenderer.on('clear-terminal', (event, terminalId) => callback(terminalId));
+        ipcRenderer.on('clear-terminal', (event, terminalId) => callback(terminalId));
     },
     // 接続ステータス
     onConnectionStatus: (callback) => {
-        electron_1.ipcRenderer.on('connection-status', (event, connected) => callback(connected));
+        ipcRenderer.on('connection-status', (event, connected) => callback(connected));
     },
     // TechLeadとEngineerの関連付け
     onAssociateTechLeadEngineer: (callback) => {
-        electron_1.ipcRenderer.on('associate-techlead-engineer', (event, data) => callback(data));
+        ipcRenderer.on('associate-techlead-engineer', (event, data) => callback(data));
     },
     // イベントリスナーの削除
     removeAllListeners: (channel) => {
-        electron_1.ipcRenderer.removeAllListeners(channel);
+        ipcRenderer.removeAllListeners(channel);
     }
 };
 // contextIsolationが有効な場合のみcontextBridgeを使用
 if (process.contextIsolated) {
-    electron_1.contextBridge.exposeInMainWorld('electronAPI', electronAPI);
+    contextBridge.exposeInMainWorld('electronAPI', electronAPI);
 }
 //# sourceMappingURL=index.js.map

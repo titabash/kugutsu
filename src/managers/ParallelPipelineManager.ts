@@ -1,11 +1,11 @@
-import { Task, SystemConfig } from '../types';
-import { EngineerAI } from './EngineerAI';
-import { GitWorktreeManager } from './GitWorktreeManager';
-import { ReviewWorkflow } from './ReviewWorkflow';
-import { TaskQueue } from '../utils/TaskQueue';
-import { ReviewQueue } from '../utils/ReviewQueue';
-import { MergeQueue } from '../utils/MergeQueue';
-import { TaskEventEmitter, TaskEvent, DevelopmentCompletedPayload, ReviewCompletedPayload, MergeReadyPayload, MergeConflictDetectedPayload } from '../utils/TaskEventEmitter';
+import { Task, SystemConfig } from '../types/index.js';
+import { EngineerAI } from './EngineerAI.js';
+import { GitWorktreeManager } from './GitWorktreeManager.js';
+import { ReviewWorkflow } from './ReviewWorkflow.js';
+import { TaskQueue } from '../utils/TaskQueue.js';
+import { ReviewQueue } from '../utils/ReviewQueue.js';
+import { MergeQueue } from '../utils/MergeQueue.js';
+import { TaskEventEmitter, TaskEvent, DevelopmentCompletedPayload, ReviewCompletedPayload, MergeReadyPayload, MergeConflictDetectedPayload } from '../utils/TaskEventEmitter.js';
 
 /**
  * 開発キューアイテム

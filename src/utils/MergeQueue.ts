@@ -1,7 +1,7 @@
 import { execSync } from 'child_process';
-import { Task, EngineerResult, ReviewResult, SystemConfig } from '../types';
-import { GitWorktreeManager } from '../managers/GitWorktreeManager';
-import { TaskEventEmitter } from './TaskEventEmitter';
+import { Task, EngineerResult, ReviewResult, SystemConfig } from '../types/index.js';
+import { GitWorktreeManager } from '../managers/GitWorktreeManager.js';
+import { TaskEventEmitter } from './TaskEventEmitter.js';
 
 /**
  * マージキューアイテム

@@ -2,6 +2,8 @@ import { query, type SDKMessage } from "@anthropic-ai/claude-code";
 import { Task, EngineerResult, AgentConfig } from '../types';
 import { BaseAI } from './BaseAI';
 import { ComponentType } from '../types/logging';
+const fs = require('fs');
+const { execSync } = require('child_process');
 
 /**
  * エンジニアAIクラス
@@ -179,12 +181,10 @@ feat: ユーザー認証機能を追加
           if (task.worktreePath) {
             try {
               console.log(`\n🔍 ワークツリー状態確認: ${task.worktreePath}`);
-              const fs = require('fs');
               const worktreeExists = fs.existsSync(task.worktreePath);
               console.log(`- ワークツリー存在: ${worktreeExists}`);
               
               if (worktreeExists) {
-                const { execSync } = require('child_process');
                 const gitStatus = execSync('git status --porcelain', { 
                   cwd: task.worktreePath, 
                   encoding: 'utf-8',
@@ -441,7 +441,7 @@ feat: ユーザー認証機能を追加
    */
   private buildTaskPrompt(task: Task): string {
     const instructionFile = (task as any).instructionFile;
-    const hasInstructionFile = instructionFile && require('fs').existsSync(instructionFile);
+    const hasInstructionFile = instructionFile && fs.existsSync(instructionFile);
 
     if (hasInstructionFile) {
       // 指示ファイルがある場合
@@ -592,7 +592,6 @@ ${task.worktreePath}
     try {
       if (!worktreePath) return [];
 
-      const { execSync } = require('child_process');
 
       // ステージされた変更とワーキングディレクトリの変更を取得
       const output = execSync('git status --porcelain', {
@@ -622,14 +621,12 @@ ${task.worktreePath}
       return { valid: false, reason: 'Worktreeパスが設定されていません' };
     }
 
-    const fs = require('fs');
     if (!fs.existsSync(task.worktreePath)) {
       return { valid: false, reason: `Worktreeが存在しません: ${task.worktreePath}` };
     }
 
     // ブランチの確認
     try {
-      const { execSync } = require('child_process');
       const currentBranch = execSync('git branch --show-current', {
         cwd: task.worktreePath,
         encoding: 'utf-8',

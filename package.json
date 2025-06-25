@@ -8,6 +8,7 @@
     "build": "tsc && npm run build:electron",
     "build:electron": "cd electron && tsc",
     "start": "node dist/index.js",
+    "kugutsu": "node dist/parallel-dev.js",
     "dev": "ts-node src/index.ts",
     "parallel-dev": "ts-node src/parallel-dev.ts",
     "parallel-dev-cli": "ts-node src/parallel-dev.ts --no-electron",
@@ -41,6 +42,12 @@
   },
   "bin": {
     "kugutsu": "./dist/parallel-dev.js"
+  },
+  "exports": {
+    "./parallel-dev": {
+      "import": "./dist/parallel-dev.js",
+      "types": "./dist/parallel-dev.d.ts"
+    }
   },
   "keywords": [
     "ai",

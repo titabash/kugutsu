@@ -126,7 +126,7 @@ export class ImprovedParallelLogViewer {
 
   private formatMainHeader(): string {
     const now = new Date();
-    return `{center}{bold}🚀 Multi-Engineer Parallel Development System 🚀{/bold}{/center}
+    return `{center}{bold}🚀 Kugutsu 🚀{/bold}{/center}
 {center}Enhanced Log Viewer v2.0{/center}
 {center}{cyan-fg}Started: ${now.toLocaleString()} | PID: ${process.pid}{/cyan-fg}{/center}`;
   }

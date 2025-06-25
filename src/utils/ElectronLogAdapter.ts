@@ -222,12 +222,20 @@ export class ElectronLogAdapter {
                 engineerId = 'ProductOwner';
                 component = 'ProductOwner';
             } else if (message.includes('🔍') || message.includes('👀') || message.includes('テックリードAI') || message.includes('TechLeadAI')) {
-                engineerId = 'TechLead';
-                component = 'TechLead';
+                // TechLeadのログを検出
+                const match = message.match(/テックリードAI\[([^\]]+)\]|TechLeadAI\[([^\]]+)\]/);
+                if (match) {
+                    engineerId = match[1] || match[2];
+                    component = 'TechLead';
+                } else {
+                    engineerId = 'TechLead';
+                    component = 'TechLead';
+                }
             } else if (message.includes('👨‍💻') || message.includes('エンジニアAI[')) {
                 const match = message.match(/エンジニアAI\[([^\]]+)\]/);
                 if (match) {
                     engineerId = match[1];
+                    component = 'Engineer';
                 }
             } else if (message.includes('🛠️') && message.includes('ツール実行')) {
                 // ツール実行のログ - 直前のコンポーネントを使用
@@ -236,12 +244,19 @@ export class ElectronLogAdapter {
                     engineerId = 'ProductOwner';
                     component = 'ProductOwner';
                 } else if (message.includes('テックリードAI')) {
-                    engineerId = 'TechLead';
-                    component = 'TechLead';
+                    const match = message.match(/テックリードAI\[([^\]]+)\]/);
+                    if (match) {
+                        engineerId = match[1];
+                        component = 'TechLead';
+                    } else {
+                        engineerId = 'TechLead';
+                        component = 'TechLead';
+                    }
                 } else if (message.includes('エンジニアAI[')) {
                     const match = message.match(/エンジニアAI\[([^\]]+)\]/);
                     if (match) {
                         engineerId = match[1];
+                        component = 'Engineer';
                     }
                 }
             } else if (message.includes('⚙️  パラメータ:') || message.includes('📂 ディレクトリ一覧:') || message.includes('📄 ファイル内容:')) {

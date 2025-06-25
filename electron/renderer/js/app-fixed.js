@@ -68,14 +68,14 @@ const themes = {
 const state = {
     terminals: {},         // terminalId -> Terminal instance
     fitAddons: {},        // terminalId -> FitAddon instance
-    engineerTabs: {},     // engineerId -> { tabIndex, status, terminalId, techLeadTerminalId }
+    engineerTabs: {},     // engineerId -> { tabIndex, status, terminalId }
+    techLeadTabs: {},     // techLeadId -> { tabIndex, status, terminalId }
     activeTab: 'product-owner',
     activeEngineerTab: null,
+    activeTechLeadTab: null,
     engineerCount: 0,
-    lastToolExecutor: 'merge-coordinator',
-    // TechLeadとEngineerのマッピング
-    techLeadToEngineer: {},  // techLeadId -> engineerId
-    engineerToTechLead: {}   // engineerId -> techLeadId[]
+    techLeadCount: 0,
+    lastToolExecutor: 'merge-coordinator'
 };
 
 // ターミナルの初期化
@@ -135,38 +135,36 @@ function switchTab(tabId) {
     }, 50);
 }
 
-// サブタブ切り替え（エンジニア）
-function switchEngineerTab(engineerId) {
-    const panelsContainer = document.getElementById('engineer-panels');
-    const tabsContainer = document.getElementById('engineer-sub-tabs');
+// サブタブ切り替え（エンジニア/TechLead）
+function switchSubTab(type, tabId) {
+    const isEngineer = type === 'engineer';
+    const panelsContainer = document.getElementById(isEngineer ? 'engineer-panels' : 'tech-lead-panels');
+    const tabsContainer = document.getElementById(isEngineer ? 'engineer-sub-tabs' : 'tech-lead-sub-tabs');
     
     // タブのアクティブ状態を更新
     tabsContainer.querySelectorAll('.sub-tab-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.getAttribute('data-id') === engineerId);
+        btn.classList.toggle('active', btn.getAttribute('data-id') === tabId);
     });
     
     // パネルの表示切り替え
     panelsContainer.querySelectorAll('.sub-tab-panel').forEach(panel => {
-        panel.classList.toggle('active', panel.id === `engineer-panel-${engineerId}`);
+        panel.classList.toggle('active', panel.id === `${type}-panel-${tabId}`);
     });
     
-    state.activeEngineerTab = engineerId;
+    if (isEngineer) {
+        state.activeEngineerTab = tabId;
+    } else {
+        state.activeTechLeadTab = tabId;
+    }
     
     // ターミナルのリサイズ
-    const tabInfo = state.engineerTabs[engineerId];
-    if (tabInfo) {
-        // エンジニアターミナルのリサイズ
-        if (tabInfo.terminalId && state.fitAddons[tabInfo.terminalId]) {
-            setTimeout(() => state.fitAddons[tabInfo.terminalId].fit(), 50);
-        }
-        // TechLeadターミナルのリサイズ
-        if (tabInfo.techLeadTerminalId && state.fitAddons[tabInfo.techLeadTerminalId]) {
-            setTimeout(() => state.fitAddons[tabInfo.techLeadTerminalId].fit(), 50);
-        }
+    const tabInfo = isEngineer ? state.engineerTabs[tabId] : state.techLeadTabs[tabId];
+    if (tabInfo && tabInfo.terminalId && state.fitAddons[tabInfo.terminalId]) {
+        setTimeout(() => state.fitAddons[tabInfo.terminalId].fit(), 50);
     }
 }
 
-// エンジニアタブの作成（TechLeadターミナルも含む）
+// エンジニアタブの作成
 function createEngineerTab(engineerId) {
     if (state.engineerTabs[engineerId]) {
         console.log(`[createEngineerTab] Engineer tab already exists for ${engineerId}`);
@@ -175,8 +173,7 @@ function createEngineerTab(engineerId) {
     
     state.engineerCount++;
     const tabIndex = state.engineerCount;
-    const engineerTerminalId = `engineer-${tabIndex}`;
-    const techLeadTerminalId = `tech-lead-${tabIndex}`;
+    const terminalId = `engineer-${tabIndex}`;
     
     // タブの作成
     const tabsContainer = document.getElementById('engineer-sub-tabs');
@@ -187,34 +184,23 @@ function createEngineerTab(engineerId) {
         Engineer #${tabIndex}
         <span class="status-dot active"></span>
     `;
-    tab.onclick = () => switchEngineerTab(engineerId);
+    tab.onclick = () => switchSubTab('engineer', engineerId);
     tabsContainer.appendChild(tab);
     
-    // パネルの作成（エンジニアとTechLeadの両方を含む）
+    // パネルの作成
     const panelsContainer = document.getElementById('engineer-panels');
     const panel = document.createElement('div');
     panel.id = `engineer-panel-${engineerId}`;
     panel.className = 'sub-tab-panel';
     panel.innerHTML = `
-        <div class="engineer-tech-lead-split">
-            <div class="terminal-pane engineer split-pane">
-                <div class="terminal-header">
-                    <span class="terminal-title">👨‍💻 Engineer AI #${tabIndex}</span>
-                    <div class="terminal-actions">
-                        <span class="terminal-action" data-terminal="${engineerTerminalId}">Clear</span>
-                    </div>
+        <div class="terminal-pane engineer full-height">
+            <div class="terminal-header">
+                <span class="terminal-title">👨‍💻 Engineer AI #${tabIndex}</span>
+                <div class="terminal-actions">
+                    <span class="terminal-action" data-terminal="${terminalId}">Clear</span>
                 </div>
-                <div class="terminal-container" id="${engineerTerminalId}-container"></div>
             </div>
-            <div class="terminal-pane tech-lead split-pane">
-                <div class="terminal-header">
-                    <span class="terminal-title">🔍 Tech Lead AI #${tabIndex}</span>
-                    <div class="terminal-actions">
-                        <span class="terminal-action" data-terminal="${techLeadTerminalId}">Clear</span>
-                    </div>
-                </div>
-                <div class="terminal-container" id="${techLeadTerminalId}-container"></div>
-            </div>
+            <div class="terminal-container" id="${terminalId}-container"></div>
         </div>
     `;
     panelsContainer.appendChild(panel);
@@ -228,41 +214,90 @@ function createEngineerTab(engineerId) {
     
     // ターミナルの初期化
     setTimeout(() => {
-        const engineerContainer = document.getElementById(`${engineerTerminalId}-container`);
-        const techLeadContainer = document.getElementById(`${techLeadTerminalId}-container`);
-        
-        if (engineerContainer) {
-            initializeTerminal(engineerTerminalId, engineerContainer, themes.engineer);
+        const container = document.getElementById(`${terminalId}-container`);
+        if (container) {
+            initializeTerminal(terminalId, container, themes.engineer);
+            updateScrollButtons('engineer');
         }
-        if (techLeadContainer) {
-            initializeTerminal(techLeadTerminalId, techLeadContainer, themes.techLead);
-        }
-        
-        updateScrollButtons('engineer');
     }, 50);
     
     // 状態の更新
     state.engineerTabs[engineerId] = { 
         tabIndex, 
         status: 'active',
-        terminalId: engineerTerminalId,
-        techLeadTerminalId: techLeadTerminalId
+        terminalId 
     };
     
-    console.log(`[createEngineerTab] Created engineer tab for ${engineerId} with terminals: engineer=${engineerTerminalId}, techLead=${techLeadTerminalId}`);
-    return engineerTerminalId;
+    console.log(`[createEngineerTab] Created engineer tab for ${engineerId} with terminal ${terminalId}`);
+    return terminalId;
 }
 
-// TechLeadとEngineerの関連付けを設定
-function associateTechLeadWithEngineer(techLeadId, engineerId) {
-    console.log(`[associateTechLeadWithEngineer] Associating ${techLeadId} with ${engineerId}`);
-    
-    state.techLeadToEngineer[techLeadId] = engineerId;
-    
-    if (!state.engineerToTechLead[engineerId]) {
-        state.engineerToTechLead[engineerId] = [];
+// TechLeadタブの作成
+function createTechLeadTab(techLeadId) {
+    if (state.techLeadTabs[techLeadId]) {
+        console.log(`[createTechLeadTab] TechLead tab already exists for ${techLeadId}`);
+        return state.techLeadTabs[techLeadId].terminalId;
     }
-    state.engineerToTechLead[engineerId].push(techLeadId);
+    
+    state.techLeadCount++;
+    const tabIndex = state.techLeadCount;
+    const terminalId = `tech-lead-${tabIndex}`;
+    
+    // タブの作成
+    const tabsContainer = document.getElementById('tech-lead-sub-tabs');
+    const tab = document.createElement('button');
+    tab.className = 'sub-tab-btn';
+    tab.setAttribute('data-id', techLeadId);
+    tab.innerHTML = `
+        Tech Lead #${tabIndex}
+        <span class="status-dot active"></span>
+    `;
+    tab.onclick = () => switchSubTab('tech-lead', techLeadId);
+    tabsContainer.appendChild(tab);
+    
+    // パネルの作成
+    const panelsContainer = document.getElementById('tech-lead-panels');
+    const panel = document.createElement('div');
+    panel.id = `tech-lead-panel-${techLeadId}`;
+    panel.className = 'sub-tab-panel';
+    panel.innerHTML = `
+        <div class="terminal-pane tech-lead full-height">
+            <div class="terminal-header">
+                <span class="terminal-title">🔍 Tech Lead AI #${tabIndex}</span>
+                <div class="terminal-actions">
+                    <span class="terminal-action" data-terminal="${terminalId}">Clear</span>
+                </div>
+            </div>
+            <div class="terminal-container" id="${terminalId}-container"></div>
+        </div>
+    `;
+    panelsContainer.appendChild(panel);
+    
+    // 最初のタブをアクティブに
+    if (!state.activeTechLeadTab) {
+        state.activeTechLeadTab = techLeadId;
+        tab.classList.add('active');
+        panel.classList.add('active');
+    }
+    
+    // ターミナルの初期化
+    setTimeout(() => {
+        const container = document.getElementById(`${terminalId}-container`);
+        if (container) {
+            initializeTerminal(terminalId, container, themes.techLead);
+            updateScrollButtons('tech-lead');
+        }
+    }, 50);
+    
+    // 状態の更新
+    state.techLeadTabs[techLeadId] = { 
+        tabIndex, 
+        status: 'active',
+        terminalId 
+    };
+    
+    console.log(`[createTechLeadTab] Created TechLead tab for ${techLeadId} with terminal ${terminalId}`);
+    return terminalId;
 }
 
 // スクロールボタンの更新
@@ -294,9 +329,9 @@ function scrollTabs(type, direction) {
 }
 
 // ステータスインジケーターの更新
-function updateStatusIndicator(engineerId, status) {
-    const tabsContainer = document.getElementById('engineer-sub-tabs');
-    const tab = tabsContainer.querySelector(`[data-id="${engineerId}"]`);
+function updateStatusIndicator(type, id, status) {
+    const tabsContainer = document.getElementById(`${type}-sub-tabs`);
+    const tab = tabsContainer.querySelector(`[data-id="${id}"]`);
     if (!tab) return;
     
     const statusDot = tab.querySelector('.status-dot');
@@ -364,14 +399,8 @@ function getTerminalIdForStructuredLog(executor, context) {
             const engineerTerminalId = createEngineerTab(executor.id);
             return engineerTerminalId;
         case 'TechLead':
-            // TechLeadのログは、関連するエンジニアのTechLeadターミナルに表示
-            const relatedEngineerId = state.techLeadToEngineer[executor.id];
-            if (relatedEngineerId && state.engineerTabs[relatedEngineerId]) {
-                return state.engineerTabs[relatedEngineerId].techLeadTerminalId;
-            }
-            // 関連付けがない場合は、merge-coordinatorに表示
-            console.warn(`[getTerminalIdForStructuredLog] No engineer association found for TechLead ${executor.id}`);
-            return 'merge-coordinator';
+            const techLeadTerminalId = createTechLeadTab(executor.id);
+            return techLeadTerminalId;
         default:
             return 'merge-coordinator';
     }
@@ -385,14 +414,9 @@ function getTerminalIdForLegacyLog(engineerId, component) {
     if (component === 'ProductOwner' || component === 'Analysis') {
         return 'product-owner';
     } else if (component === 'TechLead') {
-        // TechLeadの場合、関連するエンジニアのTechLeadターミナルに表示
-        const relatedEngineerId = state.techLeadToEngineer[engineerId];
-        if (relatedEngineerId && state.engineerTabs[relatedEngineerId]) {
-            return state.engineerTabs[relatedEngineerId].techLeadTerminalId;
-        }
-        // 関連付けがない場合は、merge-coordinatorに表示
-        console.warn(`[getTerminalIdForLegacyLog] No engineer association found for TechLead ${engineerId}`);
-        return 'merge-coordinator';
+        // TechLeadの場合、engineerIdがtechlead-xxx形式のTechLeadIDである
+        const terminalId = createTechLeadTab(engineerId);
+        return terminalId;
     } else if (component === 'MergeCoordinator' || component === 'System' || component === 'Orchestrator') {
         return 'merge-coordinator';
     } else if (engineerId?.startsWith('engineer-')) {
@@ -401,6 +425,10 @@ function getTerminalIdForLegacyLog(engineerId, component) {
         return terminalId;
     } else if (engineerId === 'ProductOwner') {
         return 'product-owner';
+    } else if (engineerId === 'TechLead' || engineerId?.startsWith('techlead-')) {
+        // engineerIdがTechLead系の場合
+        const terminalId = createTechLeadTab(engineerId);
+        return terminalId;
     } else {
         // デフォルトはmerge-coordinator
         return 'merge-coordinator';
@@ -446,24 +474,19 @@ document.addEventListener('DOMContentLoaded', () => {
     // スクロールボタンイベント
     document.getElementById('engineer-scroll-left').onclick = () => scrollTabs('engineer', 'left');
     document.getElementById('engineer-scroll-right').onclick = () => scrollTabs('engineer', 'right');
+    document.getElementById('tech-lead-scroll-left').onclick = () => scrollTabs('tech-lead', 'left');
+    document.getElementById('tech-lead-scroll-right').onclick = () => scrollTabs('tech-lead', 'right');
     
     // ウィンドウリサイズ処理
     window.addEventListener('resize', () => {
         Object.values(state.fitAddons).forEach(addon => addon.fit());
         updateScrollButtons('engineer');
+        updateScrollButtons('tech-lead');
     });
     
     // Electron APIイベントリスナー
     if (window.electronAPI) {
         console.log('[DOMContentLoaded] Setting up Electron API listeners...');
-        
-        // デバッグ用：初期ターミナルにテストメッセージを表示
-        if (state.terminals['product-owner']) {
-            state.terminals['product-owner'].writeln('\x1b[32m✅ Product Owner terminal ready and listening for logs...\x1b[0m');
-        }
-        if (state.terminals['merge-coordinator']) {
-            state.terminals['merge-coordinator'].writeln('\x1b[32m✅ Merge Coordinator terminal ready and listening for logs...\x1b[0m');
-        }
         
         // 構造化ログデータの受信
         window.electronAPI.onStructuredLogData((data) => {
@@ -526,82 +549,9 @@ document.addEventListener('DOMContentLoaded', () => {
         window.electronAPI.onAssociateTechLeadEngineer((data) => {
             const { techLeadId, engineerId } = data;
             console.log(`[onAssociateTechLeadEngineer] ${techLeadId} -> ${engineerId}`);
-            associateTechLeadWithEngineer(techLeadId, engineerId);
+            // タブUIでは特に処理不要（独立したタブなので）
         });
     } else {
         console.error('[DOMContentLoaded] window.electronAPI is not available!');
-        console.log('[DOMContentLoaded] Attempting to use direct ipcRenderer as fallback...');
-        
-        // フォールバック: 直接ipcRendererを使用
-        try {
-            const { ipcRenderer } = require('electron');
-            console.log('[DOMContentLoaded] Using direct ipcRenderer');
-            
-            // デバッグ用：初期ターミナルにテストメッセージを表示
-            if (state.terminals['product-owner']) {
-                state.terminals['product-owner'].writeln('\x1b[33m⚠️ Using fallback ipcRenderer mode\x1b[0m');
-            }
-            
-            // 構造化ログデータ
-            ipcRenderer.on('structured-log-data', (event, data) => {
-                console.log('[onStructuredLogData-fallback] Received:', data);
-                const { executor, level, message, timestamp, context } = data;
-                const terminalId = getTerminalIdForStructuredLog(executor, context);
-                
-                if (context?.toolName) {
-                    state.lastToolExecutor = terminalId;
-                }
-                
-                displayLog(terminalId, level, message, timestamp);
-            });
-            
-            // レガシーログデータ
-            ipcRenderer.on('log-data', (event, data) => {
-                console.log('[onLogData-fallback] Received:', data);
-                const { engineerId, level, message, component, timestamp } = data;
-                
-                const terminalId = getTerminalIdForLegacyLog(engineerId, component);
-                
-                if (message.includes('🛠️') && message.includes('ツール実行')) {
-                    state.lastToolExecutor = terminalId;
-                }
-                
-                if (!component && engineerId === 'system' && 
-                    (message.includes('⚙️  パラメータ:') || 
-                     message.includes('📂 ディレクトリ一覧:') || 
-                     message.includes('📄 ファイル内容:') ||
-                     message.includes('✅ 実行結果:') ||
-                     message.includes('📊 結果:')) &&
-                    state.lastToolExecutor) {
-                    displayLog(state.lastToolExecutor, level, message, timestamp);
-                } else {
-                    displayLog(terminalId, level, message, timestamp);
-                }
-            });
-            
-            // その他のイベント
-            ipcRenderer.on('task-status-update', (event, data) => {
-                const { completed, total } = data;
-                document.getElementById('task-status').textContent = `Tasks: ${completed}/${total}`;
-            });
-            
-            ipcRenderer.on('connection-status', (event, connected) => {
-                const indicator = document.getElementById('connection-status');
-                indicator.style.backgroundColor = connected ? '#4CAF50' : '#f44336';
-            });
-            
-            ipcRenderer.on('layout-update', (event, engineerCount) => {
-                document.getElementById('engineer-count').textContent = `Engineers: ${engineerCount}`;
-            });
-            
-            ipcRenderer.on('associate-techlead-engineer', (event, data) => {
-                const { techLeadId, engineerId } = data;
-                console.log(`[onAssociateTechLeadEngineer-fallback] ${techLeadId} -> ${engineerId}`);
-                associateTechLeadWithEngineer(techLeadId, engineerId);
-            });
-            
-        } catch (e) {
-            console.error('[DOMContentLoaded] Cannot use direct ipcRenderer:', e);
-        }
     }
 });

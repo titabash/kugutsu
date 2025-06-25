@@ -28,7 +28,7 @@ export class ParallelLogViewer {
   constructor() {
     this.screen = blessed.screen({
       smartCSR: true,
-      title: 'Multi-Engineer Parallel Development Log Viewer',
+      title: 'Kugutsu Log Viewer',
       border: 'line',
       style: {
         fg: 'white',

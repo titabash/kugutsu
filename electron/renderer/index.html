@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
-    <title>Multi-Engineer Parallel Development</title>
+    <title>Kugutsu</title>
     <link rel="stylesheet" href="./styles/xterm.css">
     <link rel="stylesheet" href="./styles/main.css">
 </head>
 <body>
     <div id="container">
         <div id="header">
-            <h1>🚀 Multi-Engineer Parallel Development System</h1>
+            <h1>🚀 Kugutsu</h1>
             <div id="status">
                 <div class="status-item">
                     <div class="status-indicator" id="connection-status"></div>
@@ -24,27 +24,59 @@
                 </div>
             </div>
         </div>
+        
         <div id="main-content">
-            <div id="product-owner-pane" class="terminal-pane product-owner">
-                <div class="terminal-header">
-                    <span class="terminal-title">📊 Product Owner AI</span>
-                    <div class="terminal-actions">
-                        <span class="terminal-action" data-terminal="product-owner">Clear</span>
+            <div class="tab-navigation">
+                <div class="tab-group" id="main-tabs">
+                    <button class="tab-btn active" data-tab="product-owner">📊 Product Owner</button>
+                    <button class="tab-btn" data-tab="engineers">👨‍💻 Engineers & Tech Leads</button>
+                    <button class="tab-btn" data-tab="merge">🔧 Merge Coordinator</button>
+                </div>
+            </div>
+            
+            <div class="tab-panels">
+                <!-- Product Owner Tab -->
+                <div id="product-owner" class="tab-panel active">
+                    <div class="terminal-pane product-owner full-height">
+                        <div class="terminal-header">
+                            <span class="terminal-title">📊 Product Owner AI</span>
+                            <div class="terminal-actions">
+                                <span class="terminal-action" data-terminal="product-owner">Clear</span>
+                            </div>
+                        </div>
+                        <div class="terminal-container" id="product-owner-terminal"></div>
                     </div>
                 </div>
-                <div class="terminal-container" id="product-owner-terminal"></div>
-            </div>
-            <div id="engineer-pairs-container">
-                <!-- Engineer and TechLead pairs will be dynamically added here -->
-            </div>
-            <div id="bottom-pane" class="terminal-pane merge-coordinator">
-                <div class="terminal-header">
-                    <span class="terminal-title">🔧 Merge Coordinator & Summary</span>
-                    <div class="terminal-actions">
-                        <span class="terminal-action" data-terminal="merge-coordinator">Clear</span>
+                
+                <!-- Engineers Tab -->
+                <div id="engineers" class="tab-panel">
+                    <div class="sub-tab-navigation">
+                        <button class="scroll-btn left" id="engineer-scroll-left">◀</button>
+                        <div class="sub-tabs-scroll">
+                            <div class="sub-tabs" id="engineer-sub-tabs">
+                                <!-- エンジニアのサブタブが動的に追加される -->
+                            </div>
+                        </div>
+                        <button class="scroll-btn right" id="engineer-scroll-right">▶</button>
+                    </div>
+                    <div class="sub-tab-content" id="engineer-panels">
+                        <!-- エンジニアのターミナルパネルが動的に追加される -->
                     </div>
                 </div>
-                <div class="terminal-container" id="merge-coordinator-terminal"></div>
+                
+                
+                <!-- Merge Coordinator Tab -->
+                <div id="merge" class="tab-panel">
+                    <div class="terminal-pane merge-coordinator full-height">
+                        <div class="terminal-header">
+                            <span class="terminal-title">🔧 Merge Coordinator & Summary</span>
+                            <div class="terminal-actions">
+                                <span class="terminal-action" data-terminal="merge-coordinator">Clear</span>
+                            </div>
+                        </div>
+                        <div class="terminal-container" id="merge-coordinator-terminal"></div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

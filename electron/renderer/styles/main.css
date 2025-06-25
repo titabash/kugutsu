@@ -25,6 +25,7 @@ body {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    flex-shrink: 0;
 }
 
 #header h1 {
@@ -58,43 +59,58 @@ body {
     overflow: hidden;
 }
 
-#product-owner-pane {
-    height: 25%;
-    border-bottom: 2px solid #474747;
+/* タブナビゲーション */
+.tab-navigation {
+    background-color: #2d2d30;
+    border-bottom: 1px solid #474747;
+    padding: 0 10px;
+    flex-shrink: 0;
 }
 
-#engineer-pairs-container {
-    flex: 1;
+.tab-group {
     display: flex;
-    flex-direction: row;
-    overflow: hidden;
-    border-bottom: 2px solid #474747;
+    gap: 2px;
 }
 
-.engineer-pair {
+.tab-btn {
+    background-color: transparent;
+    color: #969696;
+    border: none;
+    padding: 8px 16px;
+    cursor: pointer;
+    font-size: 13px;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.tab-btn:hover {
+    color: #d4d4d4;
+}
+
+.tab-btn.active {
+    color: #ffffff;
+    background-color: #1e1e1e;
+    border-bottom-color: #007ACC;
+}
+
+/* タブパネル */
+.tab-panels {
     flex: 1;
+    overflow: hidden;
+}
+
+.tab-panel {
+    display: none;
+    height: 100%;
+}
+
+.tab-panel.active {
     display: flex;
     flex-direction: column;
-    border-right: 1px solid #474747;
 }
 
-.engineer-pair:last-child {
-    border-right: none;
-}
-
-.engineer-pane {
-    height: 60%;
-    border-bottom: 1px solid #474747;
-}
-
-.tech-lead-pane {
-    height: 40%;
-}
-
-#bottom-pane {
-    height: 15%;
-}
-
+/* ターミナルペイン */
 .terminal-pane {
     position: relative;
     overflow: hidden;
@@ -140,26 +156,8 @@ body {
     bottom: 0;
 }
 
-.split {
-    -webkit-box-sizing: border-box;
-    -moz-box-sizing: border-box;
-    box-sizing: border-box;
-}
-
-.gutter {
-    background-color: #474747;
-    background-repeat: no-repeat;
-    background-position: 50%;
-}
-
-.gutter.gutter-horizontal {
-    background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=');
-    cursor: col-resize;
-}
-
-.gutter.gutter-vertical {
-    background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=');
-    cursor: row-resize;
+.full-height {
+    height: 100%;
 }
 
 /* ロール別のカラーテーマ */
@@ -177,4 +175,174 @@ body {
 
 .merge-coordinator .terminal-header {
     border-top: 3px solid #ff9800;
+}
+
+/* サブタブナビゲーション（エンジニア・TechLead用） */
+.sub-tab-navigation {
+    background-color: #252526;
+    border-bottom: 1px solid #3e3e3e;
+    display: flex;
+    position: relative;
+    height: 35px;
+    flex-shrink: 0;
+}
+
+.sub-tabs-scroll {
+    flex: 1;
+    overflow-x: hidden;
+    position: relative;
+}
+
+.sub-tabs {
+    display: flex;
+    gap: 1px;
+    padding: 0 35px;
+    transition: transform 0.3s ease;
+    height: 100%;
+    align-items: center;
+}
+
+.sub-tab-btn {
+    background-color: #2d2d30;
+    color: #969696;
+    border: 1px solid #3e3e3e;
+    border-bottom: none;
+    padding: 6px 12px;
+    cursor: pointer;
+    font-size: 12px;
+    min-width: 100px;
+    text-align: center;
+    transition: all 0.2s;
+    white-space: nowrap;
+    position: relative;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.sub-tab-btn:hover {
+    background-color: #3c3c3c;
+    color: #d4d4d4;
+}
+
+.sub-tab-btn.active {
+    background-color: #1e1e1e;
+    color: #ffffff;
+    border-color: #474747;
+}
+
+/* エンジニアステータスインジケーター */
+.sub-tab-btn .status-dot {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+}
+
+.status-dot.active {
+    background-color: #4CAF50;
+    animation: pulse 2s infinite;
+}
+
+.status-dot.idle {
+    background-color: #FFC107;
+}
+
+.status-dot.error {
+    background-color: #f44336;
+}
+
+.status-dot.completed {
+    background-color: #2196F3;
+}
+
+@keyframes pulse {
+    0% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
+    100% {
+        opacity: 1;
+    }
+}
+
+/* スクロールボタン */
+.scroll-btn {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    width: 30px;
+    background-color: #252526;
+    border: none;
+    color: #969696;
+    cursor: pointer;
+    z-index: 10;
+    display: none;
+    font-size: 12px;
+}
+
+.scroll-btn:hover {
+    background-color: #3c3c3c;
+    color: #d4d4d4;
+}
+
+.scroll-btn.left {
+    left: 0;
+    border-right: 1px solid #3e3e3e;
+}
+
+.scroll-btn.right {
+    right: 0;
+    border-left: 1px solid #3e3e3e;
+}
+
+.scroll-btn.visible {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* サブタブコンテンツ */
+.sub-tab-content {
+    flex: 1;
+    position: relative;
+}
+
+.sub-tab-panel {
+    display: none;
+    height: 100%;
+}
+
+.sub-tab-panel.active {
+    display: block;
+}
+
+/* エンジニアとTechLeadの分割レイアウト */
+.engineer-tech-lead-split {
+    display: flex;
+    height: 100%;
+    gap: 2px;
+}
+
+.split-pane {
+    flex: 1;
+    position: relative;
+}
+
+.split-pane:first-child {
+    border-right: 2px solid #474747;
+}
+
+/* レスポンシブ調整 */
+@media (max-width: 1200px) {
+    .sub-tab-btn {
+        min-width: 80px;
+        font-size: 11px;
+        padding: 4px 8px;
+    }
 }

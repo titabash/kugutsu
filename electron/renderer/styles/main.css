@@ -347,6 +347,187 @@ body {
 }
 
 .scroll-btn.visible {
+    display: block;
+}
+
+/* プログレスバー */
+.progress-bar {
+    width: 150px;
+    height: 6px;
+    background-color: #3e3e3e;
+    border-radius: 3px;
+    margin-left: 10px;
+    overflow: hidden;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+.progress-bar-fill {
+    height: 100%;
+    background-color: #4EC9B0;
+    transition: width 0.3s ease, background-color 0.3s ease;
+    width: 0%;
+}
+
+.progress-bar-fill.completed {
+    background-color: #4EC9B0;
+    animation: pulse 1s infinite;
+}
+
+/* 完了ダイアログ */
+.dialog-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.dialog-overlay.show {
+    display: flex;
+}
+
+.dialog-content {
+    background-color: #252526;
+    border: 1px solid #3e3e3e;
+    border-radius: 8px;
+    min-width: 500px;
+    max-width: 600px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+    animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateY(-20px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.dialog-header {
+    padding: 20px;
+    border-bottom: 1px solid #3e3e3e;
+    text-align: center;
+}
+
+.dialog-header h2 {
+    margin: 0;
+    font-size: 24px;
+    color: #4EC9B0;
+}
+
+.dialog-body {
+    padding: 20px;
+}
+
+.completion-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.stat-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px;
+    background-color: #1e1e1e;
+    border-radius: 4px;
+}
+
+.stat-label {
+    color: #969696;
+    font-size: 14px;
+}
+
+.stat-value {
+    font-size: 18px;
+    font-weight: bold;
+    color: #d4d4d4;
+}
+
+.stat-value.success {
+    color: #4EC9B0;
+}
+
+.stat-value.error {
+    color: #f44336;
+}
+
+.completion-message {
+    text-align: center;
+    color: #969696;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.dialog-footer {
+    padding: 20px;
+    border-top: 1px solid #3e3e3e;
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+}
+
+.dialog-btn {
+    padding: 8px 16px;
+    border: 1px solid #3e3e3e;
+    background-color: #2d2d2d;
+    color: #d4d4d4;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s ease;
+}
+
+.dialog-btn:hover {
+    background-color: #3c3c3c;
+    border-color: #5a5a5a;
+}
+
+.dialog-btn.primary {
+    background-color: #007ACC;
+    border-color: #007ACC;
+}
+
+.dialog-btn.primary:hover {
+    background-color: #005a9e;
+}
+
+.dialog-btn.secondary {
+    background-color: #4EC9B0;
+    border-color: #4EC9B0;
+    color: #1e1e1e;
+}
+
+.dialog-btn.secondary:hover {
+    background-color: #3da892;
+}
+
+/* ヘッダーの完了メッセージ */
+#header.completed {
+    background-color: #2d3e2d;
+    border-bottom-color: #4EC9B0;
+}
+
+#header.completed h1::after {
+    content: " - All Tasks Completed! 🎉";
+    font-size: 16px;
+    color: #4EC9B0;
+    margin-left: 10px;
+}
+
+.scroll-btn.visible {
     display: flex;
     align-items: center;
     justify-content: center;

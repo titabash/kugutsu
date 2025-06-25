@@ -21,6 +21,9 @@
                 </div>
                 <div class="status-item">
                     <span id="task-status">Tasks: 0/0</span>
+                    <div class="progress-bar" id="task-progress-bar">
+                        <div class="progress-bar-fill" id="task-progress-fill"></div>
+                    </div>
                 </div>
                 <div class="pipeline-status">
                     <div class="pipeline-item">
@@ -105,6 +108,43 @@
                         <div class="terminal-container" id="system-terminal"></div>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 完了ダイアログ -->
+    <div id="completion-dialog" class="dialog-overlay">
+        <div class="dialog-content">
+            <div class="dialog-header">
+                <h2>🎉 All Tasks Completed! 🎉</h2>
+            </div>
+            <div class="dialog-body">
+                <div class="completion-stats">
+                    <div class="stat-item">
+                        <span class="stat-label">Total Tasks:</span>
+                        <span class="stat-value" id="total-tasks-count">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">✅ Completed:</span>
+                        <span class="stat-value success" id="completed-tasks-count">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">❌ Failed:</span>
+                        <span class="stat-value error" id="failed-tasks-count">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">⏱️ Total Time:</span>
+                        <span class="stat-value" id="total-time">0s</span>
+                    </div>
+                </div>
+                <div class="completion-message">
+                    <p>All development tasks have been completed. You can now review the changes and proceed with the next steps.</p>
+                </div>
+            </div>
+            <div class="dialog-footer">
+                <button class="dialog-btn primary" id="view-summary-btn">📊 View Summary</button>
+                <button class="dialog-btn secondary" id="create-pr-btn">🔀 Create PR</button>
+                <button class="dialog-btn" id="close-dialog-btn">Close</button>
             </div>
         </div>
     </div>

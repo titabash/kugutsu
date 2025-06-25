@@ -26,6 +26,15 @@ export class ParallelDevelopmentOrchestratorWithElectron extends ParallelDevelop
    * 親クラスのlogメソッドをオーバーライド
    */
   protected log(engineerId: string, level: 'info' | 'error' | 'warn' | 'debug' | 'success', message: string, component?: string, group?: string): void {
+    // タスク解析完了を検知してタスク数を更新
+    if (this.useElectronUI && engineerId === 'ProductOwner' && message.includes('タスク数:')) {
+      const match = message.match(/タスク数: (\d+)/);
+      if (match) {
+        this.totalTaskCount = parseInt(match[1], 10);
+        electronLogAdapter.updateTaskStatus(0, this.totalTaskCount);
+      }
+    }
+    
     if (this.useElectronUI) {
       // Electronにログを送信
       electronLogAdapter.log(engineerId, level, message, component);
@@ -103,14 +112,6 @@ export class ParallelDevelopmentOrchestratorWithElectron extends ParallelDevelop
 
     // 親クラスのメソッドを呼び出す
     const result = await super.executeUserRequest(userRequest);
-
-    if (this.useElectronUI) {
-      // タスク総数を保存
-      this.totalTaskCount = result.analysis.tasks.length;
-      
-      // タスク数を更新
-      electronLogAdapter.updateTaskStatus(0, this.totalTaskCount);
-    }
 
     return result;
   }

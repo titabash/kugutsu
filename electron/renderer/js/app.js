@@ -270,6 +270,13 @@ function createEngineerTab(engineerId) {
         techLeadTerminalId: techLeadTerminalId
     };
     
+    // エンジニア数のカウンターを更新
+    const engineerCount = Object.keys(state.engineerTabs).length;
+    const engineerCountElem = document.getElementById('engineer-count');
+    if (engineerCountElem) {
+        engineerCountElem.textContent = `Engineers: ${engineerCount}`;
+    }
+    
     console.log(`[createEngineerTab] Created engineer tab for ${engineerId} with terminals: engineer=${engineerTerminalId}, techLead=${techLeadTerminalId}`);
     return engineerTerminalId;
 }
@@ -666,6 +673,14 @@ document.addEventListener('DOMContentLoaded', () => {
         window.electronAPI.onTaskStatusUpdate((data) => {
             const { completed, total } = data;
             document.getElementById('task-status').textContent = `Tasks: ${completed}/${total}`;
+            
+            // プログレスバーを更新
+            updateProgressBar(completed, total);
+            
+            // 全タスク完了をチェック
+            if (total > 0 && completed === total) {
+                showCompletionDialog(completed, total);
+            }
         });
         
         // 接続ステータス更新
@@ -760,5 +775,82 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (e) {
             console.error('[DOMContentLoaded] Cannot use direct ipcRenderer:', e);
         }
+    }
+});
+
+// プログレスバー更新関数
+function updateProgressBar(completed, total) {
+    const progressFill = document.getElementById('task-progress-fill');
+    const progressBar = document.getElementById('task-progress-bar');
+    
+    if (total === 0) {
+        progressFill.style.width = '0%';
+        progressBar.style.display = 'none';
+        return;
+    }
+    
+    progressBar.style.display = 'inline-block';
+    const percentage = (completed / total) * 100;
+    progressFill.style.width = `${percentage}%`;
+    
+    // 完了時の特別なスタイル
+    if (completed === total) {
+        progressFill.classList.add('completed');
+        document.getElementById('header').classList.add('completed');
+    }
+}
+
+// 完了ダイアログ表示関数
+let startTime = Date.now();
+function showCompletionDialog(completed, total) {
+    const dialog = document.getElementById('completion-dialog');
+    const endTime = Date.now();
+    const duration = Math.floor((endTime - startTime) / 1000);
+    
+    // 統計情報を更新
+    document.getElementById('total-tasks-count').textContent = total;
+    document.getElementById('completed-tasks-count').textContent = completed;
+    document.getElementById('failed-tasks-count').textContent = total - completed;
+    
+    // 実行時間を表示
+    const minutes = Math.floor(duration / 60);
+    const seconds = duration % 60;
+    const timeText = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+    document.getElementById('total-time').textContent = timeText;
+    
+    // ダイアログを表示
+    dialog.classList.add('show');
+    
+    // デスクトップ通知
+    if (window.Notification && Notification.permission === 'granted') {
+        new Notification('🎉 All Tasks Completed!', {
+            body: `${completed} tasks completed successfully in ${timeText}`,
+            icon: '/icon.png'
+        });
+    }
+}
+
+// ダイアログボタンのイベントリスナー
+document.addEventListener('DOMContentLoaded', () => {
+    // 完了ダイアログのボタン処理
+    document.getElementById('close-dialog-btn').addEventListener('click', () => {
+        document.getElementById('completion-dialog').classList.remove('show');
+    });
+    
+    document.getElementById('view-summary-btn').addEventListener('click', () => {
+        // サマリービューに切り替え（将来実装）
+        console.log('View summary clicked');
+        document.getElementById('completion-dialog').classList.remove('show');
+    });
+    
+    document.getElementById('create-pr-btn').addEventListener('click', () => {
+        // PR作成処理（将来実装）
+        console.log('Create PR clicked');
+        document.getElementById('completion-dialog').classList.remove('show');
+    });
+    
+    // 通知権限をリクエスト
+    if (window.Notification && Notification.permission === 'default') {
+        Notification.requestPermission();
     }
 });

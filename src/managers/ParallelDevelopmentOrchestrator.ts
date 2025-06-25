@@ -8,6 +8,7 @@ import { ImprovedParallelLogViewer } from '../utils/ImprovedParallelLogViewer.js
 import { LogFormatter } from '../utils/LogFormatter.js';
 import { TaskEventEmitter, TaskEvent, TaskFailedPayload, MergeCompletedPayload, ReviewCompletedPayload } from '../utils/TaskEventEmitter.js';
 import { Task, TaskAnalysisResult, EngineerResult, ReviewResult, SystemConfig } from '../types/index.js';
+import { CompletionReporter } from '../utils/CompletionReporter.js';
 
 /**
  * 並列開発オーケストレーター
@@ -29,6 +30,7 @@ export class ParallelDevelopmentOrchestrator {
   protected failedTasks: Map<string, string> = new Map();
   protected taskResults: Map<string, EngineerResult> = new Map();
   protected reviewResults: Map<string, ReviewResult[]> = new Map();
+  protected completionReporter: CompletionReporter;
 
   constructor(config: SystemConfig, useVisualUI: boolean = false) {
     this.config = config;
@@ -38,6 +40,7 @@ export class ParallelDevelopmentOrchestrator {
     this.reviewWorkflow = new ReviewWorkflow(this.gitManager, config);
     this.pipelineManager = new ParallelPipelineManager(this.gitManager, config);
     this.eventEmitter = TaskEventEmitter.getInstance();
+    this.completionReporter = new CompletionReporter(config.baseRepoPath);
     
     if (this.useVisualUI) {
       this.logViewer = new ImprovedParallelLogViewer();
@@ -170,6 +173,16 @@ export class ParallelDevelopmentOrchestrator {
         this.updateMainInfo(`完了 | 成功: ${completedTasks.length}件, 失敗: ${failedTasks.length}件 | ${new Date().toLocaleString()}`);
         this.logViewer.destroy();
       }
+      
+      // 完了レポートを表示・生成
+      this.completionReporter.displayCompletionSummary(
+        analysis,
+        completedTasks,
+        failedTasks,
+        this.taskResults,
+        this.reviewResults,
+        userRequest
+      );
       
       return { analysis, results, reviewResults, completedTasks, failedTasks };
 

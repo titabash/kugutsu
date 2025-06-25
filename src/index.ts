@@ -62,17 +62,19 @@ class ClaudeCodeRunner {
  */
 function showUsage() {
   console.log(`
-📖 使用方法:
-  npm run dev "<プロンプト>" [ディレクトリ]
+📖 Kugutsu - 基本実行モード
+
+使用方法:
+  kugutsu basic "<プロンプト>" [ディレクトリ]
 
 引数:
   プロンプト    (必須) Claude Code SDKに送信するプロンプト
   ディレクトリ  (省略可) 実行ディレクトリ (デフォルト: カレントディレクトリ)
 
 例:
-  npm run dev "このディレクトリ内のMarkdownファイルを分析してください"
-  npm run dev "README.mdを読んで要約してください" ./docs
-  npm run dev "TypeScriptファイルのエラーをチェックしてください" /path/to/project
+  kugutsu basic "このディレクトリ内のMarkdownファイルを分析してください"
+  kugutsu basic "README.mdを読んで要約してください" ./docs
+  kugutsu basic "TypeScriptファイルのエラーをチェックしてください" /path/to/project
 `);
 }
 

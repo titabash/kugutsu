@@ -90,3 +90,5 @@ yarn-error.log*
 .eslintcache
 
 worktrees/**
+
+.npmrc

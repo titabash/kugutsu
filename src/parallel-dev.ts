@@ -17,10 +17,10 @@ class ParallelDevelopmentCLI {
    */
   private static showUsage(): void {
     console.log(`
-🤖 AI並列開発システム
+🤖 Kugutsu - AI並列開発システム
 
 📖 使用方法:
-  npm run parallel-dev "<開発要求>" [オプション]
+  kugutsu "<開発要求>" [オプション]
 
 引数:
   開発要求    (必須) 実装したい機能や修正内容
@@ -40,11 +40,11 @@ class ParallelDevelopmentCLI {
   --help, -h                このヘルプを表示
 
 例:
-  npm run parallel-dev "ユーザー認証機能を実装してください" --electron
-  npm run parallel-dev "バグ修正: ログイン時のエラーハンドリング" --max-engineers 2 --no-electron
-  npm run parallel-dev "新しいAPI endpointを3つ追加" --cleanup
-  npm run parallel-dev "機能改善" --use-remote --cleanup --visual-ui
-  npm run parallel-dev "デバッグ作業" --devtools
+  kugutsu "ユーザー認証機能を実装してください" --electron
+  kugutsu "バグ修正: ログイン時のエラーハンドリング" --max-engineers 2 --no-electron
+  kugutsu "新しいAPI endpointを3つ追加" --cleanup
+  kugutsu "機能改善" --use-remote --cleanup --visual-ui
+  kugutsu "デバッグ作業" --devtools
 `);
   }
 

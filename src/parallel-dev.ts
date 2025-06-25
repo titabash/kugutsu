@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 
 import { ParallelDevelopmentOrchestrator } from './managers/ParallelDevelopmentOrchestrator';
+import { ParallelDevelopmentOrchestratorWithElectron } from './managers/ParallelDevelopmentOrchestratorWithElectron';
 import { SystemConfig } from './types';
+import { electronLogAdapter } from './utils/ElectronLogAdapter';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -32,14 +34,17 @@ class ParallelDevelopmentCLI {
   --use-remote              リモートリポジトリを使用 (デフォルト: ローカルのみ)
   --cleanup                 実行後にWorktreeをクリーンアップ
   --visual-ui               ターミナル分割表示を使用
+  --electron                Electron UIを使用（デフォルト）
+  --no-electron             Electron UIを無効化してCLIモードで実行
+  --devtools                Electron DevToolsを自動的に開く
   --help, -h                このヘルプを表示
 
 例:
-  npm run parallel-dev "ユーザー認証機能を実装してください"
-  npm run parallel-dev "バグ修正: ログイン時のエラーハンドリング" --max-engineers 2
+  npm run parallel-dev "ユーザー認証機能を実装してください" --electron
+  npm run parallel-dev "バグ修正: ログイン時のエラーハンドリング" --max-engineers 2 --no-electron
   npm run parallel-dev "新しいAPI endpointを3つ追加" --cleanup
-  npm run parallel-dev "機能改善" --use-remote --cleanup
-  npm run parallel-dev "パフォーマンス改善" --visual-ui
+  npm run parallel-dev "機能改善" --use-remote --cleanup --visual-ui
+  npm run parallel-dev "デバッグ作業" --devtools
 `);
   }
 
@@ -52,6 +57,7 @@ class ParallelDevelopmentCLI {
     cleanup: boolean;
     showHelp: boolean;
     visualUI: boolean;
+    electronUI: boolean;
   } {
     const config: SystemConfig = {
       baseRepoPath: process.cwd(),
@@ -65,6 +71,7 @@ class ParallelDevelopmentCLI {
     let cleanup = false;
     let showHelp = false;
     let visualUI = false;
+    let electronUI = true; // デフォルトでElectron UIを有効化
     let userRequest: string | undefined;
 
     for (let i = 0; i < args.length; i++) {
@@ -76,6 +83,12 @@ class ParallelDevelopmentCLI {
         cleanup = true;
       } else if (arg === '--visual-ui') {
         visualUI = true;
+        electronUI = false; // visual-uiが指定された場合はElectronを無効化
+      } else if (arg === '--electron') {
+        electronUI = true;
+        visualUI = false;
+      } else if (arg === '--no-electron') {
+        electronUI = false;
       } else if (arg === '--use-remote') {
         config.useRemote = true;
       } else if (arg === '--base-repo') {
@@ -93,7 +106,7 @@ class ParallelDevelopmentCLI {
       }
     }
 
-    return { userRequest, config, cleanup, showHelp, visualUI };
+    return { userRequest, config, cleanup, showHelp, visualUI, electronUI };
   }
 
   /**
@@ -128,7 +141,7 @@ class ParallelDevelopmentCLI {
    */
   public static async main(): Promise<void> {
     const args = process.argv.slice(2);
-    const { userRequest, config, cleanup, showHelp, visualUI } = this.parseArgs(args);
+    const { userRequest, config, cleanup, showHelp, visualUI, electronUI } = this.parseArgs(args);
 
     // ヘルプ表示
     if (showHelp || args.length === 0) {
@@ -158,15 +171,23 @@ class ParallelDevelopmentCLI {
     console.log(`🌱 ベースブランチ: ${config.baseBranch}`);
     console.log(`📡 リモート使用: ${config.useRemote ? 'はい' : 'いいえ'}`);
     console.log(`🧹 実行後クリーンアップ: ${cleanup ? 'はい' : 'いいえ'}`);
-    console.log(`🖥️ ビジュアルUI: ${visualUI ? 'はい' : 'いいえ'}`);
+    console.log(`🖥️  UIモード: ${electronUI ? 'Electron' : (visualUI ? 'Terminal分割' : '標準')}`);
 
     try {
       // オーケストレーターを初期化
-      const orchestrator = new ParallelDevelopmentOrchestrator(config, visualUI);
+      const orchestrator = electronUI 
+        ? new ParallelDevelopmentOrchestratorWithElectron(config, visualUI, electronUI)
+        : new ParallelDevelopmentOrchestrator(config, visualUI);
 
       // シグナルハンドラーを設定（Ctrl+Cなどで適切にクリーンアップ）
       const cleanup_handler = async () => {
         console.log('\n🛑 システム停止中...');
+        
+        // Electronプロセスを終了
+        if (electronUI) {
+          electronLogAdapter.stop();
+        }
+        
         orchestrator.stopLogViewer();
         await orchestrator.cleanup(true);
         process.exit(0);
@@ -176,7 +197,26 @@ class ParallelDevelopmentCLI {
       process.on('SIGTERM', cleanup_handler);
 
       // 並列開発を実行
-      const { analysis, results } = await orchestrator.executeUserRequest(userRequest);
+      let analysis: any;
+      let results: any[];
+      let successCount: number;
+      let failCount: number;
+      
+      if (electronUI) {
+        // Electron版の場合
+        const result = await orchestrator.executeUserRequest(userRequest);
+        analysis = result.analysis;
+        results = [...result.completedTasks, ...result.failedTasks];
+        successCount = result.completedTasks.length;
+        failCount = result.failedTasks.length;
+      } else {
+        // 通常版の場合
+        const result = await orchestrator.executeUserRequest(userRequest);
+        analysis = result.analysis;
+        results = result.results;
+        successCount = results.filter(r => r.success).length;
+        failCount = results.filter(r => !r.success).length;
+      }
 
       // 結果のサマリーを表示（全プロセス完了後）
       console.log('\n📊 実行結果サマリー');
@@ -184,26 +224,27 @@ class ParallelDevelopmentCLI {
       console.log(`📝 分析概要: ${analysis.summary}`);
       console.log(`⏱️ 見積もり時間: ${analysis.estimatedTime}`);
       console.log(`📋 総タスク数: ${analysis.tasks.length}`);
-
-      const successCount = results.filter(r => r.success).length;
-      const failCount = results.filter(r => !r.success).length;
-
       console.log(`✅ 成功したタスク: ${successCount}`);
       console.log(`❌ 失敗したタスク: ${failCount}`);
 
       if (failCount > 0) {
         console.log('\n❌ 失敗したタスク詳細:');
         results
-          .filter(r => !r.success)
+          .filter(r => !r.success && !r.taskId) // 通常版の場合
+          .concat(results.filter(r => r.taskId && r.error)) // Electron版の場合
           .forEach(r => {
-            const task = analysis.tasks.find(t => t.id === r.taskId);
+            const task = analysis.tasks.find((t: any) => t.id === r.taskId);
             console.log(`  - ${task?.title || r.taskId}: ${r.error}`);
           });
       }
 
       // ファイル変更のサマリー
       const allChangedFiles = new Set<string>();
-      results.forEach(r => r.filesChanged.forEach(f => allChangedFiles.add(f)));
+      results.forEach(r => {
+        if (r.filesChanged) {
+          r.filesChanged.forEach((f: string) => allChangedFiles.add(f));
+        }
+      });
 
       if (allChangedFiles.size > 0) {
         console.log(`\n📁 変更されたファイル (${allChangedFiles.size}件):`);

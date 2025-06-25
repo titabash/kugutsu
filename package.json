@@ -9,11 +9,11 @@
     "build:electron": "cd electron && tsc",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
-    "parallel-dev": "ts-node src/parallel-dev-electron.ts",
-    "parallel-dev-cli": "ts-node src/parallel-dev.ts",
+    "parallel-dev": "ts-node src/parallel-dev.ts",
+    "parallel-dev-cli": "ts-node src/parallel-dev.ts --no-electron",
+    "parallel-dev-gui": "ts-node src/parallel-dev.ts --electron",
     "electron": "cd electron && electron .",
-    "electron:build": "npm run build:electron && npm run electron",
-    "parallel-dev-gui": "ts-node src/parallel-dev-electron.ts --electron"
+    "electron:build": "npm run build:electron && npm run electron"
   },
   "dependencies": {
     "@anthropic-ai/claude-code": "latest",
@@ -40,7 +40,7 @@
     "node": ">=18.0.0"
   },
   "bin": {
-    "kugutsu": "./dist/parallel-dev-electron.js"
+    "kugutsu": "./dist/parallel-dev.js"
   },
   "keywords": [
     "ai",

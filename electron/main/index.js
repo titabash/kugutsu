@@ -113,8 +113,14 @@ if (process.send) {
                 break;
             case 'all-tasks-completed':
                 // 全タスク完了通知
+                console.log('[Electron Main] Received all-tasks-completed message:', message.data);
                 if (mainWindow && !mainWindow.isDestroyed()) {
+                    console.log('[Electron Main] Sending all-tasks-completed to renderer...');
                     mainWindow.webContents.send('all-tasks-completed', message.data);
+                    console.log('[Electron Main] all-tasks-completed sent to renderer successfully');
+                }
+                else {
+                    console.warn('[Electron Main] Cannot send to renderer - window not available');
                 }
                 break;
         }

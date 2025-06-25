@@ -680,12 +680,14 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // 全タスク完了通知
         window.electronAPI.onAllTasksCompleted((status) => {
-            console.log('[onAllTasksCompleted] All tasks completed!', status);
+            console.log('[Renderer] onAllTasksCompleted called with status:', status);
             const { completedTasks, totalTasks, percentage } = status;
+            console.log('[Renderer] About to show completion dialog...');
             showCompletionDialog(completedTasks, totalTasks);
             
             // システムターミナルに完了メッセージを表示
             if (state.terminals['system']) {
+                console.log('[Renderer] Writing completion message to system terminal...');
                 state.terminals['system'].writeln(`\x1b[1;32m\n🎉 全タスクが完了しました！ (${completedTasks}/${totalTasks} - ${percentage}%)\x1b[0m\n`);
             }
         });
@@ -779,6 +781,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 associateTechLeadWithEngineer(techLeadId, engineerId);
             });
             
+            // 全タスク完了通知（フォールバック）
+            ipcRenderer.on('all-tasks-completed', (event, status) => {
+                console.log('[Renderer-fallback] all-tasks-completed event received:', status);
+                const { completedTasks, totalTasks, percentage } = status;
+                console.log('[Renderer-fallback] About to show completion dialog...');
+                showCompletionDialog(completedTasks, totalTasks);
+                
+                // システムターミナルに完了メッセージを表示
+                if (state.terminals['system']) {
+                    console.log('[Renderer-fallback] Writing completion message to system terminal...');
+                    state.terminals['system'].writeln(`\x1b[1;32m\n🎉 全タスクが完了しました！ (${completedTasks}/${totalTasks} - ${percentage}%)\x1b[0m\n`);
+                }
+            });
+            
         } catch (e) {
             console.error('[DOMContentLoaded] Cannot use direct ipcRenderer:', e);
         }
@@ -818,30 +834,54 @@ function updateProgressBar(completed, total) {
 // 完了ダイアログ表示関数
 let startTime = Date.now();
 function showCompletionDialog(completed, total) {
+    console.log('[Renderer] showCompletionDialog called with:', { completed, total });
+    
     const dialog = document.getElementById('completion-dialog');
+    console.log('[Renderer] Found completion dialog element:', !!dialog);
+    
     const endTime = Date.now();
     const duration = Math.floor((endTime - startTime) / 1000);
     
     // 統計情報を更新
-    document.getElementById('total-tasks-count').textContent = total;
-    document.getElementById('completed-tasks-count').textContent = completed;
-    document.getElementById('failed-tasks-count').textContent = total - completed;
+    const totalTasksElem = document.getElementById('total-tasks-count');
+    const completedTasksElem = document.getElementById('completed-tasks-count');
+    const failedTasksElem = document.getElementById('failed-tasks-count');
+    
+    console.log('[Renderer] Found dialog elements:', {
+        totalTasksElem: !!totalTasksElem,
+        completedTasksElem: !!completedTasksElem,
+        failedTasksElem: !!failedTasksElem
+    });
+    
+    if (totalTasksElem) totalTasksElem.textContent = total;
+    if (completedTasksElem) completedTasksElem.textContent = completed;
+    if (failedTasksElem) failedTasksElem.textContent = total - completed;
     
     // 実行時間を表示
     const minutes = Math.floor(duration / 60);
     const seconds = duration % 60;
     const timeText = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
-    document.getElementById('total-time').textContent = timeText;
+    const totalTimeElem = document.getElementById('total-time');
+    if (totalTimeElem) totalTimeElem.textContent = timeText;
     
     // ダイアログを表示
-    dialog.classList.add('show');
+    if (dialog) {
+        console.log('[Renderer] Showing completion dialog...');
+        dialog.classList.add('show');
+        console.log('[Renderer] Dialog should now be visible');
+    } else {
+        console.error('[Renderer] Completion dialog element not found!');
+    }
     
     // デスクトップ通知
     if (window.Notification && Notification.permission === 'granted') {
+        console.log('[Renderer] Showing desktop notification...');
         new Notification('🎉 All Tasks Completed!', {
             body: `${completed} tasks completed successfully in ${timeText}`,
             icon: '/icon.png'
         });
+    } else {
+        console.log('[Renderer] Desktop notification not available or permission not granted');
     }
 }
 

@@ -53,7 +53,9 @@ export class CompletionReporter extends EventEmitter {
       
       if (status.percentage === 100) {
         console.log(`[CompletionReporter] All tasks completed! Emitting allTasksCompleted event`);
+        console.log(`[CompletionReporter] Event data:`, { completedTasks: status.completedTasks, totalTasks: status.totalTasks, percentage: status.percentage });
         this.emit('allTasksCompleted', status);
+        console.log(`[CompletionReporter] allTasksCompleted event emitted successfully`);
       }
       
       return status;

@@ -138,11 +138,8 @@ export class MergeQueue {
           const status = await this.completionReporter.markTaskCompletedByTitle(taskTitleForCompletion);
           console.log(`📊 タスク完了: ${item.task.title} (${status.completedTasks}/${status.totalTasks} - ${status.percentage}%)`);
           
-          // 全タスク完了時の処理
-          if (status.percentage === 100) {
-            console.log(`🎉 全タスクが完了しました！`);
-            this.eventEmitter.emit('allTasksCompleted', status);
-          }
+          // 注意: 全タスク完了イベント(allTasksCompleted)はCompletionReporter内で自動的に発火される
+          // ここで重複して発火する必要はない
         } else {
           console.log(`[MergeQueue] CompletionReporter not available`);
         }

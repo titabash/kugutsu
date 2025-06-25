@@ -383,15 +383,22 @@ export class ElectronLogAdapter {
     }
     
     sendCompletionNotification(status: CompletionStatus) {
+        console.log('[ElectronLogAdapter] sendCompletionNotification called with status:', status);
+        console.log(`[ElectronLogAdapter] isElectronMode: ${this.isElectronMode}, electronProcess: ${!!this.electronProcess}, killed: ${this.electronProcess?.killed}`);
+        
         if (this.isElectronMode && this.electronProcess && !this.electronProcess.killed) {
             try {
+                console.log('[ElectronLogAdapter] Sending all-tasks-completed message to Electron main process...');
                 this.electronProcess.send({
                     type: 'all-tasks-completed',
                     data: status
                 });
+                console.log('[ElectronLogAdapter] all-tasks-completed message sent successfully');
             } catch (error) {
-                console.error('Failed to send completion notification:', error);
+                console.error('[ElectronLogAdapter] Failed to send completion notification:', error);
             }
+        } else {
+            console.warn('[ElectronLogAdapter] Cannot send completion notification - conditions not met');
         }
     }
 

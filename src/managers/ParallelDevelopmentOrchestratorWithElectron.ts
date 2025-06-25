@@ -64,14 +64,8 @@ export class ParallelDevelopmentOrchestratorWithElectron extends ParallelDevelop
         electronLogAdapter.updateTaskStatus(completedCount, this.totalTaskCount);
       });
       
-      // 全タスク完了時にElectronに通知
-      this.eventEmitter.on('allTasksCompleted', (status) => {
-        electronLogAdapter.log('system', 'success', `🎉 全タスクが完了しました！ (${status.completedTasks}/${status.totalTasks})`, 'System');
-        // 完了通知をElectronに送信
-        electronLogAdapter.sendCompletionNotification(status);
-      });
-      
-      // CompletionReporterのイベントリスナー設定は後で行う（initialize後に設定）
+      // 注意: 全タスク完了イベントは親クラスで処理され、setupCompletionReporterListenersで
+      // CompletionReporterから直接受信するため、ここでは重複登録しない
 
       // 開発完了時にエンジニア数を更新
       this.eventEmitter.onDevelopmentCompleted((event) => {
@@ -136,7 +130,7 @@ export class ParallelDevelopmentOrchestratorWithElectron extends ParallelDevelop
     if (this.useElectronUI && this.completionReporter) {
       console.log('[Electron] Setting up CompletionReporter listeners...');
       
-      // 既存のリスナーを削除
+      // 既存のリスナーを削除（CompletionReporter上のリスナーのみ）
       this.completionReporter.removeAllListeners('taskCompleted');
       this.completionReporter.removeAllListeners('allTasksCompleted');
       
@@ -148,15 +142,25 @@ export class ParallelDevelopmentOrchestratorWithElectron extends ParallelDevelop
         this.log('system', 'success', `✅ タスク完了: ${taskId} (${status.completedTasks}/${status.totalTasks} - ${status.percentage}%)`, 'System');
       });
       
-      // 全タスク完了イベントもここで登録
+      // 全タスク完了イベント: CompletionReporterから直接受信してElectronに通知
       this.completionReporter.on('allTasksCompleted', (status) => {
-        console.log('[Electron] All tasks completed event from CompletionReporter');
+        console.log('[Electron] All tasks completed event from CompletionReporter:', status);
+        console.log('[Electron] Sending completion notification to Electron UI...');
+        
+        // Electronログにも表示
+        electronLogAdapter.log('system', 'success', `🎉 全タスクが完了しました！ (${status.completedTasks}/${status.totalTasks} - ${status.percentage}%)`, 'System');
+        
+        // Electron UIに完了通知を送信
         electronLogAdapter.sendCompletionNotification(status);
+        
+        console.log('[Electron] Completion notification sent successfully');
       });
       
       console.log('[Electron] CompletionReporter listeners setup complete');
     } else {
       console.log('[Electron] Skipping CompletionReporter listener setup');
+      console.log(`  useElectronUI: ${this.useElectronUI}`);
+      console.log(`  completionReporter: ${!!this.completionReporter}`);
     }
   }
 

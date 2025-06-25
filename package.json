@@ -1,7 +1,6 @@
 {
   "name": "@titabash/kugutsu",
-  "_comment": "This is a test comment for the AI-powered parallel development system",
-  "version": "1.0.0",
+  "version": "0.0.5",
   "description": "AI-powered parallel development system with multiple AI engineers",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

@@ -73,18 +73,8 @@ export class ParallelDevelopmentOrchestrator {
       }
     });
     
-    // 全タスク完了イベント
-    this.eventEmitter.on('allTasksCompleted', (status: CompletionStatus) => {
-      this.log('system', 'success', `🎉 全タスクが完了しました！ (${status.completedTasks}/${status.totalTasks})`, 'System', 'All Completed');
-      
-      // Electronへの通知を送信
-      this.eventEmitter.emit('task-event', {
-        type: 'ALL_TASKS_COMPLETED',
-        taskId: 'system',
-        timestamp: new Date(),
-        payload: { status }
-      });
-    });
+    // 全タスク完了イベントはCompletionReporterから直接受信するため、ここでは登録しない
+    // setupCompletionReporterListeners()で処理される
 
     // タスク失敗イベント
     this.eventEmitter.onTaskFailed((event: TaskEvent) => {

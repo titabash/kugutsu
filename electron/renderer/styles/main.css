@@ -37,6 +37,7 @@ body {
     display: flex;
     gap: 20px;
     align-items: center;
+    flex-wrap: wrap;
 }
 
 .status-item {
@@ -50,6 +51,46 @@ body {
     height: 10px;
     border-radius: 50%;
     background-color: #4CAF50;
+}
+
+/* パイプライン状況表示 */
+.pipeline-status {
+    display: flex;
+    gap: 15px;
+    align-items: center;
+    padding: 0 10px;
+    margin-left: auto;
+    background-color: #252526;
+    border-radius: 4px;
+    padding: 4px 12px;
+}
+
+.pipeline-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+}
+
+.pipeline-label {
+    color: #969696;
+}
+
+.pipeline-value {
+    color: #d4d4d4;
+    font-weight: 500;
+    min-width: 100px;
+}
+
+/* パイプライン値のアニメーション */
+.pipeline-value.updating {
+    animation: pulse-update 0.3s ease;
+}
+
+@keyframes pulse-update {
+    0% { opacity: 1; }
+    50% { opacity: 0.5; background-color: #3c3c3c; }
+    100% { opacity: 1; }
 }
 
 #main-content {
@@ -175,6 +216,10 @@ body {
 
 .merge-coordinator .terminal-header {
     border-top: 3px solid #ff9800;
+}
+
+.system .terminal-header {
+    border-top: 3px solid #607d8b;
 }
 
 /* サブタブナビゲーション（エンジニア・TechLead用） */

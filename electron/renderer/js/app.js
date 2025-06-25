@@ -61,6 +61,20 @@ const themes = {
         magenta: '#7b1fa2',
         cyan: '#0097a7',
         white: '#ffffff'
+    },
+    system: {
+        background: '#0d0d0d',
+        foreground: '#b0bec5',
+        cursor: '#607d8b',
+        selection: '#37474f',
+        black: '#000000',
+        red: '#d32f2f',
+        green: '#388e3c',
+        yellow: '#f57c00',
+        blue: '#1976d2',
+        magenta: '#7b1fa2',
+        cyan: '#0097a7',
+        white: '#ffffff'
     }
 };
 
@@ -75,7 +89,14 @@ const state = {
     lastToolExecutor: 'merge-coordinator',
     // TechLeadとEngineerのマッピング
     techLeadToEngineer: {},  // techLeadId -> engineerId
-    engineerToTechLead: {}   // engineerId -> techLeadId[]
+    engineerToTechLead: {},  // engineerId -> techLeadId[]
+    // パイプライン状況
+    pipelineStatus: {
+        dev: { waiting: 0, processing: 0 },
+        review: { waiting: 0, processing: 0 },
+        merge: { waiting: 0, processing: 0 }
+    },
+    expectingPipelineStats: false
 };
 
 // ターミナルの初期化
@@ -316,6 +337,11 @@ function clearTerminal(terminalId) {
 
 // ログ表示
 function displayLog(terminalId, level, message, timestamp) {
+    // パイプライン状況メッセージの場合は、ヘッダーに表示して終了
+    if (updatePipelineStatus(message)) {
+        return; // ターミナルには表示しない
+    }
+    
     const terminal = state.terminals[terminalId];
     if (!terminal) {
         console.warn(`[displayLog] Terminal not found: ${terminalId}`);
@@ -346,6 +372,122 @@ function displayLog(terminalId, level, message, timestamp) {
     terminal.writeln(`\x1b[90m[${time}]\x1b[0m ${colorCode}${message}\x1b[0m`);
 }
 
+// マージ関連のメッセージかどうかを判定
+function isMergeRelatedMessage(message) {
+    // まず、明確にマージ関連ではないものを除外
+    if (message.includes('📊 パイプライン状況') || 
+        message.includes('⏳ 全パイプラインの完了を待機中') ||
+        message.includes('✅ タスク完了') ||
+        message.includes('🎯 タスク開始') ||
+        message.includes('🚀 開発開始') ||
+        message.includes('レビュー開始') ||
+        message.includes('開発完了') ||
+        message.includes('レビュー完了') ||
+        message.includes('エンジニアAI[') ||
+        message.includes('テックリードAI[') ||
+        message.includes('プロダクトオーナーAI')) {
+        return false;
+    }
+    
+    // マージ関連のキーワード
+    const mergeKeywords = [
+        'マージ', 'merge', 'Merge',
+        'コンフリクト', 'conflict', 'Conflict',
+        'ブランチ', 'branch', 'Branch',
+        'リベース', 'rebase', 'Rebase',
+        'プル', 'pull', 'Pull',
+        'チェリーピック', 'cherry-pick',
+        'fast-forward',
+        '🔧', // Merge Coordinatorのアイコン
+        '🔒', // マージ待機
+        '🔀', // マージ実行
+        'MergeCoordinator',
+        'マージコーディネーター',
+        'マージキュー',
+        'マージ実行',
+        'マージ待機',
+        'マージ成功',
+        'マージ失敗',
+        'クリーンアップ',
+        'マージプロセス',
+        'Worktree',
+        'worktree'
+    ];
+    
+    return mergeKeywords.some(keyword => message.includes(keyword));
+}
+
+// パイプライン状況の更新
+function updatePipelineStatus(message) {
+    // パイプライン状況のパターンにマッチするかチェック
+    const pipelinePattern = /📊 パイプライン状況:/;
+    
+    if (pipelinePattern.test(message)) {
+        // このメッセージの後に続く行で各パイプラインの状態が来るので、
+        // 一時的にマークしておく
+        state.expectingPipelineStats = true;
+        return true;
+    }
+    
+    // パイプライン統計情報の各行をチェック
+    if (state.expectingPipelineStats) {
+        const devPattern = /開発: 待機=(\d+), 処理中=(\d+)/;
+        const reviewPattern = /レビュー: 待機=(\d+), 処理中=(\d+)/;
+        const mergePattern = /マージ: 待機=(\d+), 処理中=(true|false)/;
+        
+        // 開発パイプラインの状態
+        const devMatch = message.match(devPattern);
+        if (devMatch) {
+            state.pipelineStatus.dev.waiting = parseInt(devMatch[1]);
+            state.pipelineStatus.dev.processing = parseInt(devMatch[2]);
+            updatePipelineDisplay('dev');
+            return true;
+        }
+        
+        // レビューパイプラインの状態
+        const reviewMatch = message.match(reviewPattern);
+        if (reviewMatch) {
+            state.pipelineStatus.review.waiting = parseInt(reviewMatch[1]);
+            state.pipelineStatus.review.processing = parseInt(reviewMatch[2]);
+            updatePipelineDisplay('review');
+            return true;
+        }
+        
+        // マージパイプラインの状態
+        const mergeMatch = message.match(mergePattern);
+        if (mergeMatch) {
+            state.pipelineStatus.merge.waiting = parseInt(mergeMatch[1]);
+            state.pipelineStatus.merge.processing = mergeMatch[2] === 'true' ? 1 : 0;
+            updatePipelineDisplay('merge');
+            // マージが最後の行なので、フラグをリセット
+            state.expectingPipelineStats = false;
+            return true;
+        }
+        
+        // パイプライン情報以外のメッセージが来たらフラグをリセット
+        if (!message.includes('待機=') && !message.includes('処理中=')) {
+            state.expectingPipelineStats = false;
+        }
+    }
+    
+    return false;
+}
+
+// パイプライン表示の更新
+function updatePipelineDisplay(pipeline) {
+    const element = document.getElementById(`pipeline-${pipeline}`);
+    if (!element) return;
+    
+    const status = state.pipelineStatus[pipeline];
+    const text = `待機=${status.waiting}, 処理中=${status.processing}`;
+    
+    if (element.textContent !== text) {
+        element.textContent = text;
+        element.classList.add('updating');
+        setTimeout(() => element.classList.remove('updating'), 300);
+    }
+}
+
 // ターミナルIDの取得（構造化ログ用）
 function getTerminalIdForStructuredLog(executor, context) {
     console.log(`[getTerminalIdForStructuredLog] type=${executor.type}, id=${executor.id}`);
@@ -354,12 +496,14 @@ function getTerminalIdForStructuredLog(executor, context) {
         case 'ProductOwner':
             return 'product-owner';
         case 'MergeCoordinator':
+            return 'merge-coordinator';
         case 'System':
             // ツール実行結果の場合は最後の実行者のターミナルに表示
             if (context?.parentLogId && state.lastToolExecutor) {
                 return state.lastToolExecutor;
             }
-            return 'merge-coordinator';
+            // システムログはsystemターミナルへ
+            return 'system';
         case 'Engineer':
             const engineerTerminalId = createEngineerTab(executor.id);
             return engineerTerminalId;
@@ -369,16 +513,16 @@ function getTerminalIdForStructuredLog(executor, context) {
             if (relatedEngineerId && state.engineerTabs[relatedEngineerId]) {
                 return state.engineerTabs[relatedEngineerId].techLeadTerminalId;
             }
-            // 関連付けがない場合は、merge-coordinatorに表示
+            // 関連付けがない場合は、systemに表示
             console.warn(`[getTerminalIdForStructuredLog] No engineer association found for TechLead ${executor.id}`);
-            return 'merge-coordinator';
+            return 'system';
         default:
-            return 'merge-coordinator';
+            return 'system';
     }
 }
 
 // ターミナルIDの取得（レガシーログ用）
-function getTerminalIdForLegacyLog(engineerId, component) {
+function getTerminalIdForLegacyLog(engineerId, component, message) {
     console.log(`[getTerminalIdForLegacyLog] engineerId=${engineerId}, component=${component}`);
     
     // コンポーネント名で判定
@@ -390,20 +534,28 @@ function getTerminalIdForLegacyLog(engineerId, component) {
         if (relatedEngineerId && state.engineerTabs[relatedEngineerId]) {
             return state.engineerTabs[relatedEngineerId].techLeadTerminalId;
         }
-        // 関連付けがない場合は、merge-coordinatorに表示
+        // 関連付けがない場合は、systemに表示
         console.warn(`[getTerminalIdForLegacyLog] No engineer association found for TechLead ${engineerId}`);
+        return 'system';
+    } else if (component === 'MergeCoordinator' || component === 'GitWorktree') {
         return 'merge-coordinator';
-    } else if (component === 'MergeCoordinator' || component === 'System' || component === 'Orchestrator') {
-        return 'merge-coordinator';
+    } else if (component === 'System' || component === 'Orchestrator') {
+        // メッセージ内容でマージ関連かどうか判定
+        if (message && isMergeRelatedMessage(message)) {
+            return 'merge-coordinator';
+        }
+        return 'system';
     } else if (engineerId?.startsWith('engineer-')) {
         // エンジニアAIのログ
         const terminalId = createEngineerTab(engineerId);
         return terminalId;
     } else if (engineerId === 'ProductOwner') {
         return 'product-owner';
-    } else {
-        // デフォルトはmerge-coordinator
+    } else if (engineerId === 'MergeCoordinator') {
         return 'merge-coordinator';
+    } else {
+        // デフォルトはsystem
+        return 'system';
     }
 }
 
@@ -419,6 +571,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 初期ターミナルの作成
     const productOwnerContainer = document.getElementById('product-owner-terminal');
     const mergeCoordinatorContainer = document.getElementById('merge-coordinator-terminal');
+    const systemContainer = document.getElementById('system-terminal');
     
     if (productOwnerContainer) {
         initializeTerminal('product-owner', productOwnerContainer, themes.productOwner);
@@ -426,6 +579,10 @@ document.addEventListener('DOMContentLoaded', () => {
     
     if (mergeCoordinatorContainer) {
         initializeTerminal('merge-coordinator', mergeCoordinatorContainer, themes.mergeCoordinator);
+    }
+    
+    if (systemContainer) {
+        initializeTerminal('system', systemContainer, themes.system);
     }
     
     // タブ切り替えイベント
@@ -484,7 +641,7 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log('[onLogData] Received:', data);
             const { engineerId, level, message, component, timestamp } = data;
             
-            const terminalId = getTerminalIdForLegacyLog(engineerId, component);
+            const terminalId = getTerminalIdForLegacyLog(engineerId, component, message);
             
             // ツール実行のログの場合、実行者を記録
             if (message.includes('🛠️') && message.includes('ツール実行')) {
@@ -560,7 +717,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.log('[onLogData-fallback] Received:', data);
                 const { engineerId, level, message, component, timestamp } = data;
                 
-                const terminalId = getTerminalIdForLegacyLog(engineerId, component);
+                const terminalId = getTerminalIdForLegacyLog(engineerId, component, message);
                 
                 if (message.includes('🛠️') && message.includes('ツール実行')) {
                     state.lastToolExecutor = terminalId;

@@ -262,9 +262,16 @@ export class ElectronLogAdapter {
             } else if (message.includes('⚙️  パラメータ:') || message.includes('📂 ディレクトリ一覧:') || message.includes('📄 ファイル内容:')) {
                 // ツール実行結果の詳細 - これも前のコンポーネントと同じところに表示
                 // コンポーネントは推測できないので、後でapp.jsで処理
-            } else if (message.includes('🔧') || message.includes('マージコーディネーター')) {
+            } else if (message.includes('🔧') || message.includes('マージコーディネーター') || 
+                       message.includes('🔒') || message.includes('🔀') || 
+                       message.includes('マージ実行') || message.includes('マージ待機') || 
+                       message.includes('マージ成功') || message.includes('マージ失敗') ||
+                       message.includes('コンフリクト解決') || message.includes('クリーンアップ') ||
+                       message.includes('マージプロセス') || message.includes('マージキュー')) {
+                engineerId = 'MergeCoordinator';  // engineerIdもMergeCoordinatorに設定
                 component = 'MergeCoordinator';
-            } else if (message.includes('🌿') || message.includes('Worktree')) {
+            } else if (message.includes('🌿') || message.includes('Worktree') || message.includes('worktree')) {
+                engineerId = 'MergeCoordinator';  // worktree関連もマージコーディネーターに含める
                 component = 'GitWorktree';
             } else if (message.includes('[') && message.includes(']')) {
                 const match = message.match(/\[([^\]]+)\]/);

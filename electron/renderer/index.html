@@ -22,6 +22,20 @@
                 <div class="status-item">
                     <span id="task-status">Tasks: 0/0</span>
                 </div>
+                <div class="pipeline-status">
+                    <div class="pipeline-item">
+                        <span class="pipeline-label">📊 開発:</span>
+                        <span class="pipeline-value" id="pipeline-dev">待機=0, 処理中=0</span>
+                    </div>
+                    <div class="pipeline-item">
+                        <span class="pipeline-label">🔍 レビュー:</span>
+                        <span class="pipeline-value" id="pipeline-review">待機=0, 処理中=0</span>
+                    </div>
+                    <div class="pipeline-item">
+                        <span class="pipeline-label">🔧 マージ:</span>
+                        <span class="pipeline-value" id="pipeline-merge">待機=0, 処理中=0</span>
+                    </div>
+                </div>
             </div>
         </div>
         
@@ -31,6 +45,7 @@
                     <button class="tab-btn active" data-tab="product-owner">📊 Product Owner</button>
                     <button class="tab-btn" data-tab="engineers">👨‍💻 Engineers & Tech Leads</button>
                     <button class="tab-btn" data-tab="merge">🔧 Merge Coordinator</button>
+                    <button class="tab-btn" data-tab="system">📋 System Logs</button>
                 </div>
             </div>
             
@@ -69,12 +84,25 @@
                 <div id="merge" class="tab-panel">
                     <div class="terminal-pane merge-coordinator full-height">
                         <div class="terminal-header">
-                            <span class="terminal-title">🔧 Merge Coordinator & Summary</span>
+                            <span class="terminal-title">🔧 Merge Coordinator</span>
                             <div class="terminal-actions">
                                 <span class="terminal-action" data-terminal="merge-coordinator">Clear</span>
                             </div>
                         </div>
                         <div class="terminal-container" id="merge-coordinator-terminal"></div>
+                    </div>
+                </div>
+                
+                <!-- System Logs Tab -->
+                <div id="system" class="tab-panel">
+                    <div class="terminal-pane system full-height">
+                        <div class="terminal-header">
+                            <span class="terminal-title">📋 System Logs & Misc</span>
+                            <div class="terminal-actions">
+                                <span class="terminal-action" data-terminal="system">Clear</span>
+                            </div>
+                        </div>
+                        <div class="terminal-container" id="system-terminal"></div>
                     </div>
                 </div>
             </div>

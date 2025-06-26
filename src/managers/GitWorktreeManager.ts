@@ -54,11 +54,23 @@ export class GitWorktreeManager {
   }
 
   /**
+   * タスクIDをサニタイズして安全なブランチ名を生成
+   */
+  private sanitizeTaskId(taskId: string): string {
+    // 英数字、ハイフン、アンダースコアのみを許可
+    // それ以外の文字はハイフンに置換
+    return taskId.replace(/[^a-zA-Z0-9-_]/g, '-')
+                 .replace(/--+/g, '-') // 連続するハイフンを1つに
+                 .replace(/^-|-$/g, ''); // 先頭・末尾のハイフンを削除
+  }
+
+  /**
    * 実際のworktree作成処理
    */
   private async doCreateWorktree(taskId: string): Promise<{ path: string; branchName: string }> {
-    const branchName = `feature/task-${taskId}`;
-    const worktreePath = path.join(this.worktreeBasePath, `task-${taskId}`);
+    const sanitizedTaskId = this.sanitizeTaskId(taskId);
+    const branchName = `feature/task-${sanitizedTaskId}`;
+    const worktreePath = path.join(this.worktreeBasePath, `task-${sanitizedTaskId}`);
 
     try {
       // 既存のworktreeを削除（存在する場合）
@@ -157,7 +169,8 @@ export class GitWorktreeManager {
    * worktreeを削除
    */
   async removeWorktree(taskId: string): Promise<void> {
-    const worktreePath = path.join(this.worktreeBasePath, `task-${taskId}`);
+    const sanitizedTaskId = this.sanitizeTaskId(taskId);
+    const worktreePath = path.join(this.worktreeBasePath, `task-${sanitizedTaskId}`);
 
     try {
       if (fs.existsSync(worktreePath)) {
@@ -229,7 +242,8 @@ export class GitWorktreeManager {
    * タスク完了後のクリーンアップ
    */
   async cleanupCompletedTask(taskId: string): Promise<void> {
-    const branchName = `feature/task-${taskId}`;
+    const sanitizedTaskId = this.sanitizeTaskId(taskId);
+    const branchName = `feature/task-${sanitizedTaskId}`;
     
     try {
       // worktreeを削除
@@ -252,14 +266,16 @@ export class GitWorktreeManager {
    * 指定したタスクのworktreeパスを取得
    */
   getWorktreePath(taskId: string): string {
-    return path.join(this.worktreeBasePath, `task-${taskId}`);
+    const sanitizedTaskId = this.sanitizeTaskId(taskId);
+    return path.join(this.worktreeBasePath, `task-${sanitizedTaskId}`);
   }
 
   /**
    * 指定したタスクのブランチ名を取得
    */
   getBranchName(taskId: string): string {
-    return `feature/task-${taskId}`;
+    const sanitizedTaskId = this.sanitizeTaskId(taskId);
+    return `feature/task-${sanitizedTaskId}`;
   }
 
   /**

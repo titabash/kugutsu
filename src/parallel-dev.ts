@@ -160,6 +160,51 @@ class ParallelDevelopmentCLI {
       };
     }
 
+    // worktreeまたはサブモジュール内での実行をチェック
+    const gitDirStat = fs.statSync(gitDir);
+    if (gitDirStat.isFile()) {
+      // .gitがファイルの場合、worktreeまたはサブモジュール
+      return {
+        valid: false,
+        error: `❌ エラー: このツールはGit worktreeまたはサブモジュール内では実行できません。\n\n` +
+               `メインリポジトリのルートディレクトリから実行してください。\n\n` +
+               `現在の場所: ${config.baseRepoPath}\n\n` +
+               `ヒント: 'cd ..' を繰り返してメインリポジトリに移動してください。`
+      };
+    }
+
+    // 空のリポジトリかどうか確認
+    try {
+      const hasCommits = execSync('git rev-list -n 1 --all 2>/dev/null', {
+        cwd: config.baseRepoPath,
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe']
+      }).trim();
+      
+      if (!hasCommits) {
+        return {
+          valid: false,
+          error: `❌ エラー: リポジトリにコミットがありません。\n\n` +
+                 `このツールを使用するには、少なくとも1つのコミットが必要です。\n\n` +
+                 `初期コミットを作成してください：\n` +
+                 `  echo "# プロジェクト" > README.md\n` +
+                 `  git add README.md\n` +
+                 `  git commit -m "Initial commit"`
+        };
+      }
+    } catch (error) {
+      // git rev-listがエラーになった場合も空のリポジトリとして扱う
+      return {
+        valid: false,
+        error: `❌ エラー: リポジトリにコミットがありません。\n\n` +
+               `このツールを使用するには、少なくとも1つのコミットが必要です。\n\n` +
+               `初期コミットを作成してください：\n` +
+               `  echo "# プロジェクト" > README.md\n` +
+               `  git add README.md\n` +
+               `  git commit -m "Initial commit"`
+      };
+    }
+
     // 数値の範囲チェック
     if (config.maxConcurrentEngineers < 1 || config.maxConcurrentEngineers > 100) {
       return { valid: false, error: '最大同時エンジニア数は1-100の範囲で指定してください' };

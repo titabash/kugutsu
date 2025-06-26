@@ -72,6 +72,8 @@ export interface TaskAnalysisResult {
     architecturalDecisions?: string;
     parallelizationStrategy?: string;
   };
+  // フェーズ管理情報
+  projectId?: string;
 }
 
 /**
@@ -131,4 +133,36 @@ export interface ReviewResult {
   reviewedAt: Date;
   duration: number;
   error?: string;
+}
+
+/**
+ * プロジェクトフェーズの情報
+ */
+export interface ProjectPhase {
+  currentPhase: number;
+  totalPhases: number;
+  phaseName: string;
+  description: string;
+  completedTasks: string[];
+  remainingTasks: Task[];
+  estimatedTime?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * フェーズ管理ドキュメント
+ */
+export interface PhaseDocument {
+  projectId: string;
+  userRequest: string;
+  phases: ProjectPhase[];
+  currentPhaseIndex: number;
+  analysis: {
+    summary: string;
+    technicalStrategy: string;
+    riskAssessment: string;
+  };
+  createdAt: Date;
+  updatedAt: Date;
 }

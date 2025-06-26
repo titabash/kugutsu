@@ -1,9 +1,12 @@
 import { query, type SDKMessage } from "@anthropic-ai/claude-code";
-import { Task, TaskAnalysisResult, AgentConfig } from '../types/index.js';
+import { Task, TaskAnalysisResult, AgentConfig, PhaseDocument, ProjectPhase } from '../types/index.js';
 import { TaskInstructionManager } from '../utils/TaskInstructionManager.js';
 import { v4 as uuidv4 } from 'uuid';
 import { BaseAI } from './BaseAI.js';
 import { ComponentType } from '../types/logging.js';
+import * as fs from 'fs/promises';
+import * as path from 'path';
+import { createHash } from 'crypto';
 
 /**
  * プロダクトオーナーAIクラス
@@ -22,6 +25,65 @@ export class ProductOwnerAI extends BaseAI {
       allowedTools: ["Read", "Glob", "Grep", "LS"],
       ...config
     };
+  }
+
+  /**
+   * .kugutsuディレクトリのパスを取得
+   */
+  private getKugutsuDir(): string {
+    return path.join(this.baseRepoPath, '.kugutsu');
+  }
+
+  /**
+   * フェーズドキュメントのファイルパスを取得
+   */
+  private getPhaseDocumentPath(projectId: string): string {
+    return path.join(this.getKugutsuDir(), `phase-${projectId}.json`);
+  }
+
+  /**
+   * プロジェクトIDを生成（ユーザーリクエストから一意のIDを生成）
+   */
+  private generateProjectId(userRequest: string): string {
+    return createHash('md5').update(userRequest).digest('hex').substring(0, 8);
+  }
+
+  /**
+   * .kugutsuディレクトリを初期化
+   */
+  private async initializeKugutsuDir(): Promise<void> {
+    const kugutsuDir = this.getKugutsuDir();
+    try {
+      await fs.access(kugutsuDir);
+    } catch {
+      await fs.mkdir(kugutsuDir, { recursive: true });
+      this.info('📁 .kugutsuディレクトリを作成しました');
+    }
+  }
+
+  /**
+   * 既存のフェーズドキュメントを読み込む
+   */
+  private async loadPhaseDocument(projectId: string): Promise<PhaseDocument | null> {
+    const docPath = this.getPhaseDocumentPath(projectId);
+    try {
+      const content = await fs.readFile(docPath, 'utf-8');
+      const doc = JSON.parse(content) as PhaseDocument;
+      this.success(`✅ 既存のフェーズドキュメントを読み込みました (フェーズ ${doc.currentPhaseIndex + 1}/${doc.phases.length})`);
+      return doc;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * フェーズドキュメントを保存
+   */
+  private async savePhaseDocument(doc: PhaseDocument): Promise<void> {
+    await this.initializeKugutsuDir();
+    const docPath = this.getPhaseDocumentPath(doc.projectId);
+    await fs.writeFile(docPath, JSON.stringify(doc, null, 2), 'utf-8');
+    this.success(`✅ フェーズドキュメントを保存しました: ${path.relative(this.baseRepoPath, docPath)}`);
   }
 
   protected getComponentType(): ComponentType {
@@ -126,7 +188,17 @@ export class ProductOwnerAI extends BaseAI {
   ): Promise<TaskAnalysisResult> {
     this.info('🧠 要求分析開始');
 
-    const prompt = this.buildAnalysisPrompt(userRequest);
+    // プロジェクトIDを生成し、既存のフェーズドキュメントを確認
+    const projectId = this.generateProjectId(userRequest);
+    const existingDoc = await this.loadPhaseDocument(projectId);
+
+    let prompt: string;
+    if (existingDoc) {
+      // 既存のフェーズドキュメントがある場合は続きから実行
+      prompt = this.buildContinuationPrompt(userRequest, existingDoc);
+    } else {
+      prompt = this.buildAnalysisPrompt(userRequest);
+    }
 
     try {
       const messages: SDKMessage[] = [];
@@ -153,6 +225,46 @@ export class ProductOwnerAI extends BaseAI {
 
       // タスクを解析・作成
       const result = this.extractTaskAnalysisResult(messages);
+      result.projectId = projectId; // プロジェクトIDを結果に含める
+
+      // フェーズ管理の処理
+      const phaseInfo = this.extractPhaseInfo(messages);
+      
+      if (phaseInfo && !existingDoc) {
+        // 新規プロジェクトの場合のみフェーズドキュメントを作成
+        const doc = await this.createOrUpdatePhaseDocument(projectId, userRequest, phaseInfo, result, existingDoc);
+        await this.savePhaseDocument(doc);
+
+        // 現在のフェーズ情報をログ出力
+        const currentPhase = doc.phases[doc.currentPhaseIndex];
+        this.info(`📊 現在のフェーズ: ${currentPhase.phaseName} (${currentPhase.currentPhase}/${currentPhase.totalPhases})`);
+        this.info(`📝 フェーズの説明: ${currentPhase.description}`);
+      } else if (existingDoc) {
+        // 既存プロジェクトの場合
+        // ProductOwnerAIが実装状況を確認して現在のフェーズを判断
+        const currentPhaseInfo = this.extractCurrentPhaseFromAnalysis(messages);
+        if (currentPhaseInfo && currentPhaseInfo.phaseNumber) {
+          // フェーズの進捗を更新
+          const newPhaseIndex = currentPhaseInfo.phaseNumber - 1;
+          if (newPhaseIndex !== existingDoc.currentPhaseIndex) {
+            existingDoc.currentPhaseIndex = newPhaseIndex;
+            existingDoc.updatedAt = new Date();
+            await this.savePhaseDocument(existingDoc);
+            this.success(`✅ フェーズを更新しました: フェーズ ${newPhaseIndex + 1}`);
+          }
+        }
+        
+        // フェーズ情報の更新があれば反映
+        const updatedPhaseInfo = this.extractPhaseInfo(messages);
+        if (updatedPhaseInfo && updatedPhaseInfo.phases) {
+          // 既存のフェーズ情報を更新
+          await this.updatePhaseDocument(existingDoc, updatedPhaseInfo, result);
+          this.info('🔄 フェーズ情報を更新しました');
+        }
+        
+        const currentPhase = existingDoc.phases[existingDoc.currentPhaseIndex];
+        this.info(`📊 現在のフェーズ: ${currentPhase.phaseName} (${currentPhase.currentPhase}/${currentPhase.totalPhases})`);
+      }
 
       // 概要ファイルを作成
       await instructionManager.createOverviewFile(userRequest, fullAnalysis);
@@ -455,6 +567,37 @@ ${userRequest}
 }
 \`\`\`
 
+## 📊 フェーズ管理
+
+大規模な開発の場合、以下の情報を含めてフェーズに分割してください：
+
+\`\`\`json
+{
+  "phaseManagement": {
+    "requiresPhases": true,
+    "totalPhases": 3,
+    "phases": [
+      {
+        "phaseNumber": 1,
+        "phaseName": "基盤構築フェーズ",
+        "description": "認証システムの基盤となるモデルとAPIエンドポイントの実装",
+        "tasks": ["タスク1のタイトル", "タスク2のタイトル"],
+        "estimatedTime": "8時間"
+      }
+    ]
+  }
+}
+\`\`\`
+
+### 🔄 フェーズ情報の動的更新
+フェーズ情報は\`.kugutsu\`ディレクトリに保存されますが、以下の場合には積極的に更新してください：
+- 実装状況の確認結果、当初の想定と異なる場合
+- 新たな技術的課題や機会が発見された場合
+- ユーザー要求の変化や明確化があった場合
+- 依存関係や優先度の見直しが必要な場合
+
+これにより、プロジェクトの進化に合わせた柔軟な計画変更が可能になります。
+
 ## 🚨 重要な指針
 
 ### ファイル競合回避の徹底
@@ -713,5 +856,207 @@ ${analysis}
     }
 
     return resolved;
+  }
+
+  /**
+   * 継続実行用のプロンプトを構築
+   */
+  private buildContinuationPrompt(userRequest: string, existingDoc: PhaseDocument): string {
+    const allPhaseDescriptions = existingDoc.phases.map((phase, idx) => 
+      `${idx + 1}. ${phase.phaseName}: ${phase.description}`
+    ).join('\n');
+    
+    return `
+プロダクトオーナーとして、フェーズ管理されたプロジェクトの続きを実行します。
+
+## 📝 元のユーザー要求
+${userRequest}
+
+## 📊 プロジェクトのフェーズ構成
+${allPhaseDescriptions}
+
+## 🔍 実装状況の確認
+まず、コードベースを調査して、どのフェーズまで実装が完了しているかを確認してください。
+各フェーズのタスクが実装されているかをチェックし、現在どのフェーズにいるかを判断してください。
+
+## 🔄 フェーズ内容の更新
+実装状況や新たな発見に基づいて、必要に応じて以下を更新してください：
+- 今後のフェーズの内容やタスク構成
+- 各フェーズの説明や目的
+- 見積もり時間や優先度
+
+これらの更新はプロジェクトの進化に合わせて柔軟に対応し、より適切な実装計画に調整してください。
+
+## 📋 実行すべきタスク
+実装状況の確認結果に基づいて、現在実行すべきフェーズのタスクを出力してください。
+フェーズ内容を更新した場合は、"phaseManagement"セクションで更新内容も含めて出力してください。
+
+${this.buildAnalysisPrompt(userRequest).split('## 📊 最終成果物要求')[1]}`;
+  }
+
+  /**
+   * メッセージからフェーズ情報を抽出
+   */
+  private extractPhaseInfo(messages: SDKMessage[]): any | null {
+    let fullText = '';
+    
+    for (const message of messages) {
+      if (message && typeof message === 'object' && 'type' in message) {
+        if (message.type === 'assistant' && 'message' in message) {
+          const assistantMessage = message.message as any;
+          if (assistantMessage.content) {
+            for (const content of assistantMessage.content) {
+              if (content.type === 'text') {
+                fullText += content.text + '\n';
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // フェーズ管理のJSONブロックを探す
+    const phaseMatches = [...fullText.matchAll(/"phaseManagement"\s*:\s*{[\s\S]*?requiresPhases[\s\S]*?}/g)];
+    
+    if (phaseMatches.length > 0) {
+      try {
+        // 最後のマッチを使用
+        const lastMatch = phaseMatches[phaseMatches.length - 1][0];
+        // 完全なJSONオブジェクトに変換
+        const jsonStr = `{${lastMatch}}`;
+        const parsed = JSON.parse(jsonStr);
+        
+        if (parsed.phaseManagement && parsed.phaseManagement.requiresPhases) {
+          this.info('📊 フェーズ管理が必要と判断されました');
+          return parsed.phaseManagement;
+        }
+      } catch (error) {
+        this.warn('⚠️ フェーズ情報の解析に失敗しました');
+      }
+    }
+    
+    return null;
+  }
+
+  /**
+   * 分析結果から現在のフェーズを抽出
+   */
+  private extractCurrentPhaseFromAnalysis(messages: SDKMessage[]): { phaseNumber: number } | null {
+    let fullText = '';
+    
+    for (const message of messages) {
+      if (message && typeof message === 'object' && 'type' in message) {
+        if (message.type === 'assistant' && 'message' in message) {
+          const assistantMessage = message.message as any;
+          if (assistantMessage.content) {
+            for (const content of assistantMessage.content) {
+              if (content.type === 'text') {
+                fullText += content.text + '\n';
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // 「現在のフェーズ」「実装状況」「フェーズX」などのパターンを探す
+    const phasePatterns = [
+      /現在のフェーズ[\s：:]*フェーズ(\d+)/,
+      /フェーズ(\d+)[\sの]*実装が完了/,
+      /フェーズ(\d+)[\sの]*タスクを実装/,
+      /実装状況[\s：:]*フェーズ(\d+)/
+    ];
+
+    for (const pattern of phasePatterns) {
+      const match = fullText.match(pattern);
+      if (match && match[1]) {
+        const phaseNumber = parseInt(match[1]);
+        this.info(`🔍 ProductOwnerAIがフェーズ ${phaseNumber} を検出しました`);
+        return { phaseNumber };
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * フェーズドキュメントを作成または更新
+   */
+  private async createOrUpdatePhaseDocument(
+    projectId: string,
+    userRequest: string,
+    phaseInfo: any,
+    result: TaskAnalysisResult,
+    existingDoc: PhaseDocument | null
+  ): Promise<PhaseDocument> {
+    if (existingDoc) {
+      // 既存ドキュメントの場合はそのまま返す（更新は markTasksCompleted で行う）
+      return existingDoc;
+    } else {
+      // 新規ドキュメントの作成
+      const phases: ProjectPhase[] = phaseInfo.phases.map((p: any, index: number) => ({
+        currentPhase: p.phaseNumber || index + 1,
+        totalPhases: phaseInfo.totalPhases,
+        phaseName: p.phaseName,
+        description: p.description,
+        completedTasks: [],
+        remainingTasks: p.phaseNumber === 1 ? result.tasks : [],
+        estimatedTime: p.estimatedTime,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }));
+      
+      return {
+        projectId,
+        userRequest,
+        phases,
+        currentPhaseIndex: 0,
+        analysis: {
+          summary: result.summary,
+          technicalStrategy: result.analysisDetails?.architecturalDecisions || '',
+          riskAssessment: result.riskAssessment
+        },
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+    }
+  }
+
+  /**
+   * 既存のフェーズドキュメントを更新
+   */
+  private async updatePhaseDocument(
+    existingDoc: PhaseDocument,
+    updatedPhaseInfo: any,
+    result: TaskAnalysisResult
+  ): Promise<void> {
+    // フェーズ情報の更新
+    if (updatedPhaseInfo.phases) {
+      for (const updatedPhase of updatedPhaseInfo.phases) {
+        const phaseIndex = (updatedPhase.phaseNumber || 1) - 1;
+        if (phaseIndex < existingDoc.phases.length) {
+          const phase = existingDoc.phases[phaseIndex];
+          // フェーズ情報を更新
+          phase.phaseName = updatedPhase.phaseName || phase.phaseName;
+          phase.description = updatedPhase.description || phase.description;
+          phase.estimatedTime = updatedPhase.estimatedTime || phase.estimatedTime;
+          phase.updatedAt = new Date();
+          
+          // 現在のフェーズの場合はタスクも更新
+          if (phaseIndex === existingDoc.currentPhaseIndex) {
+            phase.remainingTasks = result.tasks;
+          }
+        }
+      }
+    }
+    
+    // 分析情報の更新
+    if (result.analysisDetails) {
+      existingDoc.analysis.technicalStrategy = result.analysisDetails.architecturalDecisions || existingDoc.analysis.technicalStrategy;
+      existingDoc.analysis.riskAssessment = result.riskAssessment || existingDoc.analysis.riskAssessment;
+    }
+    
+    existingDoc.updatedAt = new Date();
+    await this.savePhaseDocument(existingDoc);
   }
 }

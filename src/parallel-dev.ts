@@ -4,6 +4,7 @@ import { ParallelDevelopmentOrchestrator } from './managers/ParallelDevelopmentO
 import { ParallelDevelopmentOrchestratorWithElectron } from './managers/ParallelDevelopmentOrchestratorWithElectron.js';
 import { SystemConfig } from './types/index.js';
 import { electronLogAdapter } from './utils/ElectronLogAdapter.js';
+import { ClaudeCodeSetupChecker } from './utils/ClaudeCodeSetupChecker.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
@@ -30,7 +31,7 @@ class ParallelDevelopmentCLI {
   --base-repo <path>        ベースリポジトリのパス (デフォルト: .)
   --worktree-base <path>    Worktreeベースパス (デフォルト: ./worktrees)
   --max-engineers <num>     最大同時エンジニア数 (デフォルト: 10, 範囲: 1-100)
-  --max-turns <num>         タスクあたりの最大ターン数 (デフォルト: 20)
+  --max-turns <num>         タスクあたりの最大ターン数 (デフォルト: 30)
   --base-branch <branch>    ベースブランチ (デフォルト: 現在のブランチ)
   --use-remote              リモートリポジトリを使用 (デフォルト: ローカルのみ)
   --cleanup                 実行後にWorktreeをクリーンアップ
@@ -91,7 +92,7 @@ class ParallelDevelopmentCLI {
       baseRepoPath: process.cwd(),
       worktreeBasePath: path.join(process.cwd(), 'worktrees'),
       maxConcurrentEngineers: 10,
-      maxTurnsPerTask: 20,
+      maxTurnsPerTask: 30,
       baseBranch: 'main', // 後で現在のブランチに置き換える
       useRemote: false // デフォルトはローカルのみ
     };
@@ -126,7 +127,7 @@ class ParallelDevelopmentCLI {
       } else if (arg === '--max-engineers') {
         config.maxConcurrentEngineers = parseInt(args[++i] || '10', 10);
       } else if (arg === '--max-turns') {
-        config.maxTurnsPerTask = parseInt(args[++i] || '20', 10);
+        config.maxTurnsPerTask = parseInt(args[++i] || '30', 10);
       } else if (arg === '--base-branch') {
         config.baseBranch = args[++i] || 'main';
       } else if (!userRequest && !arg.startsWith('--')) {
@@ -244,6 +245,13 @@ class ParallelDevelopmentCLI {
       process.exit(1);
     }
 
+    // --use-remoteオプションのチェック
+    if (config.useRemote) {
+      console.error('❌ エラー: --use-remote オプションはまだ実装されていません。');
+      console.error('現在はローカルリポジトリでの実行のみサポートしています。');
+      process.exit(1);
+    }
+
     // --base-branchが指定されていない場合、現在のブランチを使用
     const baseBranchSpecified = args.includes('--base-branch');
     if (!baseBranchSpecified) {
@@ -259,6 +267,30 @@ class ParallelDevelopmentCLI {
         process.exit(1);
       }
     }
+
+    // Claude Codeのセットアップ状態を確認
+    console.log('🔍 Claude Codeのセットアップ状態を確認中...\n');
+    const setupCheck = await ClaudeCodeSetupChecker.checkSetup();
+    
+    if (!setupCheck.isValid) {
+      console.error('❌ Claude Codeのセットアップに問題があります:\n');
+      
+      // エラーを表示
+      setupCheck.errors.forEach((error, index) => {
+        console.error(`  ${index + 1}. ${error}`);
+      });
+      
+      // セットアップガイドを表示
+      ClaudeCodeSetupChecker.displaySetupGuide();
+      
+      process.exit(1);
+    }
+    
+    console.log('✅ Claude Codeのセットアップが確認されました');
+    if (setupCheck.info.version) {
+      console.log(`📌 Claude Codeバージョン: ${setupCheck.info.version}`);
+    }
+    console.log('');
 
     console.log('🤖 AI並列開発システム起動');
     console.log(`📂 ベースリポジトリ: ${config.baseRepoPath}`);

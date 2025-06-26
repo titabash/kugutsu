@@ -1,6 +1,6 @@
 {
   "name": "@titabash/kugutsu",
-  "version": "0.0.13",
+  "version": "0.0.14",
   "description": "AI-powered parallel development system with multiple AI engineers",
   "type": "module",
   "scripts": {
@@ -40,7 +40,7 @@
     "typescript": "^5.0.0"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.6.0"
   },
   "bin": {
     "kugutsu": "./dist/parallel-dev.js"

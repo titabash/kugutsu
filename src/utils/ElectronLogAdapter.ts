@@ -59,6 +59,8 @@ export class ElectronLogAdapter {
                 path.join(process.cwd(), 'node_modules/@titabash/kugutsu/electron'),
                 // 開発環境で実行される場合
                 path.join(__dirname, '../../electron'),
+                // グローバルインストールの場合（コンパイル済み）
+                path.join(__dirname, '../../../electron'),
                 // 相対パスから
                 path.join(process.cwd(), 'electron')
             ];
@@ -85,40 +87,25 @@ export class ElectronLogAdapter {
                 console.log('🔧 DevToolsモードが有効です');
             }
             
-            // Electronの実際の実行ファイルパスを取得
-            let electronExecutable: string | null = null;
+            // Electronの実行ファイルパスを取得（ESMネイティブ）
+            // import.meta.resolveを使用（Node.js 20.6+）
+            const electronModuleUrl = await import.meta.resolve('electron', import.meta.url);
+            const electronModulePath = fileURLToPath(electronModuleUrl);
+            const electronDir = path.dirname(electronModulePath);
+            const pathFile = path.join(electronDir, 'path.txt');
             
-            // 1. node_modules/electron/path.txtから実行ファイルパスを読み取る
-            const pathFile = path.join(process.cwd(), 'node_modules', 'electron', 'path.txt');
-            if (existsSync(pathFile)) {
-                const relativePath = fs.readFileSync(pathFile, 'utf-8').trim();
-                const electronPath = path.join(process.cwd(), 'node_modules', 'electron', 'dist', relativePath);
-                if (existsSync(electronPath)) {
-                    electronExecutable = electronPath;
-                    console.log(`   実行ファイル: ${electronExecutable}`);
-                }
+            if (!existsSync(pathFile)) {
+                throw new Error(`Electron path.txtが見つかりません: ${pathFile}`);
             }
             
-            // 2. フォールバック: プラットフォーム固有のパスを試す
-            if (!electronExecutable) {
-                const platformPaths = process.platform === 'darwin' 
-                    ? [path.join(process.cwd(), 'node_modules', 'electron', 'dist', 'Electron.app', 'Contents', 'MacOS', 'Electron')]
-                    : process.platform === 'win32'
-                    ? [path.join(process.cwd(), 'node_modules', 'electron', 'dist', 'electron.exe')]
-                    : [path.join(process.cwd(), 'node_modules', 'electron', 'dist', 'electron')];
-                
-                for (const possiblePath of platformPaths) {
-                    if (existsSync(possiblePath)) {
-                        electronExecutable = possiblePath;
-                        console.log(`   実行ファイル: ${electronExecutable}`);
-                        break;
-                    }
-                }
+            const relativePath = readFileSync(pathFile, 'utf-8').trim();
+            const electronExecutable = path.join(electronDir, 'dist', relativePath);
+            
+            if (!existsSync(electronExecutable)) {
+                throw new Error(`Electron実行ファイルが見つかりません: ${electronExecutable}`);
             }
             
-            if (!electronExecutable) {
-                throw new Error('Electronの実行ファイルが見つかりません。npm install electronを実行してください。');
-            }
+            console.log(`   実行ファイル: ${electronExecutable}`);
             
             // Electronプロセスを起動（IPCを有効にして）
             this.electronProcess = spawn(electronExecutable, [electronAppPath, ...extraArgs], {

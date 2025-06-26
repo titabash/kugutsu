@@ -1,6 +1,6 @@
 {
   "name": "@titabash/kugutsu",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "description": "AI-powered parallel development system with multiple AI engineers",
   "type": "module",
   "scripts": {
@@ -26,6 +26,7 @@
     "blessed": "^0.1.81",
     "blessed-contrib": "^4.11.0",
     "chalk": "^5.4.1",
+    "electron": "^28.3.3",
     "split.js": "^1.6.5",
     "strip-ansi": "^7.1.0",
     "uuid": "^9.0.0"
@@ -34,7 +35,6 @@
     "@types/blessed": "^0.1.25",
     "@types/node": "^20.0.0",
     "@types/uuid": "^9.0.0",
-    "electron": "^28.3.3",
     "tsx": "^4.7.0",
     "typescript": "^5.0.0"
   },

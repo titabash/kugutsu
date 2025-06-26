@@ -656,7 +656,7 @@ ${userRequest}
         "integrationTests": ["他機能との連携テスト手順"],
         "deploymentReadiness": ["デプロイ準備・環境設定確認"]
       },
-      "dependencies": ["依存するタスクのタイトル"],
+      "dependencies": ["依存するタスクのタイトル（循環依存を避ける）"],
       "acceptanceCriteria": ["具体的な受け入れ基準（動作・品質・UX）"],
       "errorHandling": ["想定エラーケースと対応方法"],
       "performanceTargets": ["パフォーマンス目標値"],
@@ -787,7 +787,22 @@ ${userRequest}
 **判断例**：
 - ✅ 「ユーザー管理API + 商品管理API」→ low risk（型定義の軽微な競合のみ）
 - ✅ 「フロントエンド + バックエンド」→ low risk（異なる技術スタック）
-- ⚠️ 「package.json設定 + 複数機能実装」→ high risk（設定競合を回避）`;
+- ⚠️ 「package.json設定 + 複数機能実装」→ high risk（設定競合を回避）
+
+## 🔄 依存関係設計の重要指針
+
+### ⚠️ 循環依存の完全回避
+**重要**: タスク間の依存関係で循環参照を絶対に作らないでください。
+
+#### 🚨 避けるべきパターン
+- タスクA → タスクB → タスクA（直接的循環）
+- タスクA → タスクB → タスクC → タスクA（間接的循環）
+- 相互依存関係（タスクAとタスクBが互いに依存）
+
+#### ✅ 推奨パターン
+- **階層的依存**: 基盤 → 機能 → 統合 の一方向フロー
+- **依存最小化**: 可能な限り独立したタスクとして設計
+- **明確な順序**: 論理的な実装順序での依存関係設定`;
   }
 
   /**
@@ -1017,8 +1032,25 @@ ${analysis}
 
       // 循環依存のチェック
       if (remaining.length === before && remaining.length > 0) {
-        this.warn('⚠️ 循環依存が検出されました。残りのタスクを強制的に追加します。');
-        resolved.push(...remaining);
+        // 詳細な循環依存情報をログ出力
+        const cyclicTasks = remaining.map(task => ({
+          title: task.title,
+          dependencies: task.dependencies
+        }));
+        
+        this.warn('⚠️ 循環依存が検出されました。詳細:');
+        cyclicTasks.forEach(task => {
+          this.warn(`   - "${task.title}" → 依存: [${task.dependencies.join(', ')}]`);
+        });
+        
+        // 依存関係を無視して残タスクを追加
+        const tasksWithoutDeps = remaining.map(task => ({
+          ...task,
+          dependencies: [] // 循環依存を解消
+        }));
+        
+        resolved.push(...tasksWithoutDeps);
+        this.info('📝 循環依存を解消して続行します');
         break;
       }
     }
@@ -1104,24 +1136,25 @@ ${this.buildAnalysisPrompt(userRequest).split('## 📊 最終成果物要求')[1
       }
     }
 
-    // フェーズ管理のJSONブロックを探す
-    const phaseMatches = [...fullText.matchAll(/"phaseManagement"\s*:\s*{[\s\S]*?requiresPhases[\s\S]*?}/g)];
+    // フェーズ管理のJSONブロックを探す - より堅牢な方法
+    const jsonBlocks = [...fullText.matchAll(/```json\s*([\s\S]*?)\s*```/g)];
     
-    if (phaseMatches.length > 0) {
+    for (const jsonBlock of jsonBlocks.reverse()) { // 最後から検索
       try {
-        // 最後のマッチを使用
-        const lastMatch = phaseMatches[phaseMatches.length - 1][0];
-        // 完全なJSONオブジェクトに変換
-        const jsonStr = `{${lastMatch}}`;
-        const parsed = JSON.parse(jsonStr);
-        
-        if (parsed.phaseManagement && parsed.phaseManagement.requiresPhases) {
+        const jsonData = JSON.parse(jsonBlock[1]);
+        if (jsonData.phaseManagement && jsonData.phaseManagement.requiresPhases) {
           this.info('📊 フェーズ管理が必要と判断されました');
-          return parsed.phaseManagement;
+          return jsonData.phaseManagement;
         }
       } catch (error) {
-        this.warn('⚠️ フェーズ情報の解析に失敗しました');
+        // このJSONブロックは無効、次を試す
+        continue;
       }
+    }
+    
+    // 代替手段: "phaseManagement"キーワードで検索
+    if (fullText.includes('"phaseManagement"') && fullText.includes('"requiresPhases"')) {
+      this.warn('⚠️ フェーズ情報は存在しますが、JSON解析に失敗しました');
     }
     
     return null;

@@ -277,12 +277,9 @@ class ParallelDevelopmentCLI {
 }
 
 // スクリプトが直接実行された場合のみmain関数を呼び出し
-// ESMではimport.meta.urlを使用
-if (import.meta.url === `file://${process.argv[1]}`) {
-  ParallelDevelopmentCLI.main().catch((error) => {
-    console.error('💥 予期しないエラー:', error);
-    process.exit(1);
-  });
-}
+ParallelDevelopmentCLI.main().catch((error) => {
+  console.error('💥 予期しないエラー:', error);
+  process.exit(1);
+});
 
 export { ParallelDevelopmentCLI };

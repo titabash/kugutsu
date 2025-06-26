@@ -114,7 +114,7 @@ export class ParallelDevelopmentOrchestratorWithElectron extends ParallelDevelop
     }
 
     // 親クラスのメソッドを呼び出す
-    // これにより、CompletionReporterの初期化とsetupCompletionReporterListenersが呼ばれる
+    // これにより、baseBranchの確認、CompletionReporterの初期化、setupCompletionReporterListenersが呼ばれる
     const result = await super.executeUserRequest(userRequest);
 
     return result;

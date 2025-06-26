@@ -292,6 +292,32 @@ class ParallelDevelopmentCLI {
     }
     console.log('');
 
+    // baseBranchの確認と警告
+    const protectedBranches = ['main', 'master', 'staging', 'develop'];
+    if (protectedBranches.includes(config.baseBranch)) {
+      console.warn(`\n⚠️  警告: 保護されたブランチ '${config.baseBranch}' を使用しようとしています`);
+      console.warn(`このブランチへの直接的な変更は推奨されません。`);
+      
+      // ユーザーに確認を求める
+      const readline = await import('readline');
+      const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout
+      });
+      
+      const answer = await new Promise<string>((resolve) => {
+        rl.question(`\n⚠️  保護されたブランチ '${config.baseBranch}' を使用しますか？ (yes/no): `, resolve);
+      });
+      rl.close();
+      
+      if (answer.toLowerCase() !== 'yes' && answer.toLowerCase() !== 'y') {
+        console.log('\n🛑 ユーザーによりキャンセルされました');
+        process.exit(0);
+      }
+      
+      console.log(`\n✅ '${config.baseBranch}' ブランチの使用を続行します\n`);
+    }
+
     console.log('🤖 AI並列開発システム起動');
     console.log(`📂 ベースリポジトリ: ${config.baseRepoPath}`);
     console.log(`🌿 Worktreeベース: ${config.worktreeBasePath}`);

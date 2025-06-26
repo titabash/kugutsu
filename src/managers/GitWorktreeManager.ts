@@ -9,11 +9,13 @@ import { WorktreeInfo, Task } from '../types/index.js';
 export class GitWorktreeManager {
   private readonly baseRepoPath: string;
   private readonly worktreeBasePath: string;
+  private readonly baseBranch: string;
   private readonly worktreeMutex = new Map<string, Promise<{ path: string; branchName: string }>>();
 
-  constructor(baseRepoPath: string, worktreeBasePath: string) {
+  constructor(baseRepoPath: string, worktreeBasePath: string, baseBranch: string = 'main') {
     this.baseRepoPath = path.resolve(baseRepoPath);
     this.worktreeBasePath = path.resolve(worktreeBasePath);
+    this.baseBranch = baseBranch;
     
     // worktreeベースディレクトリを作成
     if (!fs.existsSync(this.worktreeBasePath)) {
@@ -81,7 +83,7 @@ export class GitWorktreeManager {
       // worktreeを作成（既存ブランチの場合は-bオプションなし）
       const command = branchExists
         ? ['git', 'worktree', 'add', worktreePath, branchName]
-        : ['git', 'worktree', 'add', '-b', branchName, worktreePath, 'main'];
+        : ['git', 'worktree', 'add', '-b', branchName, worktreePath, this.baseBranch];
 
       console.log(`🌿 Worktree作成中: ${branchName} -> ${worktreePath}`);
       

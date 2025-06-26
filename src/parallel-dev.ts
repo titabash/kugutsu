@@ -6,6 +6,7 @@ import { SystemConfig } from './types/index.js';
 import { electronLogAdapter } from './utils/ElectronLogAdapter.js';
 import * as fs from 'fs';
 import * as path from 'path';
+import { execSync } from 'child_process';
 
 /**
  * AI並列開発システムのメインエントリーポイント
@@ -30,7 +31,7 @@ class ParallelDevelopmentCLI {
   --worktree-base <path>    Worktreeベースパス (デフォルト: ./worktrees)
   --max-engineers <num>     最大同時エンジニア数 (デフォルト: 10, 範囲: 1-100)
   --max-turns <num>         タスクあたりの最大ターン数 (デフォルト: 20)
-  --base-branch <branch>    ベースブランチ (デフォルト: main)
+  --base-branch <branch>    ベースブランチ (デフォルト: 現在のブランチ)
   --use-remote              リモートリポジトリを使用 (デフォルト: ローカルのみ)
   --cleanup                 実行後にWorktreeをクリーンアップ
   --visual-ui               ターミナル分割表示を使用
@@ -49,6 +50,33 @@ class ParallelDevelopmentCLI {
   }
 
   /**
+   * 現在のGitブランチを取得
+   */
+  private static getCurrentBranch(repoPath: string): string | null {
+    try {
+      const branch = execSync('git branch --show-current', {
+        cwd: repoPath,
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'ignore']
+      }).trim();
+      
+      if (!branch) {
+        // detached HEAD状態の場合
+        const rev = execSync('git rev-parse --abbrev-ref HEAD', {
+          cwd: repoPath,
+          encoding: 'utf8',
+          stdio: ['pipe', 'pipe', 'ignore']
+        }).trim();
+        return rev === 'HEAD' ? 'main' : rev;
+      }
+      
+      return branch;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  /**
    * コマンドライン引数をパース
    */
   private static parseArgs(args: string[]): {
@@ -64,7 +92,7 @@ class ParallelDevelopmentCLI {
       worktreeBasePath: path.join(process.cwd(), 'worktrees'),
       maxConcurrentEngineers: 10,
       maxTurnsPerTask: 20,
-      baseBranch: 'main',
+      baseBranch: 'main', // 後で現在のブランチに置き換える
       useRemote: false // デフォルトはローカルのみ
     };
 
@@ -121,7 +149,15 @@ class ParallelDevelopmentCLI {
     // Gitリポジトリかどうか確認
     const gitDir = path.join(config.baseRepoPath, '.git');
     if (!fs.existsSync(gitDir)) {
-      return { valid: false, error: `指定されたパスはGitリポジトリではありません: ${config.baseRepoPath}` };
+      return { 
+        valid: false, 
+        error: `❌ エラー: このツールはGitリポジトリでのみ実行できます。\n\n` +
+               `指定されたパスはGitリポジトリではありません: ${config.baseRepoPath}\n\n` +
+               `以下のいずれかの方法でGitリポジトリを準備してください：\n` +
+               `  1. 既存のGitリポジトリに移動: cd <git-repo-path>\n` +
+               `  2. 新規Gitリポジトリを初期化: git init\n` +
+               `  3. リポジトリをクローン: git clone <repository-url>`
+      };
     }
 
     // 数値の範囲チェック
@@ -161,6 +197,22 @@ class ParallelDevelopmentCLI {
     if (!validation.valid) {
       console.error(`❌ 設定エラー: ${validation.error}`);
       process.exit(1);
+    }
+
+    // --base-branchが指定されていない場合、現在のブランチを使用
+    const baseBranchSpecified = args.includes('--base-branch');
+    if (!baseBranchSpecified) {
+      const currentBranch = this.getCurrentBranch(config.baseRepoPath);
+      if (currentBranch) {
+        config.baseBranch = currentBranch;
+        console.log(`📌 現在のブランチをベースブランチとして使用: ${currentBranch}`);
+      } else {
+        // Gitリポジトリチェックは既に通過しているので、これは予期しないエラー
+        console.error(`❌ エラー: 現在のGitブランチを取得できませんでした。`);
+        console.error(`--base-branch オプションで明示的にベースブランチを指定してください。`);
+        console.error(`例: kugutsu "${userRequest}" --base-branch main`);
+        process.exit(1);
+      }
     }
 
     console.log('🤖 AI並列開発システム起動');

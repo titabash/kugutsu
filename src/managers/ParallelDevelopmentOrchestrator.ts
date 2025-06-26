@@ -37,7 +37,7 @@ export class ParallelDevelopmentOrchestrator {
     this.config = config;
     this.useVisualUI = useVisualUI;
     this.productOwnerAI = new ProductOwnerAI(config.baseRepoPath);
-    this.gitManager = new GitWorktreeManager(config.baseRepoPath, config.worktreeBasePath);
+    this.gitManager = new GitWorktreeManager(config.baseRepoPath, config.worktreeBasePath, config.baseBranch);
     this.reviewWorkflow = new ReviewWorkflow(this.gitManager, config);
     
     // CompletionReporterを作成

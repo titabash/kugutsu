@@ -2,8 +2,6 @@
   "name": "@titabash/kugutsu",
   "version": "0.0.5",
   "description": "AI-powered parallel development system with multiple AI engineers",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
   "type": "module",
   "scripts": {
     "build": "tsc && npm run build:electron",
@@ -47,6 +45,10 @@
     "kugutsu": "./dist/parallel-dev.js"
   },
   "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
     "./parallel-dev": {
       "import": "./dist/parallel-dev.js",
       "types": "./dist/parallel-dev.d.ts"

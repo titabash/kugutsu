@@ -130,7 +130,6 @@ export class ParallelDevelopmentOrchestrator {
       
       this.log('ProductOwner', 'info', `📋 分析結果:`, 'Analysis', 'Phase 1: Analysis');
       this.log('ProductOwner', 'info', `- 概要: ${analysis.summary}`, 'Analysis', 'Phase 1: Analysis');
-      this.log('ProductOwner', 'info', `- 見積もり時間: ${analysis.estimatedTime}`, 'Analysis', 'Phase 1: Analysis');
       this.log('ProductOwner', 'info', `- タスク数: ${analysis.tasks.length}`, 'Analysis', 'Phase 1: Analysis');
       this.log('ProductOwner', 'info', `- リスク: ${analysis.riskAssessment}`, 'Analysis', 'Phase 1: Analysis');
 

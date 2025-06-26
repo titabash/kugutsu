@@ -137,7 +137,6 @@ export class CompletionReporter extends EventEmitter {
     console.log('\n=== 並列開発完了レポート ===\n');
     console.log(`📋 ユーザー要求: ${userRequest}`);
     console.log(`📊 全体概要: ${analysis.summary}`);
-    console.log(`⏱️  見積もり時間: ${analysis.estimatedTime}`);
     console.log(`📈 タスク完了率: ${completedTasks.length}/${analysis.tasks.length} (${Math.round((completedTasks.length / analysis.tasks.length) * 100)}%)\n`);
 
     // 成功タスク詳細

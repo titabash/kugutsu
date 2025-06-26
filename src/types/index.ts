@@ -35,7 +35,6 @@ export interface Task {
   };
   // 拡張メタデータ（プロダクトオーナーAIの分析結果）
   metadata?: {
-    estimatedHours?: number;
     skillRequirements?: string[];
     fileScope?: {
       primaryFiles?: string[];
@@ -63,7 +62,6 @@ export interface Task {
 export interface TaskAnalysisResult {
   tasks: Task[];
   summary: string;
-  estimatedTime: string;
   riskAssessment: string;
   // 拡張分析情報
   analysisDetails?: {
@@ -145,7 +143,6 @@ export interface ProjectPhase {
   description: string;
   completedTasks: string[];
   remainingTasks: Task[];
-  estimatedTime?: string;
   createdAt: Date;
   updatedAt: Date;
 }

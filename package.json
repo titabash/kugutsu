@@ -1,6 +1,6 @@
 {
   "name": "@titabash/kugutsu",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "description": "AI-powered parallel development system with multiple AI engineers",
   "type": "module",
   "scripts": {
@@ -44,6 +44,14 @@
   "bin": {
     "kugutsu": "./dist/parallel-dev.js"
   },
+  "files": [
+    "dist",
+    "electron",
+    "docs",
+    "README.md",
+    "LICENSE",
+    "CLAUDE.md"
+  ],
   "exports": {
     ".": {
       "import": "./dist/index.js",

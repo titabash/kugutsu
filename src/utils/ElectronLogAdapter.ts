@@ -2,6 +2,8 @@ import { spawn, ChildProcess } from 'child_process';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import { existsSync, readFileSync } from 'fs';
+import * as fs from 'fs';
 import { StructuredLogMessage } from '../types/logging.js';
 import { CompletionStatus } from './CompletionReporter.js';
 
@@ -49,15 +51,31 @@ export class ElectronLogAdapter {
         
         try {
             // Electronプロセスを起動
-            // ESMではrequire('electron')が使えないため、実際のElectron実行ファイルのパスを構築
-            // macOSの場合のパス
-            const electronExecutable = process.platform === 'darwin'
-                ? path.join(__dirname, '../../node_modules/electron/dist/Electron.app/Contents/MacOS/Electron')
-                : path.join(__dirname, '../../node_modules/.bin/electron');
-            const electronAppPath = path.join(__dirname, '../../electron');
+            // npxを使用してElectronを起動（最もポータブルな方法）
+            
+            // Electronアプリのパスも同様に探す
+            const possibleAppPaths = [
+                // npmパッケージとして実行される場合
+                path.join(process.cwd(), 'node_modules/@titabash/kugutsu/electron'),
+                // 開発環境で実行される場合
+                path.join(__dirname, '../../electron'),
+                // 相対パスから
+                path.join(process.cwd(), 'electron')
+            ];
+            
+            let electronAppPath: string | null = null;
+            for (const possiblePath of possibleAppPaths) {
+                if (existsSync(possiblePath)) {
+                    electronAppPath = possiblePath;
+                    break;
+                }
+            }
+            
+            if (!electronAppPath) {
+                throw new Error('Electronアプリケーションディレクトリが見つかりません。');
+            }
             
             console.log('📱 Electronアプリを起動中...');
-            console.log(`   実行ファイル: ${electronExecutable}`);
             console.log(`   アプリケーションパス: ${electronAppPath}`);
             
             // コマンドライン引数から--devtoolsフラグを探す
@@ -67,10 +85,45 @@ export class ElectronLogAdapter {
                 console.log('🔧 DevToolsモードが有効です');
             }
             
-            this.electronProcess = spawn(electronExecutable as string, [electronAppPath, ...extraArgs], {
+            // Electronの実際の実行ファイルパスを取得
+            let electronExecutable: string | null = null;
+            
+            // 1. node_modules/electron/path.txtから実行ファイルパスを読み取る
+            const pathFile = path.join(process.cwd(), 'node_modules', 'electron', 'path.txt');
+            if (existsSync(pathFile)) {
+                const relativePath = fs.readFileSync(pathFile, 'utf-8').trim();
+                const electronPath = path.join(process.cwd(), 'node_modules', 'electron', 'dist', relativePath);
+                if (existsSync(electronPath)) {
+                    electronExecutable = electronPath;
+                    console.log(`   実行ファイル: ${electronExecutable}`);
+                }
+            }
+            
+            // 2. フォールバック: プラットフォーム固有のパスを試す
+            if (!electronExecutable) {
+                const platformPaths = process.platform === 'darwin' 
+                    ? [path.join(process.cwd(), 'node_modules', 'electron', 'dist', 'Electron.app', 'Contents', 'MacOS', 'Electron')]
+                    : process.platform === 'win32'
+                    ? [path.join(process.cwd(), 'node_modules', 'electron', 'dist', 'electron.exe')]
+                    : [path.join(process.cwd(), 'node_modules', 'electron', 'dist', 'electron')];
+                
+                for (const possiblePath of platformPaths) {
+                    if (existsSync(possiblePath)) {
+                        electronExecutable = possiblePath;
+                        console.log(`   実行ファイル: ${electronExecutable}`);
+                        break;
+                    }
+                }
+            }
+            
+            if (!electronExecutable) {
+                throw new Error('Electronの実行ファイルが見つかりません。npm install electronを実行してください。');
+            }
+            
+            // Electronプロセスを起動（IPCを有効にして）
+            this.electronProcess = spawn(electronExecutable, [electronAppPath, ...extraArgs], {
                 stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
-                env: { ...process.env },
-                cwd: electronAppPath
+                env: { ...process.env }
             });
 
             this.electronProcess.on('message', (msg: any) => {
@@ -106,15 +159,29 @@ export class ElectronLogAdapter {
                 this.isElectronMode = false;
             });
 
-            // Electronが起動するまで待機
-            await new Promise(resolve => setTimeout(resolve, 3000));
+            // IPCの準備完了を待つ（最大5秒）
+            const readyPromise = new Promise<boolean>((resolve) => {
+                const timeout = setTimeout(() => {
+                    console.warn('⚠️ Electron UIからの応答がタイムアウトしました');
+                    resolve(false);
+                }, 5000);
+                
+                // すでにmessageイベントリスナーは設定済みなので、
+                // isReadyがtrueになったらresolveする
+                const checkReady = setInterval(() => {
+                    if (this.isReady) {
+                        clearTimeout(timeout);
+                        clearInterval(checkReady);
+                        resolve(true);
+                    }
+                }, 100);
+            });
             
-            // 起動確認
-            if (this.electronProcess && !this.electronProcess.killed) {
-                console.log('🖥️  Electron UIが正常に起動しました');
-                this.isReady = true;
-                this.flushMessageQueue();
-                this.flushStructuredMessageQueue();
+            const isConnected = await readyPromise;
+            
+            if (!isConnected) {
+                console.log('⚠️ IPC接続が確立できませんでした。スタンドアロンモードで動作します。');
+                this.isElectronMode = false;
             }
 
         } catch (error) {

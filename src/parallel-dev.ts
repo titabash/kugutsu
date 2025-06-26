@@ -39,6 +39,7 @@ class ParallelDevelopmentCLI {
   --electron                Electron UIを使用（デフォルト）
   --no-electron             Electron UIを無効化してCLIモードで実行
   --devtools                Electron DevToolsを自動的に開く
+  --version, -v             バージョン情報を表示
   --help, -h                このヘルプを表示
 
 例:
@@ -108,6 +109,11 @@ class ParallelDevelopmentCLI {
 
       if (arg === '--help' || arg === '-h') {
         showHelp = true;
+      } else if (arg === '--version' || arg === '-v') {
+        const packageJsonPath = path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'package.json');
+        const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+        console.log(`@titabash/kugutsu version: ${packageJson.version}`);
+        process.exit(0);
       } else if (arg === '--cleanup') {
         cleanup = true;
       } else if (arg === '--visual-ui') {

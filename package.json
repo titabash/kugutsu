@@ -1,6 +1,6 @@
 {
   "name": "@titabash/kugutsu",
-  "version": "0.0.12",
+  "version": "0.0.13",
   "description": "AI-powered parallel development system with multiple AI engineers",
   "type": "module",
   "scripts": {
@@ -13,7 +13,8 @@
     "parallel-dev-cli": "tsx src/parallel-dev.ts --no-electron",
     "parallel-dev-gui": "tsx src/parallel-dev.ts --electron",
     "electron": "cd electron && electron .",
-    "electron:build": "npm run build:electron && npm run electron"
+    "electron:build": "npm run build:electron && npm run electron",
+    "version": "echo \"@titabash/kugutsu version: $(node -p \"require('./package.json').version\")\""
   },
   "dependencies": {
     "@anthropic-ai/claude-code": "latest",

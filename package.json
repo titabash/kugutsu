@@ -1,6 +1,6 @@
 {
   "name": "@titabash/kugutsu",
-  "version": "0.0.14",
+  "version": "0.0.15",
   "description": "AI-powered parallel development system with multiple AI engineers",
   "type": "module",
   "scripts": {

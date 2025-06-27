@@ -477,6 +477,39 @@ export class ElectronLogAdapter {
         }
     }
 
+    /**
+     * メッセージハンドラーを登録
+     */
+    onMessage(messageType: string, handler: (data?: any) => void) {
+        if (!this.electronProcess) return;
+        
+        this.electronProcess.on('message', (msg: any) => {
+            if (msg.type === messageType) {
+                handler(msg.taskId);
+            }
+        });
+    }
+
+    /**
+     * Electronプロセスにメッセージを送信
+     */
+    sendMessage(messageType: string, data: any, taskId?: string) {
+        if (this.isElectronMode && this.electronProcess && !this.electronProcess.killed) {
+            try {
+                const message: any = {
+                    type: messageType,
+                    data: data
+                };
+                if (taskId) {
+                    message.taskId = taskId;
+                }
+                this.electronProcess.send(message);
+            } catch (error) {
+                console.error(`Failed to send message ${messageType}:`, error);
+            }
+        }
+    }
+
     destroy() {
         if (this.electronProcess && !this.electronProcess.killed) {
             console.log('🔌 Electron UIを終了中...');

@@ -9,7 +9,7 @@
     "start": "node dist/index.js",
     "kugutsu": "node dist/parallel-dev.js",
     "dev": "tsx src/index.ts",
-    "parallel-dev": "tsx src/parallel-dev.ts",
+    "parallel-dev": "tsx src/parallel-dev.ts --devtools",
     "parallel-dev-cli": "tsx src/parallel-dev.ts --no-electron",
     "parallel-dev-gui": "tsx src/parallel-dev.ts --electron",
     "electron": "cd electron && electron .",

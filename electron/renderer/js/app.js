@@ -146,6 +146,12 @@ function switchTab(tabId) {
     
     state.activeTab = tabId;
     
+    // タスクタブがクリックされた場合、データを読み込む
+    if (tabId === 'tasks') {
+        console.log('[switchTab] Loading task data for tasks tab...');
+        loadTasksDirectly();
+    }
+    
     // リサイズ
     setTimeout(() => {
         Object.entries(state.fitAddons).forEach(([id, addon]) => {
@@ -571,6 +577,159 @@ if (typeof dragEvent === 'undefined') {
     window.dragEvent = null;
 }
 
+// タスク詳細モーダルを表示する関数
+function showTaskDetailModal(filename, content) {
+    const modal = document.getElementById('task-detail-modal');
+    if (!modal) return;
+    
+    // ファイル名からタスク情報を抽出
+    const match = filename.match(/task-([a-f0-9]+)-(.+)\.md/);
+    const taskId = match ? match[1] : 'unknown';
+    const taskSlug = match ? match[2].replace(/-/g, ' ') : filename;
+    
+    // タイトルを抽出
+    const titleMatch = content.match(/# タスク詳細: (.+)/);
+    const title = titleMatch ? titleMatch[1] : taskSlug;
+    
+    // タイトルを設定
+    document.getElementById('task-detail-title').textContent = title;
+    
+    // 内容を整形して表示
+    const instructionContent = document.getElementById('task-instruction-content');
+    if (instructionContent) {
+        // Markdownを簡単にHTML化
+        const html = content
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+            .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+            .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+            .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+            .replace(/- \[ \] (.+)$/gm, '<li><input type="checkbox" disabled> $1</li>')
+            .replace(/- \[x\] (.+)$/gm, '<li><input type="checkbox" checked disabled> $1</li>')
+            .replace(/^- (.+)$/gm, '<li>$1</li>')
+            .replace(/\n\n/g, '</p><p>')
+            .replace(/\n/g, '<br>');
+        
+        instructionContent.innerHTML = `<div class="markdown-formatted"><p>${html}</p></div>`;
+    }
+    
+    // モーダルを表示
+    modal.classList.add('show');
+    
+    // 閉じるボタンのイベントハンドラ
+    const closeBtn = document.getElementById('close-task-detail');
+    if (closeBtn) {
+        closeBtn.onclick = () => {
+            modal.classList.remove('show');
+        };
+    }
+    
+    // モーダルの外側クリックで閉じる
+    modal.onclick = (e) => {
+        if (e.target === modal) {
+            modal.classList.remove('show');
+        }
+    };
+}
+
+// タスクを直接読み込む関数
+function loadTasksDirectly() {
+    console.log('[Tasks] Loading tasks directly...');
+    
+    const fs = require('fs');
+    const path = require('path');
+    const os = require('os');
+    
+    const tempDir = os.tmpdir();
+    console.log('[Tasks] Temp directory:', tempDir);
+    
+    const tasksContainer = document.getElementById('tasks-grid');
+    const overviewContainer = document.getElementById('overview-content');
+    
+    if (!tasksContainer || !overviewContainer) {
+        console.error('[Tasks] Required DOM elements not found');
+        return;
+    }
+    
+    try {
+        // claude-multi-engineer-task-session-* パターンのディレクトリを探す
+        const files = fs.readdirSync(tempDir);
+        const taskDirs = files
+            .filter(f => f.startsWith('claude-multi-engineer-task-session-'))
+            .map(f => path.join(tempDir, f))
+            .filter(f => {
+                try {
+                    return fs.statSync(f).isDirectory();
+                } catch (e) {
+                    return false;
+                }
+            })
+            .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+        
+        console.log('[Tasks] Found directories:', taskDirs.length);
+        
+        if (taskDirs.length === 0) {
+            tasksContainer.innerHTML = '<div class="no-tasks">No task directories found. Run parallel-dev to generate tasks.</div>';
+            return;
+        }
+        
+        // 最新のディレクトリを使用
+        const taskDir = taskDirs[0];
+        console.log('[Tasks] Using directory:', taskDir);
+        
+        // task-overview.mdを読み込む
+        const overviewPath = path.join(taskDir, 'task-overview.md');
+        if (fs.existsSync(overviewPath)) {
+            const overviewContent = fs.readFileSync(overviewPath, 'utf-8');
+            overviewContainer.innerHTML = '<pre>' + overviewContent + '</pre>';
+            console.log('[Tasks] Loaded overview');
+        } else {
+            overviewContainer.innerHTML = '<p>No overview found</p>';
+        }
+        
+        // task-*.mdファイルを探してタスク情報を構築
+        const taskFiles = fs.readdirSync(taskDir)
+            .filter(f => f.startsWith('task-') && f.endsWith('.md') && f !== 'task-overview.md');
+        
+        console.log('[Tasks] Found task files:', taskFiles);
+        
+        if (taskFiles.length === 0) {
+            tasksContainer.innerHTML = '<div class="no-tasks">No task files found</div>';
+            return;
+        }
+        
+        // タスクカードを生成
+        tasksContainer.innerHTML = '';
+        taskFiles.forEach(filename => {
+            const taskPath = path.join(taskDir, filename);
+            const content = fs.readFileSync(taskPath, 'utf-8');
+            
+            // シンプルなカード作成
+            const card = document.createElement('div');
+            card.className = 'task-card';
+            card.innerHTML = `
+                <div class="task-title">${filename}</div>
+                <div class="task-description">Click to view details</div>
+            `;
+            
+            // クリックで詳細モーダルを表示
+            card.onclick = () => {
+                showTaskDetailModal(filename, content);
+            };
+            
+            tasksContainer.appendChild(card);
+        });
+        
+        console.log('[Tasks] Tasks loaded successfully');
+        
+    } catch (error) {
+        console.error('[Tasks] Error:', error);
+        tasksContainer.innerHTML = '<div class="error-message">Error: ' + error.message + '</div>';
+    }
+}
+
 // 初期化
 document.addEventListener('DOMContentLoaded', () => {
     console.log('[DOMContentLoaded] Starting initialization...');
@@ -799,6 +958,7 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('[DOMContentLoaded] Cannot use direct ipcRenderer:', e);
         }
     }
+    
 });
 
 // プログレスバー更新関数

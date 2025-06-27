@@ -1,6 +1,7 @@
 import { ParallelDevelopmentOrchestrator } from './ParallelDevelopmentOrchestrator.js';
 import { electronLogAdapter } from '../utils/ElectronLogAdapter.js';
 import { SystemConfig } from '../types/index.js';
+import * as path from 'path';
 
 /**
  * Electron対応並列開発オーケストレーター
@@ -52,6 +53,7 @@ export class ParallelDevelopmentOrchestratorWithElectron extends ParallelDevelop
     super.setupEventListeners();
 
     if (this.useElectronUI) {
+      this.setupTaskMessageHandlers();
       // タスク完了時にElectronに通知
       this.eventEmitter.onMergeCompleted((event) => {
         const completedCount = this.completedTasks.size;
@@ -107,17 +109,115 @@ export class ParallelDevelopmentOrchestratorWithElectron extends ParallelDevelop
     completedTasks: string[];
     failedTasks: string[];
   }> {
+    this.log('system', 'info', '🚀 並列開発システム開始', 'System', 'System Startup');
+    this.log('system', 'info', `📝 ユーザー要求: ${userRequest}`, 'System', 'System Startup');
+
     if (this.useElectronUI) {
       // 初期状態をElectronに通知
       electronLogAdapter.updateTaskStatus(0, 0);
       electronLogAdapter.updateEngineerCount(0);
     }
 
-    // 親クラスのメソッドを呼び出す
-    // これにより、baseBranchの確認、CompletionReporterの初期化、setupCompletionReporterListenersが呼ばれる
-    const result = await super.executeUserRequest(userRequest);
+    try {
+      // TaskInstructionManagerを初期化
+      this.instructionManager = new (await import('../utils/TaskInstructionManager.js')).TaskInstructionManager();
+      
+      // ログビューアーを開始
+      if (this.logViewer) {
+        this.logViewer.start();
+      }
 
-    return result;
+      // 1. プロダクトオーナーAIによる要求分析
+      this.log('ProductOwner', 'info', '📊 フェーズ1: 要求分析', 'Analysis', 'Phase 1: Analysis');
+      const analysis = await this.productOwnerAI.analyzeUserRequestWithInstructions(
+        userRequest, 
+        this.instructionManager
+      );
+      
+      this.log('ProductOwner', 'info', `📋 分析結果:`, 'Analysis', 'Phase 1: Analysis');
+      this.log('ProductOwner', 'info', `- 概要: ${analysis.summary}`, 'Analysis', 'Phase 1: Analysis');
+      this.log('ProductOwner', 'info', `- タスク数: ${analysis.tasks.length}`, 'Analysis', 'Phase 1: Analysis');
+      this.log('ProductOwner', 'info', `- リスク: ${analysis.riskAssessment}`, 'Analysis', 'Phase 1: Analysis');
+
+      // 2. タスクの依存関係を解決
+      const orderedTasks = this.productOwnerAI.resolveDependencies(analysis.tasks);
+      this.log('ProductOwner', 'info', `🔗 依存関係解決完了`, 'Dependencies', 'Phase 1: Analysis');
+      
+      // CompletionReporterを初期化
+      const taskTitles = orderedTasks.map(t => t.title);
+      await this.completionReporter.initialize(taskTitles);
+      this.log('system', 'info', `📊 タスク完了レポーターを初期化 (${taskTitles.length}タスク)`, 'System', 'Initialization');
+      
+      // CompletionReporterのイベントリスナーを設定（サブクラスでオーバーライド可能）
+      this.setupCompletionReporterListeners();
+
+      // 3. パイプラインマネージャーを開始
+      this.log('system', 'info', '🏗️ フェーズ2: 並列パイプライン開始', 'Orchestrator', 'Phase 2: Pipeline');
+      await this.pipelineManager.start();
+
+      // 4. 全タスクをパイプラインに投入
+      this.log('system', 'info', '⚡ フェーズ3: タスク投入', 'Orchestrator', 'Phase 3: Task Enqueue');
+      for (const task of orderedTasks) {
+        this.activeTasks.set(task.id, task);
+        await this.pipelineManager.enqueueDevelopment(task);
+        this.log('system', 'info', `📥 タスク投入: ${task.title}`, 'Pipeline', 'Task Enqueue');
+      }
+
+      // Electronにタスクデータを送信
+      if (this.useElectronUI) {
+        await this.onTaskAnalysisComplete(analysis);
+      }
+
+      // 5. 全パイプラインの完了を待機
+      this.log('system', 'info', '⏳ フェーズ4: パイプライン完了待機', 'Orchestrator', 'Phase 4: Waiting');
+      await this.pipelineManager.waitForCompletion();
+      
+      // 6. 結果の集計
+      this.log('system', 'info', '📊 フェーズ5: 結果集計', 'Orchestrator', 'Phase 5: Results');
+      
+      // 結果のまとめ
+      const results: import('../types/index.js').EngineerResult[] = Array.from(this.taskResults.values());
+      const reviewResults: import('../types/index.js').ReviewResult[][] = Array.from(this.reviewResults.values());
+      const completedTasks = Array.from(this.completedTasks);
+      const failedTasks = Array.from(this.failedTasks.keys());
+      
+      // 7. 最終結果の集計
+      this.log('system', 'info', '📊 最終結果集計', 'Orchestrator', 'Final Results');
+      this.log('system', 'success', `✅ 完了タスク: ${completedTasks.length}件`, 'Orchestrator', 'Final Results');
+      this.log('system', 'error', `❌ 失敗タスク: ${failedTasks.length}件`, 'Orchestrator', 'Final Results');
+      
+      if (failedTasks.length > 0) {
+        this.log('system', 'error', '失敗タスク詳細:', 'Orchestrator', 'Final Results');
+        for (const taskId of failedTasks) {
+          const reason = this.failedTasks.get(taskId) || '不明';
+          const task = this.activeTasks.get(taskId);
+          const taskTitle = task ? task.title : 'タスク名不明';
+          this.log('system', 'error', `  - ${taskTitle}: ${reason}`, 'Orchestrator', 'Final Results');
+        }
+      }
+
+      this.log('system', 'success', '🎉 並列開発システム完了', 'Orchestrator', 'Final Results');
+      
+      return {
+        analysis,
+        results,
+        reviewResults,
+        completedTasks,
+        failedTasks
+      };
+    } catch (error) {
+      this.log('system', 'error', `エラーが発生しました: ${error}`, 'Orchestrator', 'Error');
+      throw error;
+    } finally {
+      await this.cleanup();
+    }
+  }
+
+  /**
+   * クリーンアップ処理
+   */
+  public async cleanup(): Promise<void> {
+    await super.cleanup();
   }
   
   /**
@@ -170,5 +270,97 @@ export class ParallelDevelopmentOrchestratorWithElectron extends ParallelDevelop
   public stopLogViewer(): void {
     super.stopLogViewer();
     // Electronの場合は特に何もしない（ウィンドウは別プロセスで管理）
+  }
+
+  /**
+   * タスク関連のメッセージハンドラーを設定
+   */
+  protected setupTaskMessageHandlers(): void {
+    if (!this.useElectronUI) return;
+
+    // Electronプロセスからのメッセージを処理
+    electronLogAdapter.onMessage('get-tasks', async () => {
+      const tasks = Array.from(this.activeTasks.values());
+      electronLogAdapter.sendMessage('tasks-response', tasks);
+    });
+
+    electronLogAdapter.onMessage('get-task-overview', async () => {
+      const overview = await this.getTaskOverview();
+      electronLogAdapter.sendMessage('task-overview-response', overview);
+    });
+
+    electronLogAdapter.onMessage('get-task-instruction', async (taskId: string) => {
+      const instruction = await this.getTaskInstruction(taskId);
+      electronLogAdapter.sendMessage('task-instruction-response', instruction, taskId);
+    });
+  }
+
+  /**
+   * タスクオーバービューを取得
+   */
+  private async getTaskOverview(): Promise<string> {
+    if (!this.instructionManager) return '';
+    
+    try {
+      const overviewPath = path.join(this.instructionManager.getTempDirectory(), 'task-overview.md');
+      const fs = await import('fs/promises');
+      const content = await fs.readFile(overviewPath, 'utf-8');
+      return content;
+    } catch (error) {
+      console.error('[Electron] Error reading task overview:', error);
+      return '';
+    }
+  }
+
+  /**
+   * タスク指示ファイルを取得
+   */
+  private async getTaskInstruction(taskId: string): Promise<string> {
+    if (!this.instructionManager) return '';
+    
+    const task = this.activeTasks.get(taskId);
+    if (!task) return '';
+    
+    try {
+      // TaskInstructionManagerで作成されたファイルのパスを取得
+      const instructionPath = (task as any).instructionFile;
+      if (!instructionPath) {
+        // フォールバックパス
+        const sanitizedTitle = task.title
+          .toLowerCase()
+          .replace(/[^a-z0-9\s-]/g, '')
+          .replace(/\s+/g, '-')
+          .substring(0, 30);
+        const fileName = `task-${task.id.split('-')[0]}-${sanitizedTitle}.md`;
+        const fallbackPath = path.join(this.instructionManager.getTempDirectory(), fileName);
+        const fs = await import('fs/promises');
+        const content = await fs.readFile(fallbackPath, 'utf-8');
+        return content;
+      }
+      const fs = await import('fs/promises');
+      const content = await fs.readFile(instructionPath, 'utf-8');
+      return content;
+    } catch (error) {
+      console.error(`[Electron] Error reading task instruction for ${taskId}:`, error);
+      return '';
+    }
+  }
+
+  /**
+   * タスク分析完了時にElectronに通知
+   */
+  protected async onTaskAnalysisComplete(analysis: import('../types/index.js').TaskAnalysisResult): Promise<void> {
+    if (this.useElectronUI) {
+      // タスク一覧を更新
+      const tasks = analysis.tasks;
+      tasks.forEach(task => this.activeTasks.set(task.id, task));
+      
+      // Electronに通知
+      electronLogAdapter.sendMessage('tasks-updated', Array.from(this.activeTasks.values()));
+      
+      // オーバービューも更新通知
+      const overview = await this.getTaskOverview();
+      electronLogAdapter.sendMessage('task-overview-updated', overview);
+    }
   }
 }

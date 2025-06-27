@@ -6,6 +6,7 @@
     <title>Kugutsu</title>
     <link rel="stylesheet" href="./styles/xterm.css">
     <link rel="stylesheet" href="./styles/main.css">
+    <link rel="stylesheet" href="./styles/tasks.css">
 </head>
 <body>
     <div id="container">
@@ -46,6 +47,7 @@
             <div class="tab-navigation">
                 <div class="tab-group" id="main-tabs">
                     <button class="tab-btn active" data-tab="product-owner">📊 Product Owner</button>
+                    <button class="tab-btn" data-tab="tasks">📋 Tasks</button>
                     <button class="tab-btn" data-tab="engineers">👨‍💻 Engineers & Tech Leads</button>
                     <button class="tab-btn" data-tab="merge">🔧 Merge Coordinator</button>
                     <button class="tab-btn" data-tab="system">📋 System Logs</button>
@@ -63,6 +65,46 @@
                             </div>
                         </div>
                         <div class="terminal-container" id="product-owner-terminal"></div>
+                    </div>
+                </div>
+                
+                <!-- Tasks Tab -->
+                <div id="tasks" class="tab-panel">
+                    <div class="tasks-container">
+                        <div class="tasks-overview">
+                            <div class="overview-header">
+                                <h2>📋 Project Overview</h2>
+                                <button class="btn-small" id="refresh-tasks">🔄 Refresh</button>
+                            </div>
+                            <div class="overview-content" id="overview-content">
+                                <p>Loading project overview...</p>
+                            </div>
+                        </div>
+                        <div class="tasks-list">
+                            <div class="tasks-header">
+                                <h2>📝 Task List</h2>
+                                <div class="task-filters">
+                                    <select id="task-filter-status">
+                                        <option value="all">All Status</option>
+                                        <option value="pending">Pending</option>
+                                        <option value="in_progress">In Progress</option>
+                                        <option value="completed">Completed</option>
+                                        <option value="failed">Failed</option>
+                                    </select>
+                                    <select id="task-filter-type">
+                                        <option value="all">All Types</option>
+                                        <option value="feature">Feature</option>
+                                        <option value="bugfix">Bugfix</option>
+                                        <option value="refactor">Refactor</option>
+                                        <option value="test">Test</option>
+                                        <option value="docs">Docs</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="tasks-grid" id="tasks-grid">
+                                <!-- タスクカードが動的に追加される -->
+                            </div>
+                        </div>
                     </div>
                 </div>
                 
@@ -107,6 +149,21 @@
                         </div>
                         <div class="terminal-container" id="system-terminal"></div>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- タスク詳細モーダル -->
+    <div id="task-detail-modal" class="dialog-overlay">
+        <div class="dialog-content task-detail">
+            <div class="dialog-header">
+                <h2 id="task-detail-title">Task Details</h2>
+                <button class="dialog-close" id="close-task-detail">&times;</button>
+            </div>
+            <div class="dialog-body">
+                <div class="task-instruction-content" id="task-instruction-content">
+                    <pre>Loading task instructions...</pre>
                 </div>
             </div>
         </div>

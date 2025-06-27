@@ -90,6 +90,76 @@ ipcMain.handle('update-layout', async (event, engineerCount: number) => {
   return { success: true, engineerCount };
 });
 
+// タスク管理関連のハンドラー
+ipcMain.handle('get-tasks', async (event) => {
+  // 親プロセスにタスク一覧を要求
+  if (process.send) {
+    return new Promise((resolve) => {
+      const messageHandler = (message: any) => {
+        if (message.type === 'tasks-response') {
+          (process as any).removeListener('message', messageHandler);
+          resolve(message.data);
+        }
+      };
+      process.on('message', messageHandler);
+      process.send!({ type: 'get-tasks' });
+      
+      // タイムアウト処理
+      setTimeout(() => {
+        (process as any).removeListener('message', messageHandler);
+        resolve([]);
+      }, 5000);
+    });
+  }
+  return [];
+});
+
+ipcMain.handle('get-task-overview', async (event) => {
+  // 親プロセスにタスクオーバービューを要求
+  if (process.send) {
+    return new Promise((resolve) => {
+      const messageHandler = (message: any) => {
+        if (message.type === 'task-overview-response') {
+          (process as any).removeListener('message', messageHandler);
+          resolve(message.data);
+        }
+      };
+      process.on('message', messageHandler);
+      process.send!({ type: 'get-task-overview' });
+      
+      // タイムアウト処理
+      setTimeout(() => {
+        (process as any).removeListener('message', messageHandler);
+        resolve('');
+      }, 5000);
+    });
+  }
+  return '';
+});
+
+ipcMain.handle('get-task-instruction', async (event, taskId: string) => {
+  // 親プロセスにタスク指示ファイルを要求
+  if (process.send) {
+    return new Promise((resolve) => {
+      const messageHandler = (message: any) => {
+        if (message.type === 'task-instruction-response' && message.taskId === taskId) {
+          (process as any).removeListener('message', messageHandler);
+          resolve(message.data);
+        }
+      };
+      process.on('message', messageHandler);
+      process.send!({ type: 'get-task-instruction', taskId });
+      
+      // タイムアウト処理
+      setTimeout(() => {
+        (process as any).removeListener('message', messageHandler);
+        resolve('');
+      }, 5000);
+    });
+  }
+  return '';
+});
+
 // 親プロセスからのメッセージを処理（並列開発システムとの通信）
 if (process.send) {
   console.log('[Electron Main] IPC communication enabled');
@@ -142,6 +212,20 @@ if (process.send) {
           console.log('[Electron Main] all-tasks-completed sent to renderer successfully');
         } else {
           console.warn('[Electron Main] Cannot send to renderer - window not available');
+        }
+        break;
+        
+      case 'tasks-updated':
+        // タスク一覧の更新
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('tasks-updated', message.data);
+        }
+        break;
+        
+      case 'task-overview-updated':
+        // タスクオーバービューの更新
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('task-overview-updated', message.data);
         }
         break;
     }

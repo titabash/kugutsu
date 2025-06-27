@@ -18,8 +18,8 @@ export class ParallelDevelopmentOrchestratorWithElectron extends ParallelDevelop
     this.useElectronUI = useElectronUI;
 
     if (this.useElectronUI) {
-      // Electronアダプターを初期化
-      electronLogAdapter.initialize();
+      // Electronアダプターを初期化（ベースリポジトリパスを渡す）
+      electronLogAdapter.initialize(config.baseRepoPath);
     }
   }
 

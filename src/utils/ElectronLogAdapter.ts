@@ -39,7 +39,7 @@ export class ElectronLogAdapter {
         return ElectronLogAdapter.instance;
     }
 
-    async initialize() {
+    async initialize(baseRepoPath?: string) {
         if (!this.isElectronMode) {
             return;
         }
@@ -112,7 +112,7 @@ export class ElectronLogAdapter {
             this.electronProcess = spawn(electronExecutable, [
                 electronAppPath, 
                 '--original-cwd', 
-                process.cwd(),
+                baseRepoPath || process.cwd(),
                 ...extraArgs
             ], {
                 stdio: ['pipe', 'pipe', 'pipe', 'ipc'],

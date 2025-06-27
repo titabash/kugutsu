@@ -230,7 +230,7 @@ Create a `.kugutsu.json` in your project root:
 ```json
 {
   "maxEngineers": 4,
-  "maxTurns": 30,
+  "maxTurns": 50,
   "defaultUI": "visual",
   "autoCleanup": true
 }

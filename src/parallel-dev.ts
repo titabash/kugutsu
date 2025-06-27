@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+// EventEmitterの最大リスナー数を増加（並列エンジニア数+システムコンポーネント分）
+process.setMaxListeners(0); // 無制限
+
 import { ParallelDevelopmentOrchestrator } from './managers/ParallelDevelopmentOrchestrator.js';
 import { ParallelDevelopmentOrchestratorWithElectron } from './managers/ParallelDevelopmentOrchestratorWithElectron.js';
 import { SystemConfig } from './types/index.js';
@@ -31,7 +34,7 @@ class ParallelDevelopmentCLI {
   --base-repo <path>        ベースリポジトリのパス (デフォルト: .)
   --worktree-base <path>    Worktreeベースパス (デフォルト: ./worktrees)
   --max-engineers <num>     最大同時エンジニア数 (デフォルト: 10, 範囲: 1-100)
-  --max-turns <num>         タスクあたりの最大ターン数 (デフォルト: 30)
+  --max-turns <num>         タスクあたりの最大ターン数 (デフォルト: 50)
   --base-branch <branch>    ベースブランチ (デフォルト: 現在のブランチ)
   --use-remote              リモートリポジトリを使用 (デフォルト: ローカルのみ)
   --cleanup                 実行後にWorktreeをクリーンアップ
@@ -93,7 +96,7 @@ class ParallelDevelopmentCLI {
       baseRepoPath: process.cwd(),
       worktreeBasePath: path.join(process.cwd(), 'worktrees'),
       maxConcurrentEngineers: 10,
-      maxTurnsPerTask: 30,
+      maxTurnsPerTask: 50,
       baseBranch: 'main', // 後で現在のブランチに置き換える
       useRemote: false // デフォルトはローカルのみ
     };
@@ -133,7 +136,7 @@ class ParallelDevelopmentCLI {
       } else if (arg === '--max-engineers') {
         config.maxConcurrentEngineers = parseInt(args[++i] || '10', 10);
       } else if (arg === '--max-turns') {
-        config.maxTurnsPerTask = parseInt(args[++i] || '30', 10);
+        config.maxTurnsPerTask = parseInt(args[++i] || '50', 10);
       } else if (arg === '--base-branch') {
         config.baseBranch = args[++i] || 'main';
       } else if (!userRequest && !arg.startsWith('--')) {

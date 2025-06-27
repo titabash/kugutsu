@@ -306,4 +306,5 @@ export class GitWorktreeManager {
       console.error('❌ 全クリーンアップエラー:', error);
     }
   }
+
 }

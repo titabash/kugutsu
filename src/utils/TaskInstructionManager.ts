@@ -80,6 +80,7 @@ ${analysis}
 - **優先度**: ${task.priority}
 - **ステータス**: ${task.status}
 - **作成日時**: ${task.createdAt.toISOString()}
+- **セッションID**: ${this.sessionId}
 
 ## 依存関係
 ${task.dependencies.length > 0 ? 

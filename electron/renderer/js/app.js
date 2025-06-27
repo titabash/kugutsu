@@ -693,28 +693,39 @@ function loadTasksDirectly() {
                 return;
             }
         } else {
-            // projectIdがない場合は最新のプロジェクトを使用（フォールバック）
+            // projectIdがない場合は最新のanalysis.jsonを持つプロジェクトを使用
             const projectDirs = fs.readdirSync(projectsDir)
                 .map(f => path.join(projectsDir, f))
                 .filter(f => {
                     try {
-                        return fs.statSync(f).isDirectory();
+                        // ディレクトリかつanalysis.jsonが存在するもののみ
+                        return fs.statSync(f).isDirectory() && 
+                               fs.existsSync(path.join(f, 'analysis.json'));
                     } catch (e) {
                         return false;
                     }
                 })
-                .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+                .sort((a, b) => {
+                    // analysis.jsonの更新時刻で並び替え
+                    try {
+                        const aTime = fs.statSync(path.join(a, 'analysis.json')).mtimeMs;
+                        const bTime = fs.statSync(path.join(b, 'analysis.json')).mtimeMs;
+                        return bTime - aTime;
+                    } catch (e) {
+                        return 0;
+                    }
+                });
             
-            console.log('[Tasks] Found project directories:', projectDirs.length);
+            console.log('[Tasks] Found project directories with analysis.json:', projectDirs.length);
             
             if (projectDirs.length === 0) {
-                tasksContainer.innerHTML = '<div class="no-tasks">No project directories found. Run parallel-dev to generate tasks.</div>';
+                tasksContainer.innerHTML = '<div class="no-tasks">No analyzed projects found. Waiting for task analysis...</div>';
                 return;
             }
             
-            // 最新のプロジェクトディレクトリを使用
+            // 最新のanalysis.jsonを持つプロジェクトディレクトリを使用
             projectDir = projectDirs[0];
-            console.log('[Tasks] Using latest project directory');
+            console.log('[Tasks] Using latest analyzed project directory');
         }
         const instructionsDir = path.join(projectDir, 'instructions');
         console.log('[Tasks] Using project directory:', projectDir);
@@ -751,7 +762,13 @@ function loadTasksDirectly() {
                 
                 if (analysis.tasks && Array.isArray(analysis.tasks)) {
                     currentTaskIds = analysis.tasks
-                        .map(t => t.id)
+                        .map(t => {
+                            if (!t || typeof t !== 'object') {
+                                console.warn('[Tasks] Invalid task object:', t);
+                                return null;
+                            }
+                            return t.id;
+                        })
                         .filter(id => id && typeof id === 'string'); // null/undefinedを除外
                     console.log('[Tasks] Current task IDs:', currentTaskIds);
                     console.log('[Tasks] Task count:', currentTaskIds.length);
@@ -785,19 +802,16 @@ function loadTasksDirectly() {
         
         // 現在のプロジェクトのタスクのみをフィルタリング
         const taskFiles = allTaskFiles.filter(filename => {
-            // analysis.jsonがない場合は全てのタスクを表示
-            if (currentTaskIds.length === 0 && !currentSessionId) {
-                return true;
-            }
-            
             // セッションIDが指定されている場合は、ファイル内容を確認
             if (currentSessionId) {
                 const taskPath = path.join(instructionsDir, filename);
                 try {
                     const content = fs.readFileSync(taskPath, 'utf-8');
-                    // セッションIDをファイル内容から検索
-                    const sessionMatch = content.match(/セッションID: ([^\n]+)/);
+                    // セッションIDをファイル内容から検索（**付きの形式に対応）
+                    const sessionMatch = content.match(/\*\*セッションID\*\*: ([^\n]+)/);
+                    console.log(`[Tasks] Checking file ${filename}: Found session ID = ${sessionMatch ? sessionMatch[1] : 'none'}, Current session ID = ${currentSessionId}`);
                     if (sessionMatch && sessionMatch[1] === currentSessionId) {
+                        console.log(`[Tasks] File ${filename} matches current session`);
                         return true;
                     }
                 } catch (e) {
@@ -807,20 +821,35 @@ function loadTasksDirectly() {
             }
             
             // セッションIDがない場合は、タスクIDでフィルタリング（後方互換性）
-            const match = filename.match(/^task-([^-]+)-/);
-            if (match) {
-                const fileTaskId = match[1];
-                // 現在のプロジェクトのタスクIDリストに含まれるかチェック
-                return currentTaskIds.some(id => {
-                    // idがundefinedやnullでないことを確認
-                    if (!id || typeof id !== 'string') {
-                        console.warn('[Tasks] Invalid task ID found:', id);
-                        return false;
-                    }
-                    return id.startsWith(fileTaskId);
-                });
+            if (currentTaskIds.length > 0) {
+                const match = filename.match(/^task-([^-]+)-/);
+                if (match) {
+                    const fileTaskId = match[1];
+                    // 現在のプロジェクトのタスクIDリストに含まれるかチェック
+                    return currentTaskIds.some(id => {
+                        // idがundefinedやnullでないことを確認
+                        if (!id || typeof id !== 'string') {
+                            console.warn('[Tasks] Invalid task ID found:', id);
+                            return false;
+                        }
+                        // fileTaskIdも検証
+                        if (!fileTaskId || typeof fileTaskId !== 'string') {
+                            console.warn('[Tasks] Invalid file task ID:', fileTaskId);
+                            return false;
+                        }
+                        try {
+                            return id.startsWith(fileTaskId);
+                        } catch (e) {
+                            console.error('[Tasks] Error in startsWith:', e, 'id:', id, 'fileTaskId:', fileTaskId);
+                            return false;
+                        }
+                    });
+                }
+                return false;
             }
-            return false;
+            
+            // セッションIDもタスクIDもない場合は全てのタスクを表示
+            return true;
         });
         
         console.log('[Tasks] Filtered task files for current project:', taskFiles);

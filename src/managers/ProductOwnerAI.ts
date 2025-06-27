@@ -659,6 +659,7 @@ ${userRequest}
   },
   "tasks": [
     {
+      "id": "一意のタスクID（UUIDまたは短いハッシュ値）",
       "title": "明確で具体的なタスクタイトル",
       "description": "実装すべき機能の詳細説明",
       "type": "feature|bugfix|documentation|test|refactoring",

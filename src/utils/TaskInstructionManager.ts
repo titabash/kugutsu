@@ -1,30 +1,39 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
 import { promisify } from 'util';
 import { Task } from '../types/index.js';
 
-const mkdtemp = promisify(fs.mkdtemp);
+const mkdir = promisify(fs.mkdir);
 
 /**
  * PythonのTemporaryDirectory風のタスク指示ファイル管理クラス
  */
 export class TaskInstructionManager {
   private tempDir!: string;
-  private sessionId!: string;
+  public readonly sessionId!: string;
+  private projectId!: string;
   private isActive: boolean = true;
+  private baseRepoPath: string;
 
-  constructor(sessionId?: string) {
-    this.sessionId = sessionId || `task-session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  constructor(baseRepoPath: string, projectId: string, sessionId?: string) {
+    this.baseRepoPath = baseRepoPath;
+    this.projectId = projectId;
+    this.sessionId = sessionId || `task-session-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
     
-    // fs.mkdtempを使用してより安全に一時ディレクトリを作成
-    const tempDirPrefix = path.join(os.tmpdir(), `claude-multi-engineer-${this.sessionId}-`);
-    this.tempDir = fs.mkdtempSync(tempDirPrefix);
+    // .kugutsu ディレクトリ内にプロジェクト用のディレクトリを作成
+    const kugutsuDir = path.join(this.baseRepoPath, '.kugutsu');
+    const projectDir = path.join(kugutsuDir, 'projects', this.projectId);
+    this.tempDir = path.join(projectDir, 'instructions');
     
-    console.log(`📁 タスク指示ディレクトリ作成: ${this.tempDir}`);
+    // ディレクトリが存在しない場合は作成
+    if (!fs.existsSync(this.tempDir)) {
+      fs.mkdirSync(this.tempDir, { recursive: true });
+    }
     
-    // 自動クリーンアップを設定
-    this.setupAutoCleanup();
+    console.log(`📁 タスク指示ディレクトリ: ${path.relative(this.baseRepoPath, this.tempDir)}`);
+    
+    // 自動クリーンアップは無効化（.kugutsuディレクトリは永続化）
+    // this.setupAutoCleanup();
   }
 
   /**
@@ -42,9 +51,10 @@ ${userRequest}
 ${analysis}
 
 ## セッション情報
+- プロジェクトID: ${this.projectId}
 - セッションID: ${this.sessionId}
 - 作成日時: ${new Date().toISOString()}
-- 一時ディレクトリ: ${this.tempDir}
+- ディレクトリ: ${path.relative(this.baseRepoPath, this.tempDir)}
 
 ---
 *このファイルは自動生成されました*
@@ -261,64 +271,47 @@ ${notes || 'なし'}
 
   /**
    * TemporaryDirectory風のクリーンアップ (with文の__exit__相当)
+   * 注: .kugutsuディレクトリは永続化のため、実際のクリーンアップは行わない
    */
   async cleanup(): Promise<void> {
     if (!this.isActive) return;
     
-    try {
-      if (fs.existsSync(this.tempDir)) {
-        fs.rmSync(this.tempDir, { recursive: true, force: true });
-        console.log(`🧹 タスク指示ディレクトリをクリーンアップ: ${this.tempDir}`);
-      }
-      this.isActive = false;
-    } catch (error) {
-      console.warn(`⚠️ クリーンアップエラー: ${error}`);
-    }
+    // .kugutsuディレクトリは永続化のため削除しない
+    console.log(`📁 タスク指示ディレクトリを保持: ${path.relative(this.baseRepoPath, this.tempDir)}`);
+    this.isActive = false;
   }
 
-  /**
-   * デストラクタ (Node.jsのprocess終了時に自動実行)
-   */
-  private setupAutoCleanup(): void {
-    const cleanup = () => {
-      if (this.isActive) {
-        console.log('\n🛑 プロセス終了 - 自動クリーンアップ実行');
-        try {
-          fs.rmSync(this.tempDir, { recursive: true, force: true });
-        } catch (error) {
-          // エラーは無視（プロセス終了時）
-        }
-      }
-    };
-
-    process.on('exit', cleanup);
-    process.on('SIGINT', cleanup);
-    process.on('SIGTERM', cleanup);
-    process.on('uncaughtException', cleanup);
-  }
+  // デストラクタは.kugutsuディレクトリ使用のため不要
+  // private setupAutoCleanup(): void { }
 
   /**
    * 非同期でTaskInstructionManagerを作成
    */
-  static async create(sessionId?: string): Promise<TaskInstructionManager> {
+  static async create(baseRepoPath: string, projectId: string, sessionId?: string): Promise<TaskInstructionManager> {
     const instance = Object.create(TaskInstructionManager.prototype);
     instance.isActive = true;
-    instance.sessionId = sessionId || `task-session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    instance.baseRepoPath = baseRepoPath;
+    instance.projectId = projectId;
+    instance.sessionId = sessionId || `task-session-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
     
     try {
-      // fs.mkdtempを非同期で使用してより安全に一時ディレクトリを作成
-      const tempDirPrefix = path.join(os.tmpdir(), `claude-multi-engineer-${instance.sessionId}-`);
-      instance.tempDir = await mkdtemp(tempDirPrefix);
+      // .kugutsu ディレクトリ内にプロジェクト用のディレクトリを作成
+      const kugutsuDir = path.join(instance.baseRepoPath, '.kugutsu');
+      const projectDir = path.join(kugutsuDir, 'projects', instance.projectId);
+      instance.tempDir = path.join(projectDir, 'instructions');
       
-      console.log(`📁 タスク指示ディレクトリ作成（非同期）: ${instance.tempDir}`);
+      // ディレクトリが存在しない場合は作成
+      await mkdir(instance.tempDir, { recursive: true });
       
-      // 自動クリーンアップを設定
-      instance.setupAutoCleanup();
+      console.log(`📁 タスク指示ディレクトリ作成（非同期）: ${path.relative(instance.baseRepoPath, instance.tempDir)}`);
+      
+      // 自動クリーンアップは無効化（.kugutsuディレクトリは永続化）
+      // instance.setupAutoCleanup();
       
       return instance;
     } catch (error) {
-      console.error('❌ 一時ディレクトリ作成エラー:', error);
-      throw new Error(`一時ディレクトリの作成に失敗しました: ${error}`);
+      console.error('❌ ディレクトリ作成エラー:', error);
+      throw new Error(`ディレクトリの作成に失敗しました: ${error}`);
     }
   }
 
@@ -330,7 +323,7 @@ ${notes || 'なし'}
       .toLowerCase()
       .replace(/[^a-z0-9\s-]/g, '')
       .replace(/\s+/g, '-')
-      .substring(0, 30);
+      .slice(0, 30);
   }
 
   /**

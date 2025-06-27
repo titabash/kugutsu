@@ -228,6 +228,13 @@ if (process.send) {
           mainWindow.webContents.send('task-overview-updated', message.data);
         }
         break;
+        
+      case 'set-current-project-id':
+        // 現在のプロジェクトIDを設定
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('set-current-project-id', message.data);
+        }
+        break;
     }
   });
 

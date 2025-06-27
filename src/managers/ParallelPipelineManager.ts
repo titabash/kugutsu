@@ -31,7 +31,7 @@ export class ParallelPipelineManager {
   private engineers = new Map<string, EngineerAI>();
   private isRunning = false;
 
-  constructor(gitManager: GitWorktreeManager, config: SystemConfig, completionReporter?: CompletionReporter) {
+  constructor(gitManager: GitWorktreeManager, config: SystemConfig, completionReporter?: CompletionReporter | null) {
     this.gitManager = gitManager;
     this.config = config;
     this.eventEmitter = TaskEventEmitter.getInstance();
@@ -46,10 +46,17 @@ export class ParallelPipelineManager {
       config.maxReviewRetries ?? 5
     );
     
-    this.mergeQueue = new MergeQueue(gitManager, config, completionReporter);
+    this.mergeQueue = new MergeQueue(gitManager, config, completionReporter ?? undefined);
 
     // イベントリスナーの設定
     this.setupEventListeners();
+  }
+
+  /**
+   * CompletionReporterを設定
+   */
+  setCompletionReporter(completionReporter: CompletionReporter): void {
+    this.mergeQueue.setCompletionReporter(completionReporter);
   }
 
   /**

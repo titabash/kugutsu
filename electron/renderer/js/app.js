@@ -93,6 +93,8 @@ const state = {
     // TechLeadとEngineerのマッピング
     techLeadToEngineer: {},  // techLeadId -> engineerId
     engineerToTechLead: {},  // engineerId -> techLeadId[]
+    // 現在実行中のプロジェクトID
+    currentProjectId: null,
     // パイプライン状況
     pipelineStatus: {
         dev: { waiting: 0, processing: 0 },
@@ -581,18 +583,12 @@ if (typeof dragEvent === 'undefined') {
 }
 
 // タスク詳細モーダルを表示する関数
-function showTaskDetailModal(filename, content) {
+function showTaskDetailModal(taskTitle, content) {
     const modal = document.getElementById('task-detail-modal');
     if (!modal) return;
     
-    // ファイル名からタスク情報を抽出
-    const match = filename.match(/task-([a-f0-9]+)-(.+)\.md/);
-    const taskId = match ? match[1] : 'unknown';
-    const taskSlug = match ? match[2].replace(/-/g, ' ') : filename;
-    
-    // タイトルを抽出
-    const titleMatch = content.match(/# タスク詳細: (.+)/);
-    const title = titleMatch ? titleMatch[1] : taskSlug;
+    // タイトルはすでに渡されているので、そのまま使用
+    const title = taskTitle;
     
     // タイトルを設定
     document.getElementById('task-detail-title').textContent = title;
@@ -643,10 +639,29 @@ function loadTasksDirectly() {
     
     const fs = electronRequire('fs');
     const path = electronRequire('path');
-    const os = electronRequire('os');
     
-    const tempDir = os.tmpdir();
-    console.log('[Tasks] Temp directory:', tempDir);
+    // .kugutsuディレクトリを使用
+    // window.location.hrefからプロジェクトルートを推測
+    const currentPath = window.location.href;
+    console.log('[Tasks] Current location:', currentPath);
+    
+    // file:///プロトコルからファイルパスを取得
+    let baseDir;
+    if (currentPath.startsWith('file://')) {
+        // file:///Users/tknr/Development/multi-engineer/electron/renderer/index.html
+        // から /Users/tknr/Development/multi-engineer を取得
+        const filePath = currentPath.replace('file://', '');
+        const rendererPath = path.dirname(filePath);
+        // electron/renderer から2階層上がプロジェクトルート
+        baseDir = path.resolve(rendererPath, '../..');
+    } else {
+        // フォールバック: ハードコードされたパスを使用
+        baseDir = '/Users/tknr/Development/multi-engineer';
+    }
+    
+    const kugutsuDir = path.join(baseDir, '.kugutsu');
+    console.log('[Tasks] Base directory:', baseDir);
+    console.log('[Tasks] Kugutsu directory:', kugutsuDir);
     
     const tasksContainer = document.getElementById('tasks-grid');
     const overviewContainer = document.getElementById('overview-content');
@@ -657,69 +672,185 @@ function loadTasksDirectly() {
     }
     
     try {
-        // claude-multi-engineer-task-session-* パターンのディレクトリを探す
-        const files = fs.readdirSync(tempDir);
-        const taskDirs = files
-            .filter(f => f.startsWith('claude-multi-engineer-task-session-'))
-            .map(f => path.join(tempDir, f))
-            .filter(f => {
-                try {
-                    return fs.statSync(f).isDirectory();
-                } catch (e) {
-                    return false;
-                }
-            })
-            .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+        // .kugutsu/projects ディレクトリを探す
+        const projectsDir = path.join(kugutsuDir, 'projects');
         
-        console.log('[Tasks] Found directories:', taskDirs.length);
-        
-        if (taskDirs.length === 0) {
-            tasksContainer.innerHTML = '<div class="no-tasks">No task directories found. Run parallel-dev to generate tasks.</div>';
+        if (!fs.existsSync(projectsDir)) {
+            tasksContainer.innerHTML = '<div class="no-tasks">No projects directory found. Run parallel-dev to generate tasks.</div>';
             return;
         }
         
-        // 最新のディレクトリを使用
-        const taskDir = taskDirs[0];
-        console.log('[Tasks] Using directory:', taskDir);
+        let projectDir;
+        
+        // 現在のprojectIdがある場合はそれを使用
+        if (state.currentProjectId) {
+            projectDir = path.join(projectsDir, state.currentProjectId);
+            console.log('[Tasks] Using current project ID:', state.currentProjectId);
+            
+            if (!fs.existsSync(projectDir)) {
+                console.warn('[Tasks] Current project directory not found:', projectDir);
+                tasksContainer.innerHTML = '<div class="no-tasks">Current project not found. Waiting for tasks...</div>';
+                return;
+            }
+        } else {
+            // projectIdがない場合は最新のプロジェクトを使用（フォールバック）
+            const projectDirs = fs.readdirSync(projectsDir)
+                .map(f => path.join(projectsDir, f))
+                .filter(f => {
+                    try {
+                        return fs.statSync(f).isDirectory();
+                    } catch (e) {
+                        return false;
+                    }
+                })
+                .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+            
+            console.log('[Tasks] Found project directories:', projectDirs.length);
+            
+            if (projectDirs.length === 0) {
+                tasksContainer.innerHTML = '<div class="no-tasks">No project directories found. Run parallel-dev to generate tasks.</div>';
+                return;
+            }
+            
+            // 最新のプロジェクトディレクトリを使用
+            projectDir = projectDirs[0];
+            console.log('[Tasks] Using latest project directory');
+        }
+        const instructionsDir = path.join(projectDir, 'instructions');
+        console.log('[Tasks] Using project directory:', projectDir);
         
         // task-overview.mdを読み込む
-        const overviewPath = path.join(taskDir, 'task-overview.md');
+        const overviewPath = path.join(instructionsDir, 'task-overview.md');
         if (fs.existsSync(overviewPath)) {
             const overviewContent = fs.readFileSync(overviewPath, 'utf-8');
-            overviewContainer.innerHTML = '<pre>' + overviewContent + '</pre>';
+            const projectId = path.basename(projectDir);
+            const isCurrentProject = state.currentProjectId && projectId === state.currentProjectId;
+            overviewContainer.innerHTML = `<div class="project-info">プロジェクトID: ${projectId}${isCurrentProject ? ' <span style="color: #4caf50;">(現在実行中)</span>' : ''}</div><pre>${overviewContent}</pre>`;
             console.log('[Tasks] Loaded overview');
         } else {
-            overviewContainer.innerHTML = '<p>No overview found</p>';
+            const projectId = path.basename(projectDir);
+            const isCurrentProject = state.currentProjectId && projectId === state.currentProjectId;
+            overviewContainer.innerHTML = `<div class="project-info">プロジェクトID: ${projectId}${isCurrentProject ? ' <span style="color: #4caf50;">(現在実行中)</span>' : ''}</div><p>No overview found</p>`;
+        }
+        
+        // 現在のプロジェクトのタスクIDとセッションIDを取得するためanalysis.jsonを読み込む
+        let currentTaskIds = [];
+        let currentSessionId = null;
+        const analysisPath = path.join(projectDir, 'analysis.json');
+        if (fs.existsSync(analysisPath)) {
+            try {
+                const analysisContent = fs.readFileSync(analysisPath, 'utf-8');
+                const analysis = JSON.parse(analysisContent);
+                console.log('[Tasks] Analysis loaded:', analysis);
+                
+                // セッションIDを取得
+                if (analysis.sessionId) {
+                    currentSessionId = analysis.sessionId;
+                    console.log('[Tasks] Current session ID:', currentSessionId);
+                }
+                
+                if (analysis.tasks && Array.isArray(analysis.tasks)) {
+                    currentTaskIds = analysis.tasks
+                        .map(t => t.id)
+                        .filter(id => id && typeof id === 'string'); // null/undefinedを除外
+                    console.log('[Tasks] Current task IDs:', currentTaskIds);
+                    console.log('[Tasks] Task count:', currentTaskIds.length);
+                } else {
+                    console.warn('[Tasks] No tasks found in analysis.json');
+                }
+            } catch (e) {
+                console.error('[Tasks] Error reading analysis.json:', e);
+            }
+        } else {
+            console.log('[Tasks] analysis.json not found for project:', path.basename(projectDir));
+            // analysis.jsonがない場合は、全てのタスクファイルを表示する（後方互換性のため）
+            // ただし、現在のプロジェクトIDと一致する場合のみ
+            if (!state.currentProjectId || path.basename(projectDir) !== state.currentProjectId) {
+                tasksContainer.innerHTML = '<div class="no-tasks">Waiting for task analysis...</div>';
+                return;
+            }
         }
         
         // task-*.mdファイルを探してタスク情報を構築
-        const taskFiles = fs.readdirSync(taskDir)
+        if (!fs.existsSync(instructionsDir)) {
+            console.log('[Tasks] Instructions directory not found');
+            tasksContainer.innerHTML = '<div class="no-tasks">No instructions directory found.</div>';
+            return;
+        }
+        
+        const allTaskFiles = fs.readdirSync(instructionsDir)
             .filter(f => f.startsWith('task-') && f.endsWith('.md') && f !== 'task-overview.md');
         
-        console.log('[Tasks] Found task files:', taskFiles);
+        console.log('[Tasks] All task files in directory:', allTaskFiles);
+        
+        // 現在のプロジェクトのタスクのみをフィルタリング
+        const taskFiles = allTaskFiles.filter(filename => {
+            // analysis.jsonがない場合は全てのタスクを表示
+            if (currentTaskIds.length === 0 && !currentSessionId) {
+                return true;
+            }
+            
+            // セッションIDが指定されている場合は、ファイル内容を確認
+            if (currentSessionId) {
+                const taskPath = path.join(instructionsDir, filename);
+                try {
+                    const content = fs.readFileSync(taskPath, 'utf-8');
+                    // セッションIDをファイル内容から検索
+                    const sessionMatch = content.match(/セッションID: ([^\n]+)/);
+                    if (sessionMatch && sessionMatch[1] === currentSessionId) {
+                        return true;
+                    }
+                } catch (e) {
+                    console.error('[Tasks] Error reading task file:', filename, e);
+                }
+                return false;
+            }
+            
+            // セッションIDがない場合は、タスクIDでフィルタリング（後方互換性）
+            const match = filename.match(/^task-([^-]+)-/);
+            if (match) {
+                const fileTaskId = match[1];
+                // 現在のプロジェクトのタスクIDリストに含まれるかチェック
+                return currentTaskIds.some(id => {
+                    // idがundefinedやnullでないことを確認
+                    if (!id || typeof id !== 'string') {
+                        console.warn('[Tasks] Invalid task ID found:', id);
+                        return false;
+                    }
+                    return id.startsWith(fileTaskId);
+                });
+            }
+            return false;
+        });
+        
+        console.log('[Tasks] Filtered task files for current project:', taskFiles);
         
         if (taskFiles.length === 0) {
-            tasksContainer.innerHTML = '<div class="no-tasks">No task files found</div>';
+            tasksContainer.innerHTML = '<div class="no-tasks">No task files found for current project</div>';
             return;
         }
         
         // タスクカードを生成
         tasksContainer.innerHTML = '';
         taskFiles.forEach(filename => {
-            const taskPath = path.join(taskDir, filename);
+            const taskPath = path.join(instructionsDir, filename);
             const content = fs.readFileSync(taskPath, 'utf-8');
+            
+            // ファイル内容からタスク情報を抽出
+            const titleMatch = content.match(/^# タスク詳細: (.+)$/m);
+            const taskTitle = titleMatch ? titleMatch[1] : filename;
             
             // シンプルなカード作成
             const card = document.createElement('div');
             card.className = 'task-card';
             card.innerHTML = `
-                <div class="task-title">${filename}</div>
+                <div class="task-title">${taskTitle}</div>
                 <div class="task-description">Click to view details</div>
             `;
             
             // クリックで詳細モーダルを表示
             card.onclick = () => {
-                showTaskDetailModal(filename, content);
+                showTaskDetailModal(taskTitle, content);
             };
             
             tasksContainer.appendChild(card);
@@ -736,6 +867,9 @@ function loadTasksDirectly() {
 // 初期化
 document.addEventListener('DOMContentLoaded', () => {
     console.log('[DOMContentLoaded] Starting initialization...');
+    
+    // currentProjectIdをクリア（新しい実行のため）
+    state.currentProjectId = null;
     
     // 初期ターミナルの作成
     const productOwnerContainer = document.getElementById('product-owner-terminal');
@@ -772,6 +906,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // スクロールボタンイベント
     document.getElementById('engineer-scroll-left').onclick = () => scrollTabs('engineer', 'left');
     document.getElementById('engineer-scroll-right').onclick = () => scrollTabs('engineer', 'right');
+    
+    // タスクリフレッシュボタン
+    const refreshTasksBtn = document.getElementById('refresh-tasks');
+    if (refreshTasksBtn) {
+        refreshTasksBtn.onclick = loadTasksDirectly;
+    }
     
     // ウィンドウリサイズ処理
     window.addEventListener('resize', () => {
@@ -870,6 +1010,18 @@ document.addEventListener('DOMContentLoaded', () => {
             const { techLeadId, engineerId } = data;
             console.log(`[onAssociateTechLeadEngineer] ${techLeadId} -> ${engineerId}`);
             associateTechLeadWithEngineer(techLeadId, engineerId);
+        });
+        
+        // 現在のプロジェクトIDを受信
+        window.electronAPI.onMessage('set-current-project-id', (projectId) => {
+            console.log('[Renderer] Current project ID:', projectId);
+            state.currentProjectId = projectId;
+            
+            // Tasksタブが表示されている場合は自動的に更新
+            if (state.activeTab === 'tasks') {
+                console.log('[Renderer] Refreshing tasks for new project');
+                loadTasksDirectly();
+            }
         });
     } else {
         console.error('[DOMContentLoaded] window.electronAPI is not available!');

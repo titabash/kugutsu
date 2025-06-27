@@ -1,6 +1,7 @@
 import { ParallelDevelopmentOrchestrator } from './ParallelDevelopmentOrchestrator.js';
 import { electronLogAdapter } from '../utils/ElectronLogAdapter.js';
 import { SystemConfig } from '../types/index.js';
+import { CompletionReporter } from '../utils/CompletionReporter.js';
 import * as path from 'path';
 
 /**
@@ -119,8 +120,6 @@ export class ParallelDevelopmentOrchestratorWithElectron extends ParallelDevelop
     }
 
     try {
-      // TaskInstructionManagerを初期化
-      this.instructionManager = new (await import('../utils/TaskInstructionManager.js')).TaskInstructionManager();
       
       // ログビューアーを開始
       if (this.logViewer) {
@@ -130,20 +129,35 @@ export class ParallelDevelopmentOrchestratorWithElectron extends ParallelDevelop
       // 1. プロダクトオーナーAIによる要求分析
       this.log('ProductOwner', 'info', '📊 フェーズ1: 要求分析', 'Analysis', 'Phase 1: Analysis');
       const analysis = await this.productOwnerAI.analyzeUserRequestWithInstructions(
-        userRequest, 
-        this.instructionManager
+        userRequest
       );
       
       this.log('ProductOwner', 'info', `📋 分析結果:`, 'Analysis', 'Phase 1: Analysis');
       this.log('ProductOwner', 'info', `- 概要: ${analysis.summary}`, 'Analysis', 'Phase 1: Analysis');
       this.log('ProductOwner', 'info', `- タスク数: ${analysis.tasks.length}`, 'Analysis', 'Phase 1: Analysis');
       this.log('ProductOwner', 'info', `- リスク: ${analysis.riskAssessment}`, 'Analysis', 'Phase 1: Analysis');
+      
+      // 現在のprojectIdをElectronに送信
+      if (this.useElectronUI && analysis.projectId) {
+        electronLogAdapter.sendMessage('set-current-project-id', analysis.projectId);
+      }
 
       // 2. タスクの依存関係を解決
       const orderedTasks = this.productOwnerAI.resolveDependencies(analysis.tasks);
       this.log('ProductOwner', 'info', `🔗 依存関係解決完了`, 'Dependencies', 'Phase 1: Analysis');
       
-      // CompletionReporterを初期化
+      // CompletionReporterを初期化（プロジェクトIDを使用）
+      if (analysis.projectId) {
+        this.completionReporter = new CompletionReporter(this.kugutsuDir, analysis.projectId);
+        // PipelineManagerにCompletionReporterを設定
+        this.pipelineManager.setCompletionReporter(this.completionReporter);
+      } else {
+        // フォールバック: 既存のプロジェクトIDを生成
+        const projectId = `parallel-dev-${Date.now()}`;
+        this.completionReporter = new CompletionReporter(this.kugutsuDir, projectId);
+        this.pipelineManager.setCompletionReporter(this.completionReporter);
+      }
+      
       const taskTitles = orderedTasks.map(t => t.title);
       await this.completionReporter.initialize(taskTitles);
       this.log('system', 'info', `📊 タスク完了レポーターを初期化 (${taskTitles.length}タスク)`, 'System', 'Initialization');
@@ -299,13 +313,26 @@ export class ParallelDevelopmentOrchestratorWithElectron extends ParallelDevelop
    * タスクオーバービューを取得
    */
   private async getTaskOverview(): Promise<string> {
-    if (!this.instructionManager) return '';
-    
+    // .kugutsuディレクトリからタスクオーバービューを取得
     try {
-      const overviewPath = path.join(this.instructionManager.getTempDirectory(), 'task-overview.md');
+      const kugutsuDir = path.join(this.config.baseRepoPath, '.kugutsu');
       const fs = await import('fs/promises');
-      const content = await fs.readFile(overviewPath, 'utf-8');
-      return content;
+      
+      // 最新のプロジェクトのオーバービューを探す
+      const projectsDir = path.join(kugutsuDir, 'projects');
+      const projectDirs = await fs.readdir(projectsDir).catch(() => []);
+      
+      for (const projectId of projectDirs.reverse()) {
+        const overviewPath = path.join(projectsDir, projectId, 'instructions', 'task-overview.md');
+        try {
+          const content = await fs.readFile(overviewPath, 'utf-8');
+          return content;
+        } catch {
+          // 次のプロジェクトを試す
+        }
+      }
+      
+      return '';
     } catch (error) {
       console.error('[Electron] Error reading task overview:', error);
       return '';
@@ -316,30 +343,42 @@ export class ParallelDevelopmentOrchestratorWithElectron extends ParallelDevelop
    * タスク指示ファイルを取得
    */
   private async getTaskInstruction(taskId: string): Promise<string> {
-    if (!this.instructionManager) return '';
-    
     const task = this.activeTasks.get(taskId);
     if (!task) return '';
     
     try {
+      const fs = await import('fs/promises');
       // TaskInstructionManagerで作成されたファイルのパスを取得
       const instructionPath = (task as any).instructionFile;
-      if (!instructionPath) {
-        // フォールバックパス
-        const sanitizedTitle = task.title
-          .toLowerCase()
-          .replace(/[^a-z0-9\s-]/g, '')
-          .replace(/\s+/g, '-')
-          .substring(0, 30);
-        const fileName = `task-${task.id.split('-')[0]}-${sanitizedTitle}.md`;
-        const fallbackPath = path.join(this.instructionManager.getTempDirectory(), fileName);
-        const fs = await import('fs/promises');
-        const content = await fs.readFile(fallbackPath, 'utf-8');
+      if (instructionPath) {
+        const content = await fs.readFile(instructionPath, 'utf-8');
         return content;
       }
-      const fs = await import('fs/promises');
-      const content = await fs.readFile(instructionPath, 'utf-8');
-      return content;
+      
+      // フォールバック: .kugutsuディレクトリから探す
+      const kugutsuDir = path.join(this.config.baseRepoPath, '.kugutsu');
+      const sanitizedTitle = task.title
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, '')
+        .replace(/\s+/g, '-')
+        .slice(0, 30);
+      const fileName = `task-${task.id.split('-')[0]}-${sanitizedTitle}.md`;
+      
+      // プロジェクトディレクトリを探す
+      const projectsDir = path.join(kugutsuDir, 'projects');
+      const projectDirs = await fs.readdir(projectsDir).catch(() => []);
+      
+      for (const projectId of projectDirs.reverse()) {
+        const fallbackPath = path.join(projectsDir, projectId, 'instructions', fileName);
+        try {
+          const content = await fs.readFile(fallbackPath, 'utf-8');
+          return content;
+        } catch {
+          // 次のプロジェクトを試す
+        }
+      }
+      
+      return '';
     } catch (error) {
       console.error(`[Electron] Error reading task instruction for ${taskId}:`, error);
       return '';

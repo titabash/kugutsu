@@ -42,9 +42,17 @@ export class ProductOwnerAI extends BaseAI {
   }
 
   /**
+   * 分析結果のJSONファイルパスを取得
+   */
+  private getAnalysisJsonPath(projectId: string): string {
+    return path.join(this.getKugutsuDir(), 'projects', projectId, 'analysis.json');
+  }
+
+  /**
    * プロジェクトIDを生成（ユーザーリクエストから一意のIDを生成）
    */
   private generateProjectId(userRequest: string): string {
+    // ユーザーリクエストからMD5ハッシュを生成（同じリクエストは同じIDになる）
     return createHash('md5').update(userRequest).digest('hex').substring(0, 8);
   }
 
@@ -216,7 +224,7 @@ export class ProductOwnerAI extends BaseAI {
 - セキュリティ・パフォーマンス上のリスクが高い実装
 
 コードベースを理解するため、Read、Glob、Grepツールを積極的に使用してファイルを調査してください。
-技術的実現可能性を必ず評価し、JSON形式でタスクリストと詳細な分析結果を返してください。`;
+技術的実現可能性を必ず評価し、上記で指定したファイルパスに分析結果をJSON形式で保存してください。`;
   }
 
   /**
@@ -224,7 +232,7 @@ export class ProductOwnerAI extends BaseAI {
    */
   async analyzeUserRequestWithInstructions(
     userRequest: string,
-    instructionManager: TaskInstructionManager
+    instructionManager?: TaskInstructionManager
   ): Promise<TaskAnalysisResult> {
     this.info('🧠 要求分析開始');
 
@@ -232,12 +240,24 @@ export class ProductOwnerAI extends BaseAI {
     const projectId = this.generateProjectId(userRequest);
     const existingDoc = await this.loadPhaseDocument(projectId);
 
+    // instructionManagerが渡されていない場合は作成
+    let localInstructionManager = instructionManager;
+    if (!localInstructionManager) {
+      localInstructionManager = new TaskInstructionManager(this.baseRepoPath, projectId);
+    }
+    
+    // セッションIDを取得
+    const sessionId = localInstructionManager.sessionId;
+
     let prompt: string;
     if (existingDoc) {
       // 既存のフェーズドキュメントがある場合は続きから実行
-      prompt = this.buildContinuationPrompt(userRequest, existingDoc);
+      prompt = this.buildContinuationPrompt(userRequest, existingDoc, sessionId);
     } else {
-      prompt = this.buildAnalysisPrompt(userRequest);
+      // projectsdirを作成
+      const projectsDir = path.join(this.getKugutsuDir(), 'projects', projectId);
+      await fs.mkdir(projectsDir, { recursive: true });
+      prompt = this.buildAnalysisPrompt(userRequest, projectId, sessionId);
     }
 
     try {
@@ -250,6 +270,7 @@ export class ProductOwnerAI extends BaseAI {
         options: {
           maxTurns: this.config.maxTurns,
           cwd: this.baseRepoPath,
+          allowedTools: ["Read", "Glob", "Grep", "LS", "Write"],
         },
       })) {
         messages.push(message);
@@ -264,12 +285,13 @@ export class ProductOwnerAI extends BaseAI {
       }
 
       // タスクを解析・作成
-      const result = this.extractTaskAnalysisResult(messages);
+      const result = await this.extractTaskAnalysisResultFromFile(projectId, messages);
       result.projectId = projectId; // プロジェクトIDを結果に含める
+      result.sessionId = sessionId; // セッションIDを結果に含める
 
       // フェーズ管理の処理
-      const phaseInfo = this.extractPhaseInfo(messages);
-      
+      const phaseInfo = await this.extractPhaseInfoFromFile(projectId);
+
       if (phaseInfo && !existingDoc) {
         // 新規プロジェクトの場合のみフェーズドキュメントを作成
         const doc = await this.createOrUpdatePhaseDocument(projectId, userRequest, phaseInfo, result, existingDoc);
@@ -293,30 +315,30 @@ export class ProductOwnerAI extends BaseAI {
             this.success(`✅ フェーズを更新しました: フェーズ ${newPhaseIndex + 1}`);
           }
         }
-        
+
         // フェーズ情報の更新があれば反映
-        const updatedPhaseInfo = this.extractPhaseInfo(messages);
+        const updatedPhaseInfo = await this.extractPhaseInfoFromFile(projectId);
         if (updatedPhaseInfo && updatedPhaseInfo.phases) {
           // 既存のフェーズ情報を更新
           await this.updatePhaseDocument(existingDoc, updatedPhaseInfo, result);
           this.info('🔄 フェーズ情報を更新しました');
         }
-        
+
         const currentPhase = existingDoc.phases[existingDoc.currentPhaseIndex];
         this.info(`📊 現在のフェーズ: ${currentPhase.phaseName} (${currentPhase.currentPhase}/${currentPhase.totalPhases})`);
       }
 
       // 概要ファイルを作成
-      await instructionManager.createOverviewFile(userRequest, fullAnalysis);
+      await localInstructionManager.createOverviewFile(userRequest, fullAnalysis);
 
       // 各タスクの詳細指示ファイルを作成
       for (const task of result.tasks) {
         const detailedInstructions = await this.generateDetailedInstructions(task, userRequest, fullAnalysis);
-        await instructionManager.createTaskInstructionFile(task, detailedInstructions);
+        await localInstructionManager.createTaskInstructionFile(task, detailedInstructions);
       }
 
       // 依存関係ファイルを作成
-      await instructionManager.createDependencyFile(result.tasks);
+      await localInstructionManager.createDependencyFile(result.tasks);
 
       this.success('✅ 分析完了 & 指示ファイル作成完了');
       return result;
@@ -510,7 +532,7 @@ export class ProductOwnerAI extends BaseAI {
   /**
    * 分析用プロンプトを構築
    */
-  private buildAnalysisPrompt(userRequest: string): string {
+  private buildAnalysisPrompt(userRequest: string, projectId: string, sessionId?: string): string {
     return `
 プロダクトオーナーとして、以下のユーザー要求を包括的に分析し、エンジニアチームに対する具体的な実装指示を策定してください：
 
@@ -562,7 +584,7 @@ ${userRequest}
 **要求分析時に以下を判断し、適切な戦略を選択**：
 
 1. **開発規模の特定**：
-   - 大規模開発（アプリ0→MVP）→ 機能完結型タスク  
+   - 大規模開発（アプリ0→MVP）→ 機能完結型タスク
    - 中規模開発（機能追加）→ 機能単位タスク
    - 小規模開発（バグ修正・改善）→ 細かい粒度タスク
 
@@ -620,10 +642,15 @@ ${userRequest}
 
 ## 📊 最終成果物要求
 
-以下のJSON形式で、詳細な分析結果とタスクリストを出力し、同時に上記ドキュメントをWriteツールで作成してください：
+分析が完了したら、以下のJSON形式で結果を Writeツールを使って保存してください。
+
+保存先ファイル: ${this.getAnalysisJsonPath(projectId)}
+
+重要: Writeツールを使用して、上記のファイルパスに以下の形式のJSONを保存してください：
 
 \`\`\`json
 {
+  "sessionId": "${sessionId || ''}",
   "analysis": {
     "userRequestAnalysis": "ユーザー要求の詳細分析",
     "codebaseAssessment": "現在のコードベースの評価",
@@ -824,7 +851,7 @@ ${userRequest}
         description += `\n- **参照のみファイル**: ${taskData.fileScope.readOnlyFiles.join(', ')}`;
       }
       if (taskData.fileScope.conflictRisk) {
-        const riskEmoji = taskData.fileScope.conflictRisk === 'none' ? '✅' : 
+        const riskEmoji = taskData.fileScope.conflictRisk === 'none' ? '✅' :
                          taskData.fileScope.conflictRisk === 'low' ? '🟡' :
                          taskData.fileScope.conflictRisk === 'medium' ? '🟠' : '🔴';
         description += `\n- **競合リスク**: ${riskEmoji} ${taskData.fileScope.conflictRisk}`;
@@ -912,7 +939,86 @@ ${analysis}
   }
 
   /**
-   * Claude Code SDKの応答からタスク分析結果を抽出
+   * 保存されたJSONファイルからタスク分析結果を抽出
+   */
+  private async extractTaskAnalysisResultFromFile(projectId: string, messages: SDKMessage[]): Promise<TaskAnalysisResult> {
+    const analysisPath = this.getAnalysisJsonPath(projectId);
+
+    try {
+      // ファイルが存在するか確認
+      await fs.access(analysisPath);
+
+      const content = await fs.readFile(analysisPath, 'utf-8');
+      const jsonData = JSON.parse(content);
+
+      this.info(`📄 分析結果JSONを読み込み: ${jsonData.tasks?.length || 0}個のタスク`);
+
+      // タスクを変換
+      const tasks: Task[] = (jsonData.tasks || []).map((taskData: any) => {
+        const description = this.buildTaskDescription(taskData);
+
+        return {
+          id: uuidv4(),
+          type: taskData.type || 'feature',
+          title: taskData.title || 'タスク',
+          description: description,
+          priority: taskData.priority || 'medium',
+          status: 'pending',
+          dependencies: taskData.dependencies || [],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          metadata: {
+            skillRequirements: taskData.skillRequirements,
+            technicalSpecs: taskData.technicalSpecs,
+            implementation: taskData.implementation,
+            acceptanceCriteria: taskData.acceptanceCriteria,
+            fileScope: taskData.fileScope
+          }
+        };
+      });
+
+      if (tasks.length > 0) {
+        const analysis = jsonData.analysis || {};
+        const riskAssessment = typeof jsonData.riskAssessment === 'object'
+          ? `リスク: ${(jsonData.riskAssessment.risks || []).join(', ')}\n軽減策: ${(jsonData.riskAssessment.mitigations || []).join(', ')}`
+          : jsonData.riskAssessment || 'リスク評価なし';
+
+        return {
+          tasks,
+          summary: jsonData.summary || analysis.userRequestAnalysis || 'プロダクトオーナーAIによる分析結果',
+          riskAssessment: riskAssessment,
+          analysisDetails: {
+            codebaseAssessment: analysis.codebaseAssessment,
+            technicalRequirements: analysis.technicalRequirements,
+            architecturalDecisions: analysis.architecturalDecisions,
+            parallelizationStrategy: jsonData.parallelizationStrategy
+          }
+        };
+      }
+
+      throw new Error('タスクが見つかりませんでした');
+
+    } catch (error) {
+      this.error('❌ 分析結果JSONファイルが見つかりません', {
+        error: error instanceof Error ? error.message : String(error),
+        path: analysisPath
+      });
+
+      // デバッグ情報を追加
+      const projectDir = path.dirname(analysisPath);
+      try {
+        const files = await fs.readdir(projectDir);
+        this.info('📁 プロジェクトディレクトリの内容:', { files });
+      } catch (e) {
+        this.error('❌ プロジェクトディレクトリが存在しません', { projectDir });
+      }
+
+      throw new Error(`タスク分析結果ファイルが作成されませんでした: ${analysisPath}`);
+    }
+  }
+
+  /**
+   * Claude Code SDKの応答からタスク分析結果を抽出（フォールバック）
    */
   private extractTaskAnalysisResult(messages: SDKMessage[]): TaskAnalysisResult {
     // 全ての分析メッセージから結果を抽出
@@ -950,7 +1056,7 @@ ${analysis}
         const tasks: Task[] = (jsonData.tasks || []).map((taskData: any) => {
           // 詳細な指示情報を含む拡張タスクを作成
           const description = this.buildTaskDescription(taskData);
-          
+
           return {
             id: uuidv4(),
             type: taskData.type || 'feature',
@@ -976,7 +1082,7 @@ ${analysis}
         if (tasks.length > 0) {
           // 新しいフォーマットの分析情報を統合
           const analysis = jsonData.analysis || {};
-          const riskAssessment = typeof jsonData.riskAssessment === 'object' 
+          const riskAssessment = typeof jsonData.riskAssessment === 'object'
             ? `リスク: ${(jsonData.riskAssessment.risks || []).join(', ')}\n軽減策: ${(jsonData.riskAssessment.mitigations || []).join(', ')}`
             : jsonData.riskAssessment || 'リスク評価なし';
 
@@ -1037,18 +1143,18 @@ ${analysis}
           title: task.title,
           dependencies: task.dependencies
         }));
-        
+
         this.warn('⚠️ 循環依存が検出されました。詳細:');
         cyclicTasks.forEach(task => {
           this.warn(`   - "${task.title}" → 依存: [${task.dependencies.join(', ')}]`);
         });
-        
+
         // 依存関係を無視して残タスクを追加
         const tasksWithoutDeps = remaining.map(task => ({
           ...task,
           dependencies: [] // 循環依存を解消
         }));
-        
+
         resolved.push(...tasksWithoutDeps);
         this.info('📝 循環依存を解消して続行します');
         break;
@@ -1061,11 +1167,11 @@ ${analysis}
   /**
    * 継続実行用のプロンプトを構築
    */
-  private buildContinuationPrompt(userRequest: string, existingDoc: PhaseDocument): string {
-    const allPhaseDescriptions = existingDoc.phases.map((phase, idx) => 
+  private buildContinuationPrompt(userRequest: string, existingDoc: PhaseDocument, sessionId?: string): string {
+    const allPhaseDescriptions = existingDoc.phases.map((phase, idx) =>
       `${idx + 1}. ${phase.phaseName}: ${phase.description}`
     ).join('\n');
-    
+
     return `
 プロダクトオーナーとして、フェーズ管理されたプロジェクトの続きを実行します。
 
@@ -1112,15 +1218,36 @@ ${allPhaseDescriptions}
 実装状況の確認結果に基づいて、現在実行すべきフェーズのタスクを出力してください。
 フェーズ内容を更新した場合は、"phaseManagement"セクションで更新内容も含めて出力してください。
 
-${this.buildAnalysisPrompt(userRequest).split('## 📊 最終成果物要求')[1]}`;
+${this.buildAnalysisPrompt(userRequest, existingDoc.projectId, sessionId).split('## 📊 最終成果物要求')[1]}`;
   }
 
   /**
-   * メッセージからフェーズ情報を抽出
+   * JSONファイルからフェーズ情報を抽出
+   */
+  private async extractPhaseInfoFromFile(projectId: string): Promise<any | null> {
+    const analysisPath = this.getAnalysisJsonPath(projectId);
+
+    try {
+      const content = await fs.readFile(analysisPath, 'utf-8');
+      const jsonData = JSON.parse(content);
+
+      if (jsonData.phaseManagement && jsonData.phaseManagement.requiresPhases) {
+        this.info('📊 フェーズ管理が必要と判断されました');
+        return jsonData.phaseManagement;
+      }
+    } catch (error) {
+      // ファイルがまだ存在しないか、フェーズ情報がない
+    }
+
+    return null;
+  }
+
+  /**
+   * メッセージからフェーズ情報を抽出（フォールバック）
    */
   private extractPhaseInfo(messages: SDKMessage[]): any | null {
     let fullText = '';
-    
+
     for (const message of messages) {
       if (message && typeof message === 'object' && 'type' in message) {
         if (message.type === 'assistant' && 'message' in message) {
@@ -1138,7 +1265,7 @@ ${this.buildAnalysisPrompt(userRequest).split('## 📊 最終成果物要求')[1
 
     // フェーズ管理のJSONブロックを探す - より堅牢な方法
     const jsonBlocks = [...fullText.matchAll(/```json\s*([\s\S]*?)\s*```/g)];
-    
+
     for (const jsonBlock of jsonBlocks.reverse()) { // 最後から検索
       try {
         const jsonData = JSON.parse(jsonBlock[1]);
@@ -1151,12 +1278,12 @@ ${this.buildAnalysisPrompt(userRequest).split('## 📊 最終成果物要求')[1
         continue;
       }
     }
-    
+
     // 代替手段: "phaseManagement"キーワードで検索
     if (fullText.includes('"phaseManagement"') && fullText.includes('"requiresPhases"')) {
       this.warn('⚠️ フェーズ情報は存在しますが、JSON解析に失敗しました');
     }
-    
+
     return null;
   }
 
@@ -1165,7 +1292,7 @@ ${this.buildAnalysisPrompt(userRequest).split('## 📊 最終成果物要求')[1
    */
   private extractCurrentPhaseFromAnalysis(messages: SDKMessage[]): { phaseNumber: number } | null {
     let fullText = '';
-    
+
     for (const message of messages) {
       if (message && typeof message === 'object' && 'type' in message) {
         if (message.type === 'assistant' && 'message' in message) {
@@ -1226,7 +1353,7 @@ ${this.buildAnalysisPrompt(userRequest).split('## 📊 最終成果物要求')[1
         createdAt: new Date(),
         updatedAt: new Date()
       }));
-      
+
       return {
         projectId,
         userRequest,
@@ -1261,7 +1388,7 @@ ${this.buildAnalysisPrompt(userRequest).split('## 📊 最終成果物要求')[1
           phase.phaseName = updatedPhase.phaseName || phase.phaseName;
           phase.description = updatedPhase.description || phase.description;
           phase.updatedAt = new Date();
-          
+
           // 現在のフェーズの場合はタスクも更新
           if (phaseIndex === existingDoc.currentPhaseIndex) {
             phase.remainingTasks = result.tasks;
@@ -1269,13 +1396,13 @@ ${this.buildAnalysisPrompt(userRequest).split('## 📊 最終成果物要求')[1
         }
       }
     }
-    
+
     // 分析情報の更新
     if (result.analysisDetails) {
       existingDoc.analysis.technicalStrategy = result.analysisDetails.architecturalDecisions || existingDoc.analysis.technicalStrategy;
       existingDoc.analysis.riskAssessment = result.riskAssessment || existingDoc.analysis.riskAssessment;
     }
-    
+
     existingDoc.updatedAt = new Date();
     await this.savePhaseDocument(existingDoc);
   }

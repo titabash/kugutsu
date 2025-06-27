@@ -3,13 +3,12 @@ import { GitWorktreeManager } from './GitWorktreeManager.js';
 import { EngineerAI } from './EngineerAI.js';
 import { ReviewWorkflow } from './ReviewWorkflow.js';
 import { ParallelPipelineManager } from './ParallelPipelineManager.js';
-import { TaskInstructionManager } from '../utils/TaskInstructionManager.js';
 import { ImprovedParallelLogViewer } from '../utils/ImprovedParallelLogViewer.js';
 import { LogFormatter } from '../utils/LogFormatter.js';
 import { TaskEventEmitter, TaskEvent, TaskFailedPayload, MergeCompletedPayload, ReviewCompletedPayload } from '../utils/TaskEventEmitter.js';
 import { Task, TaskAnalysisResult, EngineerResult, ReviewResult, SystemConfig } from '../types/index.js';
 import { CompletionReporter, CompletionStatus } from '../utils/CompletionReporter.js';
-import * as os from 'os';
+import * as path from 'path';
 
 /**
  * 並列開発オーケストレーター
@@ -23,7 +22,6 @@ export class ParallelDevelopmentOrchestrator {
   protected readonly config: SystemConfig;
   protected readonly engineerPool: Map<string, EngineerAI> = new Map();
   protected activeTasks: Map<string, Task> = new Map();
-  protected instructionManager?: TaskInstructionManager;
   protected logViewer?: ImprovedParallelLogViewer;
   protected useVisualUI: boolean;
   protected eventEmitter: TaskEventEmitter;
@@ -31,7 +29,8 @@ export class ParallelDevelopmentOrchestrator {
   protected failedTasks: Map<string, string> = new Map();
   protected taskResults: Map<string, EngineerResult> = new Map();
   protected reviewResults: Map<string, ReviewResult[]> = new Map();
-  protected completionReporter: CompletionReporter;
+  protected completionReporter: CompletionReporter | null;
+  protected kugutsuDir: string;
 
   constructor(config: SystemConfig, useVisualUI: boolean = false) {
     this.config = config;
@@ -40,13 +39,13 @@ export class ParallelDevelopmentOrchestrator {
     this.gitManager = new GitWorktreeManager(config.baseRepoPath, config.worktreeBasePath, config.baseBranch);
     this.reviewWorkflow = new ReviewWorkflow(this.gitManager, config);
     
-    // CompletionReporterを作成
-    const tmpDir = os.tmpdir();
-    const projectId = `parallel-dev-${Date.now()}`;
-    this.completionReporter = new CompletionReporter(tmpDir, projectId);
+    // CompletionReporterを作成（projectIdは後で設定）
+    const kugutsuDir = path.join(config.baseRepoPath, '.kugutsu');
+    this.kugutsuDir = kugutsuDir;
+    this.completionReporter = null; // 後でプロジェクトIDが確定してから初期化
     
-    // MergeQueueにCompletionReporterを渡してPipelineManagerを作成
-    this.pipelineManager = new ParallelPipelineManager(this.gitManager, config, this.completionReporter);
+    // PipelineManagerを作成（CompletionReporterは後で設定）
+    this.pipelineManager = new ParallelPipelineManager(this.gitManager, config, null);
     this.eventEmitter = TaskEventEmitter.getInstance();
     
     if (this.useVisualUI) {
@@ -112,8 +111,6 @@ export class ParallelDevelopmentOrchestrator {
     this.log('system', 'info', `📝 ユーザー要求: ${userRequest}`, 'System', 'System Startup');
 
     try {
-      // TaskInstructionManagerを初期化
-      this.instructionManager = new TaskInstructionManager();
       
       // ログビューアーを開始
       if (this.logViewer) {
@@ -124,8 +121,7 @@ export class ParallelDevelopmentOrchestrator {
       // 1. プロダクトオーナーAIによる要求分析
       this.log('ProductOwner', 'info', '📊 フェーズ1: 要求分析', 'Analysis', 'Phase 1: Analysis');
       const analysis = await this.productOwnerAI.analyzeUserRequestWithInstructions(
-        userRequest, 
-        this.instructionManager
+        userRequest
       );
       
       this.log('ProductOwner', 'info', `📋 分析結果:`, 'Analysis', 'Phase 1: Analysis');
@@ -137,7 +133,18 @@ export class ParallelDevelopmentOrchestrator {
       const orderedTasks = this.productOwnerAI.resolveDependencies(analysis.tasks);
       this.log('ProductOwner', 'info', `🔗 依存関係解決完了`, 'Dependencies', 'Phase 1: Analysis');
       
-      // CompletionReporterを初期化
+      // CompletionReporterを初期化（プロジェクトIDを使用）
+      if (analysis.projectId) {
+        this.completionReporter = new CompletionReporter(this.kugutsuDir, analysis.projectId);
+        // PipelineManagerにCompletionReporterを設定
+        this.pipelineManager.setCompletionReporter(this.completionReporter);
+      } else {
+        // フォールバック: 既存のプロジェクトIDを生成
+        const projectId = `parallel-dev-${Date.now()}`;
+        this.completionReporter = new CompletionReporter(this.kugutsuDir, projectId);
+        this.pipelineManager.setCompletionReporter(this.completionReporter);
+      }
+      
       const taskTitles = orderedTasks.map(t => t.title);
       await this.completionReporter.initialize(taskTitles);
       this.log('system', 'info', `📊 タスク完了レポーターを初期化 (${taskTitles.length}タスク)`, 'System', 'Initialization');
@@ -235,11 +242,6 @@ export class ParallelDevelopmentOrchestrator {
       await this.gitManager.cleanupAllTaskWorktrees();
     }
 
-    // TaskInstructionManagerのクリーンアップ
-    if (this.instructionManager) {
-      await this.instructionManager.cleanup();
-      this.instructionManager = undefined;
-    }
 
     console.log('✅ クリーンアップ完了');
   }

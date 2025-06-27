@@ -72,6 +72,7 @@ export interface TaskAnalysisResult {
   };
   // フェーズ管理情報
   projectId?: string;
+  sessionId?: string;
 }
 
 /**

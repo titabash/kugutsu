@@ -67,6 +67,13 @@ export class MergeQueue {
   }
 
   /**
+   * CompletionReporterを設定
+   */
+  setCompletionReporter(completionReporter: CompletionReporter): void {
+    this.completionReporter = completionReporter;
+  }
+
+  /**
    * マージをキューに追加
    */
   async enqueueMerge(

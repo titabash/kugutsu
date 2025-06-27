@@ -92,3 +92,4 @@ yarn-error.log*
 worktrees/**
 
 .npmrc
+.kugutsu/**

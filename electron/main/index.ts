@@ -160,6 +160,11 @@ ipcMain.handle('get-task-instruction', async (event, taskId: string) => {
   return '';
 });
 
+ipcMain.handle('get-working-directory', async (event) => {
+  // 現在のワーキングディレクトリを返す
+  return process.cwd();
+});
+
 // 親プロセスからのメッセージを処理（並列開発システムとの通信）
 if (process.send) {
   console.log('[Electron Main] IPC communication enabled');

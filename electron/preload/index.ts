@@ -50,6 +50,7 @@ const electronAPI = {
   getTasks: () => ipcRenderer.invoke('get-tasks'),
   getTaskOverview: () => ipcRenderer.invoke('get-task-overview'),
   getTaskInstruction: (taskId: string) => ipcRenderer.invoke('get-task-instruction', taskId),
+  getWorkingDirectory: () => ipcRenderer.invoke('get-working-directory'),
   onTaskUpdate: (callback: (tasks: any[]) => void) => {
     ipcRenderer.on('tasks-updated', (event, tasks) => callback(tasks));
   },

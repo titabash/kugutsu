@@ -139,7 +139,7 @@ function initializeTerminal(id, container, theme) {
 }
 
 // タブ切り替え
-function switchTab(tabId) {
+async function switchTab(tabId) {
     // メインタブの切り替え
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.classList.toggle('active', btn.getAttribute('data-tab') === tabId);
@@ -154,7 +154,7 @@ function switchTab(tabId) {
     // タスクタブがクリックされた場合、データを読み込む
     if (tabId === 'tasks') {
         console.log('[switchTab] Loading task data for tasks tab...');
-        loadTasksDirectly();
+        await loadTasksDirectly();
     }
     
     // リサイズ
@@ -634,29 +634,36 @@ function showTaskDetailModal(taskTitle, content) {
 }
 
 // タスクを直接読み込む関数
-function loadTasksDirectly() {
+async function loadTasksDirectly() {
     console.log('[Tasks] Loading tasks directly...');
     
     const fs = electronRequire('fs');
     const path = electronRequire('path');
     
-    // .kugutsuディレクトリを使用
-    // window.location.hrefからプロジェクトルートを推測
-    const currentPath = window.location.href;
-    console.log('[Tasks] Current location:', currentPath);
-    
-    // file:///プロトコルからファイルパスを取得
+    // Electronメインプロセスから現在のワーキングディレクトリを取得
     let baseDir;
-    if (currentPath.startsWith('file://')) {
-        // file:///Users/tknr/Development/multi-engineer/electron/renderer/index.html
-        // から /Users/tknr/Development/multi-engineer を取得
-        const filePath = currentPath.replace('file://', '');
-        const rendererPath = path.dirname(filePath);
-        // electron/renderer から2階層上がプロジェクトルート
-        baseDir = path.resolve(rendererPath, '../..');
-    } else {
-        // フォールバック: ハードコードされたパスを使用
-        baseDir = '/Users/tknr/Development/multi-engineer';
+    try {
+        if (window.electronAPI && window.electronAPI.getWorkingDirectory) {
+            baseDir = await window.electronAPI.getWorkingDirectory();
+            console.log('[Tasks] Working directory from IPC:', baseDir);
+        } else {
+            throw new Error('electronAPI not available');
+        }
+    } catch (error) {
+        console.warn('[Tasks] Could not get working directory from IPC, using fallback:', error);
+        // フォールバック: window.location.hrefから推測
+        const currentPath = window.location.href;
+        console.log('[Tasks] Current location:', currentPath);
+        
+        if (currentPath.startsWith('file://')) {
+            const filePath = currentPath.replace('file://', '');
+            const rendererPath = path.dirname(filePath);
+            // electron/renderer から2階層上がプロジェクトルート
+            baseDir = path.resolve(rendererPath, '../..');
+        } else {
+            // 最後のフォールバック: プロセスの実行ディレクトリを使用
+            baseDir = process.cwd();
+        }
     }
     
     const kugutsuDir = path.join(baseDir, '.kugutsu');
@@ -919,7 +926,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // タブ切り替えイベント
     document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.onclick = () => switchTab(btn.getAttribute('data-tab'));
+        btn.onclick = async () => await switchTab(btn.getAttribute('data-tab'));
     });
     
     // ターミナルクリアイベント
@@ -939,7 +946,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // タスクリフレッシュボタン
     const refreshTasksBtn = document.getElementById('refresh-tasks');
     if (refreshTasksBtn) {
-        refreshTasksBtn.onclick = loadTasksDirectly;
+        refreshTasksBtn.onclick = async () => {
+            await loadTasksDirectly();
+        };
     }
     
     // ウィンドウリサイズ処理
@@ -1042,14 +1051,14 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         
         // 現在のプロジェクトIDを受信
-        window.electronAPI.onMessage('set-current-project-id', (projectId) => {
+        window.electronAPI.onMessage('set-current-project-id', async (projectId) => {
             console.log('[Renderer] Current project ID:', projectId);
             state.currentProjectId = projectId;
             
             // Tasksタブが表示されている場合は自動的に更新
             if (state.activeTab === 'tasks') {
                 console.log('[Renderer] Refreshing tasks for new project');
-                loadTasksDirectly();
+                await loadTasksDirectly();
             }
         });
     } else {

@@ -62,10 +62,10 @@ export class TechLeadAI extends BaseAI {
 
 ### プロジェクトアーキテクチャ適合性チェック
 - [ ] **適切なディレクトリに配置されているか**
-  - ビジネスロジック/AIエージェント → `src/managers/`
-  - ユーティリティ/補助機能 → `src/utils/`
-  - 型定義 → `src/types/`
-  - UI関連（Electron） → `electron/`
+  - ビジネスロジック/AIエージェント: \`src/managers/\`
+  - ユーティリティ/補助機能: \`src/utils/\`
+  - 型定義: \`src/types/\`
+  - UI関連（Electron）: \`electron/\`
 - [ ] **既存のコードパターンに従っているか**
   - クラス設計パターンの一貫性
   - インポート/エクスポートの規則
@@ -465,11 +465,11 @@ git diff $(git merge-base HEAD @{-1} 2>/dev/null || git merge-base HEAD main 2>/
 **重大な不適合がある場合は CHANGES_REQUESTED を検討してください**
 
 - [ ] **ファイル配置の適切性**: 追加・変更されたファイルが適切なディレクトリに配置されているか
-  - AIエージェント/コア機能: `src/managers/` に配置されているか
-  - ユーティリティ/補助機能: `src/utils/` に配置されているか
-  - 型定義: `src/types/` に配置されているか
-  - Electronアプリ関連: `electron/` に配置されているか
-  - ドキュメント: `docs/` に配置されているか
+  - AIエージェント/コア機能: \`src/managers/\` に配置されているか
+  - ユーティリティ/補助機能: \`src/utils/\` に配置されているか
+  - 型定義: \`src/types/\` に配置されているか
+  - Electronアプリ関連: \`electron/\` に配置されているか
+  - ドキュメント: \`docs/\` に配置されているか
 
 - [ ] **既存パターンとの整合性**:
   - クラス設計パターン: BaseAIを継承するAIエージェントパターンに従っているか

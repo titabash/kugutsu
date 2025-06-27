@@ -528,19 +528,81 @@ cat "${instructionFile}"
 2. **指示ファイルの確認**
    - 上記のcatコマンドで詳細指示を必ず読んでください
 
-3. **コードベースの理解**
+3. **リポジトリ固有のコマンド確認**（必須・最優先）
+   - **コマンド定義ファイルの存在確認**：
+     \`\`\`bash
+     # プロジェクトのコマンド定義ファイルを確認
+     ls -la | grep -E "(package\.json|Makefile|build\.gradle|pom\.xml|Cargo\.toml|setup\.py|composer\.json|go\.mod|CMakeLists\.txt)"
+     \`\`\`
+   
+   - **定義されているコマンドの確認**：
+     \`\`\`bash
+     # package.jsonのスクリプトを確認（最優先）
+     if [ -f package.json ]; then
+       echo "=== package.json scripts ==="
+       cat package.json | jq '.scripts'
+     fi
+     
+     # Makefileのターゲットを確認
+     if [ -f Makefile ]; then
+       echo "=== Makefile targets ==="
+       cat Makefile
+     fi
+     
+     # その他のビルドファイルを確認
+     [ -f build.gradle ] && echo "=== Gradle build.gradle ===" && cat build.gradle
+     [ -f pom.xml ] && echo "=== Maven pom.xml ===" && head -20 pom.xml
+     [ -f Cargo.toml ] && echo "=== Rust Cargo.toml ===" && cat Cargo.toml
+     [ -f setup.py ] && echo "=== Python setup.py ===" && head -20 setup.py
+     [ -f composer.json ] && echo "=== PHP composer.json ===" && cat composer.json | jq '.scripts'
+     \`\`\`
+   
+   - **このリポジトリで使用すべきコマンドを特定**：
+     - **第1優先**: リポジトリで定義されたコマンド（npm scripts、Makefileターゲット等）
+     - **第2優先**: 標準的なコマンド（npm test、cargo build等）
+     - **重要**: リポジトリで定義されたコマンドが存在する場合は、それを優先的に使用する
+
+4. **コードベースの理解**
    - プロジェクト構造の把握
    - 既存のコード規約の確認
 
-4. **実装の実行**
+5. **実装の実行**
    - **機能実装の場合**: TDDサイクルに従って実装（テスト → 実装 → リファクタリング）
    - **ドキュメント等の場合**: 直接実装
    - 段階的な進行
 
-5. **品質確認とコミット（必須）**
-   - **テスト実行**: 新規・既存すべてのテストが通ることを確認（npm test等）
-   - **ビルド確認**: ビルドが成功することを確認（npm run build等）
-   - **リント確認**: コード品質チェックが通ることを確認（npm run lint等）
+6. **品質確認とコミット（必須）**
+   - **リポジトリで定義されたコマンドを優先使用**: 手順3で確認したコマンドを最優先で使用
+   
+   - **テスト実行**: 新規・既存すべてのテストが通ることを確認
+     \`\`\`bash
+     # リポジトリで定義されたテストコマンドを実行（最優先）
+     # 例: npm run test, make test, yarn test など
+     # 手順3で確認したコマンドを使用
+     \`\`\`
+   
+   - **ビルドの実行**: ビルドが成功することを確認
+     \`\`\`bash
+     # リポジトリで定義されたビルドコマンドを実行（最優先）
+     # 例: npm run build, make build, yarn build など
+     # 手順3で確認したコマンドを使用
+     \`\`\`
+   
+   - **リント・コード品質チェック**: コード品質チェックが通ることを確認
+     \`\`\`bash
+     # リポジトリで定義されたリントコマンドを実行（最優先）
+     # 例: npm run lint, make lint, yarn lint など
+     # 手順3で確認したコマンドを使用
+     \`\`\`
+   
+   - **型チェック**: TypeScriptプロジェクトの場合
+     \`\`\`bash
+     # リポジトリで定義された型チェックコマンドを実行（最優先）
+     # 例: npm run typecheck, make typecheck など
+     # 手順3で確認したコマンドを使用
+     \`\`\`
+   
+   - **重要**: このリポジトリで定義されたコマンドを優先的に使用し、なければ標準コマンドを使用
    - **すべて成功確認**: 上記すべてが成功してから次へ進む
    - **コミット**: 明確で詳細なコミットメッセージでコミット
    
@@ -605,22 +667,84 @@ ${task.worktreePath}
    - コンフリクトがあれば適切に解決してから作業継続
    - **重要**: この手順を飛ばすと古いコードで作業することになります
 
-2. **現在のコードベース調査**: コードベースを調査して理解してください
+2. **リポジトリ固有のコマンド確認**（必須・最優先）
+   - **コマンド定義ファイルの存在確認**：
+     \`\`\`bash
+     # プロジェクトのコマンド定義ファイルを確認
+     ls -la | grep -E "(package\.json|Makefile|build\.gradle|pom\.xml|Cargo\.toml|setup\.py|composer\.json|go\.mod|CMakeLists\.txt)"
+     \`\`\`
+   
+   - **定義されているコマンドの確認**：
+     \`\`\`bash
+     # package.jsonのスクリプトを確認（最優先）
+     if [ -f package.json ]; then
+       echo "=== package.json scripts ==="
+       cat package.json | jq '.scripts'
+     fi
+     
+     # Makefileのターゲットを確認
+     if [ -f Makefile ]; then
+       echo "=== Makefile targets ==="
+       cat Makefile
+     fi
+     
+     # その他のビルドファイルを確認
+     [ -f build.gradle ] && echo "=== Gradle build.gradle ===" && cat build.gradle
+     [ -f pom.xml ] && echo "=== Maven pom.xml ===" && head -20 pom.xml
+     [ -f Cargo.toml ] && echo "=== Rust Cargo.toml ===" && cat Cargo.toml
+     [ -f setup.py ] && echo "=== Python setup.py ===" && head -20 setup.py
+     [ -f composer.json ] && echo "=== PHP composer.json ===" && cat composer.json | jq '.scripts'
+     \`\`\`
+   
+   - **このリポジトリで使用すべきコマンドを特定**：
+     - **第1優先**: リポジトリで定義されたコマンド（npm scripts、Makefileターゲット等）
+     - **第2優先**: 標準的なコマンド（npm test、cargo build等）
+     - **重要**: リポジトリで定義されたコマンドが存在する場合は、それを優先的に使用する
 
-3. **実装計画**: タスクの要件を満たすための実装計画を立ててください
+3. **現在のコードベース調査**: コードベースを調査して理解してください
 
-4. **段階的実装**:
+4. **実装計画**: タスクの要件を満たすための実装計画を立ててください
+
+5. **段階的実装**:
    - **機能実装の場合**: TDDサイクルで実装（テスト作成 → 最小実装 → リファクタリング）
    - **ドキュメント等の場合**: 直接実装
    - 必要なファイルとディレクトリの作成
    - 動作確認
 
-5. **必須確認事項**:
-   - すべてのテストが通ることを確認（npm test等）
-   - ビルドが成功することを確認（npm run build等）
-   - リントチェックが通ることを確認（npm run lint等）
+6. **必須確認事項**:
+   - **リポジトリで定義されたコマンドを優先使用**: 手順2で確認したコマンドを最優先で使用
+   
+   - **テスト実行**: 新規・既存すべてのテストが通ることを確認
+     \`\`\`bash
+     # リポジトリで定義されたテストコマンドを実行（最優先）
+     # 例: npm run test, make test, yarn test など
+     # 手順2で確認したコマンドを使用
+     \`\`\`
+   
+   - **ビルドの実行**: ビルドが成功することを確認
+     \`\`\`bash
+     # リポジトリで定義されたビルドコマンドを実行（最優先）
+     # 例: npm run build, make build, yarn build など
+     # 手順2で確認したコマンドを使用
+     \`\`\`
+   
+   - **リント・コード品質チェック**: コード品質チェックが通ることを確認
+     \`\`\`bash
+     # リポジトリで定義されたリントコマンドを実行（最優先）
+     # 例: npm run lint, make lint, yarn lint など
+     # 手順2で確認したコマンドを使用
+     \`\`\`
+   
+   - **型チェック**: TypeScriptプロジェクトの場合
+     \`\`\`bash
+     # リポジトリで定義された型チェックコマンドを実行（最優先）
+     # 例: npm run typecheck, make typecheck など
+     # 手順2で確認したコマンドを使用
+     \`\`\`
+   
+   - **重要**: このリポジトリで定義されたコマンドを優先的に使用し、なければ標準コマンドを使用
 
-6. **上記すべて成功後**: 変更内容を明確で詳細なコミットメッセージでコミット
+7. **上記すべて成功後**: 変更内容を明確で詳細なコミットメッセージでコミット
 
 ### 📝 コミットメッセージの書き方
 以下の形式で、**何を変更したのか具体的に**記載してください：

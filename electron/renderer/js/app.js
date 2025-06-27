@@ -1,8 +1,11 @@
+// ES Moduleとして動作させるため、window.requireを使用
+const electronRequire = window.require;
+
 // Electronのrequireを使用してモジュールを読み込む
-const { Terminal } = require('@xterm/xterm');
-const { FitAddon } = require('@xterm/addon-fit');
-const { SearchAddon } = require('@xterm/addon-search');
-const { WebLinksAddon } = require('@xterm/addon-web-links');
+const { Terminal } = electronRequire('@xterm/xterm');
+const { FitAddon } = electronRequire('@xterm/addon-fit');
+const { SearchAddon } = electronRequire('@xterm/addon-search');
+const { WebLinksAddon } = electronRequire('@xterm/addon-web-links');
 
 // カラーテーマ定義
 const themes = {
@@ -638,9 +641,9 @@ function showTaskDetailModal(filename, content) {
 function loadTasksDirectly() {
     console.log('[Tasks] Loading tasks directly...');
     
-    const fs = require('fs');
-    const path = require('path');
-    const os = require('os');
+    const fs = electronRequire('fs');
+    const path = electronRequire('path');
+    const os = electronRequire('os');
     
     const tempDir = os.tmpdir();
     console.log('[Tasks] Temp directory:', tempDir);
@@ -874,7 +877,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // フォールバック: 直接ipcRendererを使用
         try {
-            const { ipcRenderer } = require('electron');
+            const { ipcRenderer } = electronRequire('electron');
             console.log('[DOMContentLoaded] Using direct ipcRenderer');
             
             // デバッグ用：初期ターミナルにテストメッセージを表示

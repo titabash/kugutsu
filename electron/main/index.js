@@ -8,6 +8,13 @@ const __dirname = dirname(__filename);
 let mainWindow = null;
 // コマンドライン引数をチェック
 const shouldOpenDevTools = process.argv.includes('--devtools');
+// --original-cwdオプションから元のワーキングディレクトリを取得
+let originalCwd;
+const cwdIndex = process.argv.indexOf('--original-cwd');
+if (cwdIndex !== -1 && process.argv[cwdIndex + 1]) {
+    originalCwd = process.argv[cwdIndex + 1];
+    console.log('[Electron Main] Original working directory:', originalCwd);
+}
 function createWindow() {
     mainWindow = new BrowserWindow({
         width: 1600,
@@ -139,8 +146,8 @@ ipcMain.handle('get-task-instruction', async (event, taskId) => {
     return '';
 });
 ipcMain.handle('get-working-directory', async (event) => {
-    // 現在のワーキングディレクトリを返す
-    return process.cwd();
+    // 元のコマンド実行ディレクトリを返す（コマンドライン引数から取得）
+    return originalCwd || process.cwd();
 });
 // 親プロセスからのメッセージを処理（並列開発システムとの通信）
 if (process.send) {

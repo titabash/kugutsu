@@ -108,7 +108,13 @@ export class ElectronLogAdapter {
             console.log(`   実行ファイル: ${electronExecutable}`);
             
             // Electronプロセスを起動（IPCを有効にして）
-            this.electronProcess = spawn(electronExecutable, [electronAppPath, ...extraArgs], {
+            // 元のワーキングディレクトリをコマンドライン引数として渡す
+            this.electronProcess = spawn(electronExecutable, [
+                electronAppPath, 
+                '--original-cwd', 
+                process.cwd(),
+                ...extraArgs
+            ], {
                 stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
                 env: { ...process.env }
             });

@@ -640,12 +640,13 @@ async function loadTasksDirectly() {
     const fs = electronRequire('fs');
     const path = electronRequire('path');
     
-    // Electronメインプロセスから現在のワーキングディレクトリを取得
+    // Electronメインプロセスから元のワーキングディレクトリを取得
     let baseDir;
     try {
         if (window.electronAPI && window.electronAPI.getWorkingDirectory) {
             baseDir = await window.electronAPI.getWorkingDirectory();
             console.log('[Tasks] Working directory from IPC:', baseDir);
+            console.log('[Tasks] This should be the original command execution directory');
         } else {
             throw new Error('electronAPI not available');
         }
@@ -682,7 +683,19 @@ async function loadTasksDirectly() {
         // .kugutsu/projects ディレクトリを探す
         const projectsDir = path.join(kugutsuDir, 'projects');
         
+        if (!fs.existsSync(kugutsuDir)) {
+            console.error('[Tasks] .kugutsu directory not found at:', kugutsuDir);
+            console.error('[Tasks] Make sure you run the command from the correct directory');
+            tasksContainer.innerHTML = `<div class="no-tasks">
+                <p>❌ .kugutsu directory not found</p>
+                <p style="font-size: 0.9em; margin-top: 10px;">Expected location: ${kugutsuDir}</p>
+                <p style="font-size: 0.8em; margin-top: 5px;">Make sure you run the command from your project directory.</p>
+            </div>`;
+            return;
+        }
+        
         if (!fs.existsSync(projectsDir)) {
+            console.error('[Tasks] projects directory not found at:', projectsDir);
             tasksContainer.innerHTML = '<div class="no-tasks">No projects directory found. Run parallel-dev to generate tasks.</div>';
             return;
         }

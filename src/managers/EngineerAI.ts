@@ -84,45 +84,128 @@ export class EngineerAI extends BaseAI {
 ## 作業完了の必須条件
 **最重要**: レビューに進む前に以下をすべて確認してください。
 
-### ビルド確認（コード変更時のみ・最優先）
-**絶対条件**: ビルドが通らない状態では絶対にコミットしません。
-**除外対象**: ドキュメント（*.md、README等）やコメントのみの変更の場合は、ビルド確認は不要です。
+### 📦 リポジトリ固有コマンドの確認と実行（第1優先・必須）
+**絶対原則**: プロジェクトで定義されたコマンドを最優先で使用してください。
 
-#### プログラミング言語別ビルドコマンド
-- **TypeScript/JavaScript**:
-  - \`npm run build\` または \`yarn build\`
-  - \`tsc --noEmit\` (TypeScriptの型チェック)
-- **Python**:
-  - \`python -m py_compile *.py\`
-  - \`mypy .\` (型チェック)
-- **Java**:
-  - \`mvn compile\` または \`gradle build\`
-- **Go**:
-  - \`go build ./...\`
-- **Rust**:
-  - \`cargo build\`
-- **C/C++**:
-  - \`make\` または \`cmake --build .\`
+#### コマンド定義ファイルの確認
+以下のファイルを確認し、プロジェクト固有のコマンドを特定してください：
 
-**重要**: プロジェクトのREADMEやpackage.json、Makefileなどを確認し、適切なビルドコマンドを実行してください。
+\`\`\`bash
+# 1. package.json のスクリプト確認（JavaScript/TypeScript）
+if [ -f package.json ]; then
+  echo "=== package.json で定義されたコマンド ==="
+  # 利用可能なスクリプトを表示
+  node -e "console.log(JSON.stringify(require('./package.json').scripts || {}, null, 2))"
+fi
 
-### テスト確認（機能実装時必須）
-- **テスト実行**: 新規作成したテストがすべて通ることを確認
-- **既存テスト**: 既存のテストが引き続き通ることを確認（npm test等）
-- **テスト作成**: 新しい機能に対するテストが適切に作成されている
+# 2. Makefile のターゲット確認
+if [ -f Makefile ]; then
+  echo "=== Makefile で定義されたターゲット ==="
+  # ターゲット一覧を表示
+  make -qp | awk -F':' '/^[a-zA-Z0-9][^$#\/\t=]*:([^=]|$)/ {split($1,A,/ /);for(i in A)print A[i]}'
+fi
 
-### 品質確認（全タスク共通）
-- **リントチェック**: npm run lint、flake8、golint等でコード品質チェックが通る
-- **フォーマット**: prettier、black、gofmt等でコードが整形されている
-- **型チェック**: 静的型付け言語の場合、型エラーがない
+# 3. その他のビルドファイル確認
+[ -f build.gradle ] && echo "=== Gradle プロジェクト検出 ===" && gradle tasks --all | head -20
+[ -f pom.xml ] && echo "=== Maven プロジェクト検出 ===" && mvn help:describe -Dcmd
+[ -f Cargo.toml ] && echo "=== Rust プロジェクト検出 ===" && cargo --list
+[ -f pubspec.yaml ] && echo "=== Flutter/Dart プロジェクト検出 ===" && flutter --version
+[ -f setup.py ] && echo "=== Python setup.py 検出 ==="
+[ -f composer.json ] && echo "=== PHP Composer 検出 ===" && composer list
+\`\`\`
+
+### 🔧 品質チェックの必須実行順序
+**重要**: 以下の順序で実行し、すべて成功してからコミットしてください。
+
+#### 1. フォーマット確認・修正（最初に実行）
+\`\`\`bash
+# リポジトリで定義されたフォーマットコマンドを確認・実行
+# package.json例: "format", "prettier", "fmt"
+# Makefile例: format, fmt
+# その他: black ., gofmt -w ., rustfmt など
+
+# 実行例（プロジェクトに合わせて選択）
+npm run format 2>/dev/null || npm run prettier 2>/dev/null || echo "フォーマットコマンドが見つかりません"
+make format 2>/dev/null || make fmt 2>/dev/null || echo "Makefileにフォーマットターゲットがありません"
+[ -f pubspec.yaml ] && dart format . || echo "Flutter/Dartプロジェクトではありません"
+\`\`\`
+
+#### 2. リント確認（フォーマット後に実行）
+\`\`\`bash
+# リポジトリで定義されたリントコマンドを確認・実行
+# package.json例: "lint", "eslint", "check"
+# Makefile例: lint, check
+# その他: flake8, golint, clippy など
+
+# 実行例（プロジェクトに合わせて選択）
+npm run lint 2>/dev/null || echo "npm lintコマンドが見つかりません"
+make lint 2>/dev/null || make check 2>/dev/null || echo "Makefileにlintターゲットがありません"
+[ -f pubspec.yaml ] && dart analyze || echo "Flutter/Dartプロジェクトではありません"
+\`\`\`
+
+#### 3. 型チェック（TypeScript等の場合）
+\`\`\`bash
+# リポジトリで定義された型チェックコマンドを確認・実行
+# package.json例: "typecheck", "type-check", "tsc"
+# その他: mypy, tsc --noEmit など
+
+# 実行例（プロジェクトに合わせて選択）
+npm run typecheck 2>/dev/null || npm run type-check 2>/dev/null || npx tsc --noEmit 2>/dev/null || echo "型チェックコマンドが見つかりません"
+\`\`\`
+
+#### 4. テスト実行
+\`\`\`bash
+# リポジトリで定義されたテストコマンドを確認・実行
+# package.json例: "test", "test:unit", "jest"
+# Makefile例: test, check
+# その他: pytest, go test, cargo test など
+
+# 実行例（プロジェクトに合わせて選択）
+npm test 2>/dev/null || npm run test 2>/dev/null || echo "npmテストコマンドが見つかりません"
+make test 2>/dev/null || echo "Makefileにtestターゲットがありません"
+[ -f pubspec.yaml ] && flutter test || echo "Flutter/Dartプロジェクトではありません"
+\`\`\`
+
+#### 5. ビルド確認（最後に実行・必須）
+\`\`\`bash
+# リポジトリで定義されたビルドコマンドを確認・実行
+# package.json例: "build", "compile", "dist"
+# Makefile例: build, all, compile
+# その他: mvn compile, cargo build, go build など
+
+# 実行例（プロジェクトに合わせて選択）
+npm run build 2>/dev/null || echo "npmビルドコマンドが見つかりません"
+make build 2>/dev/null || make all 2>/dev/null || echo "Makefileにビルドターゲットがありません"
+[ -f pubspec.yaml ] && flutter build apk --debug || flutter build web || echo "Flutter/Dartプロジェクトではありません"
+\`\`\`
+
+### ⚠️ 重要な注意事項
+- **すべてのステップが成功必須**: 1つでも失敗した場合は、問題を解決してから次に進む
+- **エラーの場合は修正**: リント、型チェック、テスト、ビルドでエラーが出た場合は必ず修正する
+- **コマンドが見つからない場合**: 標準的なコマンドで代替実行する
+- **ドキュメント変更でもビルド確認**: ビルドは全タスクで必須（ドキュメント変更でも実行）
+
+### 💡 フォールバック用標準コマンド
+リポジトリ固有のコマンドがない場合の標準コマンド：
+
+#### プログラミング言語別標準コマンド
+- **TypeScript/JavaScript**: npx tsc --noEmit, npm test, npm run build
+- **Python**: python -m py_compile ., mypy ., pytest
+- **Java**: mvn compile, mvn test, gradle build
+- **Go**: go vet ./..., go test ./..., go build ./...
+- **Rust**: cargo fmt --check, cargo clippy, cargo test, cargo build
+- **Flutter/Dart**: dart format --set-exit-if-changed ., dart analyze, flutter test, flutter build
+- **C/C++**: make clean && make
 
 ### 最終確認
 - **機能動作**: 要求された機能が期待通りに動作する
-- **ビルド成功の再確認**: 最終的にもう一度ビルドが成功することを確認
+- **すべての品質チェック成功**: 上記1-5のすべてのステップが成功している
 - **コミット**: 変更内容が明確で詳細なコミットメッセージでコミットされている
 
-**重要**: 上記すべてが完了してからClaude Codeが完成と判断し、レビューに進みます。
-**特に重要**: ビルドエラーがある状態では、どんな理由があってもコミットしません。
+**絶対原則**: 
+1. フォーマット → リント → 型チェック → テスト → ビルド の順序を厳守
+2. 1つでも失敗したら必ず修正してから次に進む
+3. ビルドエラーがある状態では、どんな理由があってもコミットしない
 
 ## エンジニアAIの責務
 ### 作業開始時（必須）
@@ -1011,38 +1094,77 @@ ${task.worktreePath}
    - 必要なファイルとディレクトリの作成
    - 動作確認
 
-9. **必須確認事項**:
-   - **リポジトリで定義されたコマンドを優先使用**: 手順2で確認したコマンドを最優先で使用
+9. **必須品質確認事項（厳格実行）**:
+   **重要**: 以下を順番通りに実行し、すべて成功してからコミットしてください。
 
-   - **テスト実行**: 新規・既存すべてのテストが通ることを確認
-     \`\`\`bash
-     # リポジトリで定義されたテストコマンドを実行（最優先）
-     # 例: npm run test, make test, yarn test など
-     # 手順2で確認したコマンドを使用
-     \`\`\`
+   ### 📦 1. フォーマット確認・修正（最初に実行）
+   \`\`\`bash
+   # リポジトリで定義されたフォーマットコマンドを確認・実行
+   if [ -f package.json ]; then
+     npm run format 2>/dev/null || npm run prettier 2>/dev/null || echo "フォーマットコマンドが見つかりません"
+   fi
+   if [ -f Makefile ]; then
+     make format 2>/dev/null || make fmt 2>/dev/null || echo "Makefileにフォーマットターゲットがありません"
+   fi
+   if [ -f pubspec.yaml ]; then
+     dart format . || echo "Flutter/Dartフォーマットに失敗しました"
+   fi
+   \`\`\`
 
-   - **ビルドの実行**: ビルドが成功することを確認
-     \`\`\`bash
-     # リポジトリで定義されたビルドコマンドを実行（最優先）
-     # 例: npm run build, make build, yarn build など
-     # 手順2で確認したコマンドを使用
-     \`\`\`
+   ### 🔍 2. リント確認（フォーマット後に実行）
+   \`\`\`bash
+   # リポジトリで定義されたリントコマンドを確認・実行
+   if [ -f package.json ]; then
+     npm run lint 2>/dev/null || echo "npm lintコマンドが見つかりません"
+   fi
+   if [ -f Makefile ]; then
+     make lint 2>/dev/null || make check 2>/dev/null || echo "Makefileにlintターゲットがありません"
+   fi
+   if [ -f pubspec.yaml ]; then
+     dart analyze || echo "Flutter/Dart analyzeに失敗しました"
+   fi
+   \`\`\`
 
-   - **リント・コード品質チェック**: コード品質チェックが通ることを確認
-     \`\`\`bash
-     # リポジトリで定義されたリントコマンドを実行（最優先）
-     # 例: npm run lint, make lint, yarn lint など
-     # 手順2で確認したコマンドを使用
-     \`\`\`
+   ### 🏷️ 3. 型チェック（TypeScript等の場合）
+   \`\`\`bash
+   # リポジトリで定義された型チェックコマンドを確認・実行
+   if [ -f package.json ]; then
+     npm run typecheck 2>/dev/null || npm run type-check 2>/dev/null || npx tsc --noEmit 2>/dev/null || echo "型チェックコマンドが見つかりません"
+   fi
+   \`\`\`
 
-   - **型チェック**: TypeScriptプロジェクトの場合
-     \`\`\`bash
-     # リポジトリで定義された型チェックコマンドを実行（最優先）
-     # 例: npm run typecheck, make typecheck など
-     # 手順2で確認したコマンドを使用
-     \`\`\`
+   ### 🧪 4. テスト実行
+   \`\`\`bash
+   # リポジトリで定義されたテストコマンドを確認・実行
+   if [ -f package.json ]; then
+     npm test 2>/dev/null || npm run test 2>/dev/null || echo "npmテストコマンドが見つかりません"
+   fi
+   if [ -f Makefile ]; then
+     make test 2>/dev/null || echo "Makefileにtestターゲットがありません"
+   fi
+   if [ -f pubspec.yaml ]; then
+     flutter test || echo "Flutter testに失敗しました"
+   fi
+   \`\`\`
 
-   - **重要**: このリポジトリで定義されたコマンドを優先的に使用し、なければ標準コマンドを使用
+   ### 🏗️ 5. ビルド確認（最後に実行・必須）
+   \`\`\`bash
+   # リポジトリで定義されたビルドコマンドを確認・実行
+   if [ -f package.json ]; then
+     npm run build 2>/dev/null || echo "npmビルドコマンドが見つかりません"
+   fi
+   if [ -f Makefile ]; then
+     make build 2>/dev/null || make all 2>/dev/null || echo "Makefileにビルドターゲットがありません"
+   fi
+   if [ -f pubspec.yaml ]; then
+     flutter build apk --debug || flutter build web || echo "Flutter buildに失敗しました"
+   fi
+   \`\`\`
+
+   ### ⚠️ 絶対条件
+   - **すべてのステップが成功必須**: 1つでも失敗した場合は、問題を解決してから次に進む
+   - **エラーは必ず修正**: リント、型チェック、テスト、ビルドでエラーが出た場合は必ず修正する
+   - **順序厳守**: フォーマット → リント → 型チェック → テスト → ビルド の順序を守る
 
 10. **上記すべて成功後**: 変更内容を明確で詳細なコミットメッセージでコミット
 

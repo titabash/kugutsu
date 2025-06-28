@@ -25,7 +25,7 @@ export class EngineerAI extends BaseAI {
     this.config = {
       systemPrompt: this.getDefaultSystemPrompt(),
       maxTurns: 20,
-      allowedTools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep", "LS", "Fetch", "WebSearch", "WebFetch"],
+      allowedTools: ["Agent", "TodoWrite", "TodoRead", "Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep", "LS", "WebSearch", "WebFetch"],
       ...config
     };
   }
@@ -54,7 +54,7 @@ export class EngineerAI extends BaseAI {
    - **コーディング規約の確立**: プロジェクト全体の統一規約とパターンの把握
 3. **要件分析**: タスクの要件を正確に把握し、期待される入出力を明確化
 4. **技術調査とベストプラクティスの活用**（重要）:
-   - **Web検索の積極活用**: 
+   - **Web検索の積極活用**:
      - 不明な技術やエラーについてはWebSearchツールを使用して最新情報を取得
      - 公式ドキュメント、Stack Overflow、技術ブログ等の信頼できる情報源を参照
      - 最新のベストプラクティスやコミュニティの推奨事項を確認

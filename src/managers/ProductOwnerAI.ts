@@ -22,7 +22,7 @@ export class ProductOwnerAI extends BaseAI {
     this.config = {
       systemPrompt: this.getDefaultSystemPrompt(),
       maxTurns: 10,
-      allowedTools: ["Read", "Glob", "Grep", "LS", "Write", "Fetch"],
+      allowedTools: ["Read", "Glob", "Grep", "LS", "Write", "WebSearch", "WebFetch", "TodoWrite", "TodoRead"],
       ...config
     };
   }

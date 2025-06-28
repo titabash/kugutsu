@@ -20,7 +20,7 @@ export class TechLeadAI extends BaseAI {
     this.config = {
       systemPrompt: this.getDefaultSystemPrompt(),
       maxTurns: 15,
-      allowedTools: ["Read", "Bash", "Grep", "Glob", "LS"],
+      allowedTools: ["Read", "Bash", "Grep", "Glob", "LS", "WebSearch", "WebFetch", "TodoRead"],
       ...config
     };
   }
@@ -125,7 +125,7 @@ export class TechLeadAI extends BaseAI {
   async reviewEngineerWork(task: Task, engineerResult: EngineerResult): Promise<ReviewResult> {
     // ログを出す前に少し待機して、関連付けが確実に設定されるようにする
     await new Promise(resolve => setTimeout(resolve, 50));
-    
+
     this.info(`👔 レビュー開始`);
     this.info(`📋 タスク: ${task.title}`);
     this.info(`🆔 タスクID: ${task.id}`);
@@ -159,10 +159,10 @@ export class TechLeadAI extends BaseAI {
       }
 
       const duration = Date.now() - startTime;
-      
+
       // レビュー結果を解析してステータスを決定
       const reviewStatus = this.parseReviewStatus(reviewComments);
-      
+
       this.success(`✅ レビュー完了 (${duration}ms)`);
       this.info(`📊 レビュー結果: ${reviewStatus}`);
 
@@ -198,7 +198,7 @@ export class TechLeadAI extends BaseAI {
   private displayMessageActivity(message: any): string | null {
     const messageType = message.type;
     let reviewText = '';
-    
+
     switch (messageType) {
       case 'user':
         // ユーザーメッセージ（入力）
@@ -238,9 +238,9 @@ export class TechLeadAI extends BaseAI {
               const isError = content.is_error;
               const status = isError ? '❌ エラー' : '✅ 成功';
               const result = content.content;
-              
+
               this.info(`📊 ツール結果 - ${status}`);
-              
+
               if (isError) {
                 this.error(`   ❌ エラー詳細: ${this.truncateText(String(result), 150)}`);
               } else {
@@ -352,7 +352,7 @@ export class TechLeadAI extends BaseAI {
     if (typeof result === 'string') {
       const lines = result.split('\n');
       const lineCount = lines.length;
-      
+
       if (lineCount === 1) {
         this.logToolResult(`   ✅ 結果: ${this.truncateText(result, 100)}`, toolId);
       } else if (lineCount <= 5) {
@@ -412,7 +412,7 @@ export class TechLeadAI extends BaseAI {
 ${task.description}
 
 ## 📁 変更されたファイル
-${engineerResult.filesChanged.length > 0 
+${engineerResult.filesChanged.length > 0
   ? engineerResult.filesChanged.map(file => `- ${file}`).join('\n')
   : '変更されたファイルなし'
 }
@@ -524,13 +524,13 @@ git diff $(git merge-base HEAD @{-1} 2>/dev/null || git merge-base HEAD main 2>/
 
 以下の基準で判定してください：
 
-- **APPROVED**: 
+- **APPROVED**:
   - タスクの意図が達成されている（文字通りの要求ではなく、意図を重視）
-  - 全ての必須項目をクリアし、品質基準を満たしている  
+  - 全ての必須項目をクリアし、品質基準を満たしている
   - **重要**: プロジェクトのアーキテクチャパターンに適合している
   - コンフリクト解消などで要求と実装が異なる場合でも、目的が達成されていればAPPROVED
-  
-- **CHANGES_REQUESTED**: 
+
+- **CHANGES_REQUESTED**:
   - タスクの意図が達成されていない
   - 修正が必要な問題がある
   - **重要**: プロジェクトアーキテクチャに大きく不適合な場合
@@ -540,8 +540,8 @@ git diff $(git merge-base HEAD @{-1} 2>/dev/null || git merge-base HEAD main 2>/
     - プロジェクトの責務分割に反している
     - 既存の命名規則に従っていない
   - ただし、単に文言が異なるだけで意図が達成されている場合は、CHANGES_REQUESTEDにしない
-  
-- **COMMENTED**: 
+
+- **COMMENTED**:
   - タスクは達成されているが改善提案がある
   - コードの品質向上のための提案がある場合
   - アーキテクチャは適合しているが、より良い設計パターンがある場合
@@ -582,7 +582,7 @@ git diff $(git merge-base HEAD @{-1} 2>/dev/null || git merge-base HEAD main 2>/
   private parseReviewStatus(comments: string[]): 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED' | 'ERROR' {
     const fullText = comments.join(' ');
     const upperText = fullText.toUpperCase();
-    
+
     // 明示的なステータス宣言を最優先
     if (upperText.includes('レビュー結果: APPROVED') || upperText.includes('## レビュー結果: APPROVED')) {
       return 'APPROVED';
@@ -593,7 +593,7 @@ git diff $(git merge-base HEAD @{-1} 2>/dev/null || git merge-base HEAD main 2>/
     if (upperText.includes('レビュー結果: COMMENTED') || upperText.includes('## レビュー結果: COMMENTED')) {
       return 'COMMENTED';
     }
-    
+
     // プロジェクトアーキテクチャ不適合の判定（重要）
     const architectureViolations = [
       'アーキテクチャ不適合',
@@ -608,46 +608,46 @@ git diff $(git merge-base HEAD @{-1} 2>/dev/null || git merge-base HEAD main 2>/
       '責務分割に反している',
       '命名規則に従っていない'
     ];
-    
-    const hasArchitectureViolation = architectureViolations.some(violation => 
+
+    const hasArchitectureViolation = architectureViolations.some(violation =>
       fullText.includes(violation)
     );
-    
+
     if (hasArchitectureViolation) {
       return 'CHANGES_REQUESTED';
     }
-    
+
     // 次に、文脈を考慮した判定
     // 「修正が必要」「修正してください」など明確な指示がある場合
-    if (fullText.includes('修正が必要') || fullText.includes('修正してください') || 
+    if (fullText.includes('修正が必要') || fullText.includes('修正してください') ||
         fullText.includes('変更が必要') || fullText.includes('実装してください') ||
         fullText.includes('移動してください') || fullText.includes('再配置してください')) {
       return 'CHANGES_REQUESTED';
     }
-    
+
     // 「承認」「問題ありません」など承認を示す表現
-    if (upperText.includes('APPROVED') || fullText.includes('承認') || 
+    if (upperText.includes('APPROVED') || fullText.includes('承認') ||
         fullText.includes('問題ありません') || fullText.includes('正しく実装されて') ||
         fullText.includes('プロジェクトアーキテクチャに適合') || fullText.includes('適切に配置されて') ||
         fullText.includes('既存パターンに従って')) {
       return 'APPROVED';
     }
-    
+
     // 「改善提案」「将来的に」など、必須ではない提案
-    if (fullText.includes('改善提案') || fullText.includes('将来的に') || 
+    if (fullText.includes('改善提案') || fullText.includes('将来的に') ||
         fullText.includes('検討してください') || upperText.includes('COMMENTED')) {
-      return 'COMMENTED';  
+      return 'COMMENTED';
     }
-    
+
     // キーワードベースの判定（最後の手段）
     // ただし、「ビルドエラーが存在している」のような状況説明は除外
-    const hasRequiredChanges = (fullText.includes('エラーを修正') || fullText.includes('問題を解決') || 
+    const hasRequiredChanges = (fullText.includes('エラーを修正') || fullText.includes('問題を解決') ||
                                 fullText.includes('バグ') || fullText.includes('失敗'));
-    
+
     if (hasRequiredChanges && !fullText.includes('既存の') && !fullText.includes('確認しました')) {
       return 'CHANGES_REQUESTED';
     }
-    
+
     // デフォルトはAPPROVED（タスクが達成されていると仮定）
     return 'APPROVED';
   }
@@ -704,7 +704,7 @@ git diff $(git merge-base HEAD @{-1} 2>/dev/null || git merge-base HEAD main 2>/
       existingEngineer?: EngineerAI
     ): Promise<EngineerResult> => {
       this.info(`🔧 コンフリクト解消依頼 - ${conflictTask.title}`);
-      
+
       // 既存のエンジニアAIがあれば再利用、なければ新規作成
       const engineer = existingEngineer || new EngineerAI(engineerId, {
         systemPrompt: this.buildConflictResolutionPrompt(),

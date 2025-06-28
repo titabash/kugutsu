@@ -25,7 +25,7 @@ export class EngineerAI extends BaseAI {
     this.config = {
       systemPrompt: this.getDefaultSystemPrompt(),
       maxTurns: 20,
-      allowedTools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep", "LS"],
+      allowedTools: ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep", "LS", "Fetch"],
       ...config
     };
   }
@@ -43,7 +43,7 @@ export class EngineerAI extends BaseAI {
 
 ### TDDサイクル（機能実装時のみ）
 1. **Red**: まずテストを書いて失敗させる
-2. **Green**: テストを通す最小限の実装を行う  
+2. **Green**: テストを通す最小限の実装を行う
 3. **Refactor**: コードをリファクタリングして改善する
 
 ### 作業手順
@@ -78,19 +78,19 @@ export class EngineerAI extends BaseAI {
 **除外対象**: ドキュメント（*.md、README等）やコメントのみの変更の場合は、ビルド確認は不要です。
 
 #### プログラミング言語別ビルドコマンド
-- **TypeScript/JavaScript**: 
+- **TypeScript/JavaScript**:
   - \`npm run build\` または \`yarn build\`
   - \`tsc --noEmit\` (TypeScriptの型チェック)
-- **Python**: 
+- **Python**:
   - \`python -m py_compile *.py\`
   - \`mypy .\` (型チェック)
-- **Java**: 
+- **Java**:
   - \`mvn compile\` または \`gradle build\`
-- **Go**: 
+- **Go**:
   - \`go build ./...\`
-- **Rust**: 
+- **Rust**:
   - \`cargo build\`
-- **C/C++**: 
+- **C/C++**:
   - \`make\` または \`cmake --build .\`
 
 **重要**: プロジェクトのREADMEやpackage.json、Makefileなどを確認し、適切なビルドコマンドを実行してください。
@@ -127,7 +127,7 @@ export class EngineerAI extends BaseAI {
 - **品質保証**: コード品質とビルド成功の確認
 - **最終確認**: すべての条件が満たされていることの確認
 
-**絶対原則**: 
+**絶対原則**:
 - 最新コード同期なしで作業開始してはいけません
 - テストが失敗している状態、ビルドが失敗している状態では作業完了としません
 
@@ -214,15 +214,15 @@ feat: ユーザー認証機能を追加
       // エラーの詳細情報を取得
       let errorMessage = '';
       let errorDetails = '';
-      
+
       if (error instanceof Error) {
         errorMessage = error.message;
         errorDetails = error.stack || '';
-        
+
         // Claude Code特有のエラーの詳細を追加
         if (error.message.includes('process exited with code')) {
           const isConflictResolution = task.isConflictResolution || task.type === 'conflict-resolution';
-          
+
           // より詳細なエラーオブジェクトの情報を取得
           const errorInfo = {
             name: error.name,
@@ -230,9 +230,9 @@ feat: ユーザー認証機能を追加
             stack: error.stack,
             ...(error as any) // 追加のプロパティがあれば含める
           };
-          
-          this.error(`❌ Claude Codeプロセスエラー詳細:`, { 
-            taskId: task.id, 
+
+          this.error(`❌ Claude Codeプロセスエラー詳細:`, {
+            taskId: task.id,
             taskTitle: task.title,
             taskType: task.type,
             worktreePath: task.worktreePath,
@@ -241,17 +241,17 @@ feat: ユーザー認証機能を追加
             isConflictResolution,
             errorInfo
           });
-          
+
           // ワークツリーの状態確認
           if (task.worktreePath) {
             try {
               console.log(`\n🔍 ワークツリー状態確認: ${task.worktreePath}`);
               const worktreeExists = fs.existsSync(task.worktreePath);
               console.log(`- ワークツリー存在: ${worktreeExists}`);
-              
+
               if (worktreeExists) {
-                const gitStatus = execSync('git status --porcelain', { 
-                  cwd: task.worktreePath, 
+                const gitStatus = execSync('git status --porcelain', {
+                  cwd: task.worktreePath,
                   encoding: 'utf-8',
                   stdio: 'pipe'
                 }).toString();
@@ -261,7 +261,7 @@ feat: ユーザー認証機能を追加
               console.log(`- 状態確認エラー: ${statusError}`);
             }
           }
-          
+
           // コンフリクト解消タスクの場合、より詳細なエラー情報を追加
           if (isConflictResolution) {
             console.log(`\n🔍 コンフリクト解消タスクでのエラー詳細:`);
@@ -278,8 +278,8 @@ feat: ユーザー認証機能を追加
         errorDetails = JSON.stringify(error, null, 2);
       }
 
-      this.error(`❌ タスク失敗: ${errorMessage}`, { 
-        taskId: task.id, 
+      this.error(`❌ タスク失敗: ${errorMessage}`, {
+        taskId: task.id,
         error: errorDetails,
         taskTitle: task.title,
         engineerId: this.engineerId
@@ -302,7 +302,7 @@ feat: ユーザー認証機能を追加
    */
   private displayMessageActivity(message: any, output: string[]): void {
     const messageType = message.type;
-    
+
     switch (messageType) {
       case 'user':
         // ユーザーメッセージ（入力）
@@ -343,7 +343,7 @@ feat: ユーザー認証機能を追加
               const isError = content.is_error;
               const status = isError ? '❌ エラー' : '✅ 成功';
               const result = content.content;
-              
+
               if (isError) {
                 this.error(`📊 ツール結果 - ${status}`);
                 this.error(`   ❌ エラー詳細: ${this.truncateText(String(result), 150)}`);
@@ -466,7 +466,7 @@ feat: ユーザー認証機能を追加
     if (typeof result === 'string') {
       const lines = result.split('\n');
       const lineCount = lines.length;
-      
+
       if (lineCount === 1) {
         this.debug(`   ✅ 結果: ${this.truncateText(result, 100)}`);
       } else {
@@ -545,7 +545,7 @@ cat "${instructionFile}"
      # 分岐元ブランチを特定
      BASE_BRANCH=$(git show-branch | grep '*' | grep -v "$(git rev-parse --abbrev-ref HEAD)" | head -1 | awk -F'[]~^[]' '{print $2}')
      echo "ベースブランチ: $BASE_BRANCH"
-     
+
      # ローカルのベースブランチの最新をマージ
      git merge $BASE_BRANCH
      \`\`\`
@@ -557,16 +557,16 @@ cat "${instructionFile}"
 
 3. **🏗️ プロジェクト設計の体系的理解**（最重要・必須）
    作業開始前に、プロジェクト全体の設計思想を理解してください：
-   
+
    - **📐 アーキテクチャパターンの特定**：
      \`\`\`bash
      # ディレクトリ構造からアーキテクチャパターンを分析
      echo "=== プロジェクト構造分析 ==="
      find . -type d -maxdepth 3 | grep -E "(src|lib|app|pkg|internal|cmd|components|services|models|controllers|views|domain|infrastructure|presentation|main|test|tests)" | head -20
-     
+
      # 言語・フレームワークの特定
      echo -e "\n=== 言語・フレームワーク特定 ==="
-     
+
      # JavaScript/TypeScript
      [ -f package.json ] && echo "Node.js プロジェクト:" && grep -E '"name"|"main"|"scripts"' package.json | head -3
      [ -f tsconfig.json ] && echo "TypeScript設定:" && grep -E '"target"|"module"|"lib"' tsconfig.json
@@ -574,7 +574,7 @@ cat "${instructionFile}"
      [ -f next.config.js ] && echo "Next.js プロジェクト"
      [ -f nuxt.config.js ] && echo "Nuxt.js プロジェクト"
      [ -f vite.config.js ] && echo "Vite プロジェクト"
-     
+
      # Python
      [ -f setup.py ] && echo "Python setup.py プロジェクト:" && grep -E "name=|version=" setup.py | head -2
      [ -f pyproject.toml ] && echo "Python pyproject.toml:" && grep -E "name =|version =" pyproject.toml | head -2
@@ -583,61 +583,61 @@ cat "${instructionFile}"
      [ -f poetry.lock ] && echo "Python Poetry プロジェクト"
      [ -f manage.py ] && echo "Django プロジェクト"
      [ -f app.py ] && echo "Flask プロジェクト候補"
-     
+
      # Java
      [ -f pom.xml ] && echo "Maven プロジェクト:" && grep -E "<groupId>|<artifactId>" pom.xml | head -2
      [ -f build.gradle ] && echo "Gradle プロジェクト:" && grep -E "group|version" build.gradle | head -2
      [ -f build.sbt ] && echo "SBT/Scala プロジェクト"
-     
+
      # .NET/C#
      find . -name "*.csproj" | head -1 | xargs -r basename -s .csproj | xargs -r echo ".NET プロジェクト:"
      [ -f global.json ] && echo ".NET global.json:" && cat global.json
-     
+
      # Go
      [ -f go.mod ] && echo "Go モジュール:" && head -3 go.mod
      [ -f main.go ] && echo "Go main.go 検出"
-     
+
      # Rust
      [ -f Cargo.toml ] && echo "Rust プロジェクト:" && grep -E "name =|version =" Cargo.toml | head -2
-     
+
      # Ruby
      [ -f Gemfile ] && echo "Ruby Gemfile プロジェクト"
      [ -f config/application.rb ] && echo "Ruby on Rails プロジェクト"
-     
+
      # PHP
      [ -f composer.json ] && echo "PHP Composer プロジェクト:" && grep -E '"name"|"type"' composer.json | head -2
-     
+
      # C/C++
      [ -f CMakeLists.txt ] && echo "CMake プロジェクト:" && grep "project(" CMakeLists.txt | head -1
      [ -f Makefile ] && echo "Makefile プロジェクト"
      \`\`\`
-   
+
    - **🧩 ドメイン設計とエンティティ関係の把握**：
      プロジェクトのドメインモデルとビジネスロジックを理解してください：
-     
+
      - **データモデル・エンティティの特定**
        - 各言語の典型的なモデルファイルを探索（model、entity、domain、schema等のディレクトリ・ファイル）
        - データベーススキーマファイルの確認（SQL、ORM設定ファイル等）
        - エンティティ間の関係性の理解
-     
+
      - **ビジネスロジックの把握**
        - サービス層、ユースケース層、リポジトリ層のファイル構造確認
        - 既存のビジネスルールとドメインロジックの理解
        - アプリケーション層とドメイン層の分離パターンの確認
-   
+
    - **📋 コーディング規約とパターンの確立**：
      プロジェクト全体の統一されたコーディング規約を把握してください：
-     
+
      - **コードフォーマット・品質規則の確認**
        - 各言語のリンター・フォーマッター設定ファイルの確認
        - エディタ設定ファイル（.editorconfig等）の確認
        - プロジェクト固有のコーディングガイドラインの確認
-     
+
      - **命名規則とパターンの分析**
        - 既存コードから一貫した命名規則の抽出
        - クラス、関数、変数、ファイル名の命名パターン
        - インポート/エクスポート、モジュール構成のパターン
-     
+
      - **アーキテクチャパターンの確認**
        - ファイル構成とディレクトリ構造の規則
        - レイヤー分離のパターン（MVC、クリーンアーキテクチャ等）
@@ -645,15 +645,15 @@ cat "${instructionFile}"
 
 4. **🔧 ビルド・テスト・品質管理システムの理解**：
    プロジェクトのビルドシステムとコマンド体系を把握してください：
-   
+
    - **ビルドシステムとツールチェーンの特定**
      - 各言語・フレームワークのビルド定義ファイルの確認
      - 依存関係管理システムの理解
      - 開発、テスト、本番環境の違いの把握
-   
+
    - **プロジェクト固有のコマンド体系の探索**（必須）：
      各言語・フレームワークのコマンド定義ファイルを確認し、利用可能なスクリプトやタスクを把握してください：
-     
+
      - **JavaScript/TypeScript**: package.json の scripts セクション
      - **Python**: setup.py、pyproject.toml、requirements.txt、Pipfile
      - **Java**: pom.xml（Maven）、build.gradle（Gradle）、build.sbt（SBT）
@@ -664,7 +664,7 @@ cat "${instructionFile}"
      - **PHP**: composer.json の scripts セクション
      - **Make**: Makefile のターゲット定義
      - **CMake**: CMakeLists.txt のプロジェクト設定
-   
+
    - **コマンド優先順位の特定**：
      - **第1優先**: リポジトリで定義されたコマンド（npm scripts、Makefileターゲット等）
      - **第2優先**: 標準的なコマンド（npm test、cargo build、mvn test等）
@@ -672,12 +672,12 @@ cat "${instructionFile}"
 
 5. **🧪 テスト環境と品質基準の把握**：
    プロジェクトのテスト戦略と品質基準を理解してください：
-   
+
    - **テストフレームワークの特定**
      - 各言語・フレームワークのテスト設定ファイルの確認
      - 単体テスト、結合テスト、E2Eテストの構成理解
      - テストの実行方法とカバレッジ要件の確認
-   
+
    - **既存テストパターンの分析**
      - テストファイルの命名規則と配置パターン
      - テストケースの構造とアサーション方法
@@ -685,17 +685,17 @@ cat "${instructionFile}"
 
 6. **📊 既存の実装パターンの理解**：
    プロジェクトの実装パターンとベストプラクティスを把握してください：
-   
+
    - **実装パターンの確認**
      - 類似機能の実装方法と構造パターン
      - 各言語・フレームワーク固有の慣用句（イディオム）
      - 継承、コンポジション、依存性注入等の使用パターン
-   
+
    - **エラーハンドリングと例外処理**
      - プロジェクトのエラーハンドリング戦略
      - ログ出力のパターンとレベル分け
      - 例外の種類と処理方法
-   
+
    - **API・インターフェース設計パターン**
      - REST API、GraphQL等のAPI設計パターン
      - 入出力データの検証とシリアライゼーション
@@ -708,59 +708,59 @@ cat "${instructionFile}"
 
 6. **品質確認とコミット（必須）**
    - **リポジトリで定義されたコマンドを優先使用**: 手順3で確認したコマンドを最優先で使用
-   
+
    - **テスト実行**: 新規・既存すべてのテストが通ることを確認
      \`\`\`bash
      # リポジトリで定義されたテストコマンドを実行（最優先）
      # 例: npm run test, make test, yarn test など
      # 手順3で確認したコマンドを使用
      \`\`\`
-   
+
    - **ビルドの実行**: ビルドが成功することを確認
      \`\`\`bash
      # リポジトリで定義されたビルドコマンドを実行（最優先）
      # 例: npm run build, make build, yarn build など
      # 手順3で確認したコマンドを使用
      \`\`\`
-   
+
    - **リント・コード品質チェック**: コード品質チェックが通ることを確認
      \`\`\`bash
      # リポジトリで定義されたリントコマンドを実行（最優先）
      # 例: npm run lint, make lint, yarn lint など
      # 手順3で確認したコマンドを使用
      \`\`\`
-   
+
    - **型チェック**: TypeScriptプロジェクトの場合
      \`\`\`bash
      # リポジトリで定義された型チェックコマンドを実行（最優先）
      # 例: npm run typecheck, make typecheck など
      # 手順3で確認したコマンドを使用
      \`\`\`
-   
+
    - **重要**: このリポジトリで定義されたコマンドを優先的に使用し、なければ標準コマンドを使用
    - **すべて成功確認**: 上記すべてが成功してから次へ進む
    - **コミット**: 明確で詳細なコミットメッセージでコミット
-   
+
    ### 📝 コミットメッセージの書き方
    以下の形式で、**何を変更したのか具体的に**記載してください：
-   
+
    \`\`\`
    <タイプ>: <変更内容の要約>
-   
+
    - 変更の詳細1
    - 変更の詳細2
    - 元の状態 → 変更後の状態（具体的に）
    \`\`\`
-   
+
    例：
    \`\`\`
    feat: TEST.mdのHelloをGood Morningに変更
-   
+
    - TEST.md内の挨拶文を更新
    - "Hello World!" → "Good Morning World!"
    - タスク要件に従って朝の挨拶に変更
    \`\`\`
-   
+
    **重要**: レビュアーが変更内容を理解しやすいよう、以下を含めてください：
    - 変更前と変更後の具体的な内容
    - ファイル名と変更箇所
@@ -790,12 +790,12 @@ ${task.worktreePath}
 
 ## 実行手順
 1. **最新コード同期**: 必ず最新のベースブランチを取り込んでから作業開始
-   - **実行すべきコマンド**: 
+   - **実行すべきコマンド**:
      \`\`\`bash
      # 分岐元ブランチを特定
      BASE_BRANCH=$(git show-branch | grep '*' | grep -v "$(git rev-parse --abbrev-ref HEAD)" | head -1 | awk -F'[]~^[]' '{print $2}')
      echo "ベースブランチ: $BASE_BRANCH"
-     
+
      # ローカルのベースブランチをマージ
      git merge $BASE_BRANCH
      \`\`\`
@@ -808,7 +808,7 @@ ${task.worktreePath}
      # プロジェクトのコマンド定義ファイルを確認
      ls -la | grep -E "(package\.json|Makefile|build\.gradle|pom\.xml|Cargo\.toml|setup\.py|composer\.json|go\.mod|CMakeLists\.txt)"
      \`\`\`
-   
+
    - **定義されているコマンドの確認**：
      \`\`\`bash
      # package.jsonのスクリプトを確認（最優先）
@@ -816,13 +816,13 @@ ${task.worktreePath}
        echo "=== package.json scripts ==="
        cat package.json | jq '.scripts'
      fi
-     
+
      # Makefileのターゲットを確認
      if [ -f Makefile ]; then
        echo "=== Makefile targets ==="
        cat Makefile
      fi
-     
+
      # その他のビルドファイルを確認
      [ -f build.gradle ] && echo "=== Gradle build.gradle ===" && cat build.gradle
      [ -f pom.xml ] && echo "=== Maven pom.xml ===" && head -20 pom.xml
@@ -830,7 +830,7 @@ ${task.worktreePath}
      [ -f setup.py ] && echo "=== Python setup.py ===" && head -20 setup.py
      [ -f composer.json ] && echo "=== PHP composer.json ===" && cat composer.json | jq '.scripts'
      \`\`\`
-   
+
    - **このリポジトリで使用すべきコマンドを特定**：
      - **第1優先**: リポジトリで定義されたコマンド（npm scripts、Makefileターゲット等）
      - **第2優先**: 標準的なコマンド（npm test、cargo build等）
@@ -838,16 +838,16 @@ ${task.worktreePath}
 
 3. **🏗️ プロジェクト設計の体系的理解**（最重要・必須）
    作業開始前に、プロジェクト全体の設計思想を理解してください：
-   
+
    - **📐 アーキテクチャパターンの特定**：
      \`\`\`bash
      # ディレクトリ構造からアーキテクチャパターンを分析
      echo "=== プロジェクト構造分析 ==="
      find . -type d -maxdepth 3 | grep -E "(src|lib|app|pkg|internal|cmd|components|services|models|controllers|views|domain|infrastructure|presentation|main|test|tests)" | head -20
-     
+
      # 言語・フレームワークの特定
      echo -e "\n=== 言語・フレームワーク特定 ==="
-     
+
      # JavaScript/TypeScript
      [ -f package.json ] && echo "Node.js プロジェクト:" && grep -E '"name"|"main"|"scripts"' package.json | head -3
      [ -f tsconfig.json ] && echo "TypeScript設定:" && grep -E '"target"|"module"|"lib"' tsconfig.json
@@ -855,7 +855,7 @@ ${task.worktreePath}
      [ -f next.config.js ] && echo "Next.js プロジェクト"
      [ -f nuxt.config.js ] && echo "Nuxt.js プロジェクト"
      [ -f vite.config.js ] && echo "Vite プロジェクト"
-     
+
      # Python
      [ -f setup.py ] && echo "Python setup.py プロジェクト:" && grep -E "name=|version=" setup.py | head -2
      [ -f pyproject.toml ] && echo "Python pyproject.toml:" && grep -E "name =|version =" pyproject.toml | head -2
@@ -864,61 +864,61 @@ ${task.worktreePath}
      [ -f poetry.lock ] && echo "Python Poetry プロジェクト"
      [ -f manage.py ] && echo "Django プロジェクト"
      [ -f app.py ] && echo "Flask プロジェクト候補"
-     
+
      # Java
      [ -f pom.xml ] && echo "Maven プロジェクト:" && grep -E "<groupId>|<artifactId>" pom.xml | head -2
      [ -f build.gradle ] && echo "Gradle プロジェクト:" && grep -E "group|version" build.gradle | head -2
      [ -f build.sbt ] && echo "SBT/Scala プロジェクト"
-     
+
      # .NET/C#
      find . -name "*.csproj" | head -1 | xargs -r basename -s .csproj | xargs -r echo ".NET プロジェクト:"
      [ -f global.json ] && echo ".NET global.json:" && cat global.json
-     
+
      # Go
      [ -f go.mod ] && echo "Go モジュール:" && head -3 go.mod
      [ -f main.go ] && echo "Go main.go 検出"
-     
+
      # Rust
      [ -f Cargo.toml ] && echo "Rust プロジェクト:" && grep -E "name =|version =" Cargo.toml | head -2
-     
+
      # Ruby
      [ -f Gemfile ] && echo "Ruby Gemfile プロジェクト"
      [ -f config/application.rb ] && echo "Ruby on Rails プロジェクト"
-     
+
      # PHP
      [ -f composer.json ] && echo "PHP Composer プロジェクト:" && grep -E '"name"|"type"' composer.json | head -2
-     
+
      # C/C++
      [ -f CMakeLists.txt ] && echo "CMake プロジェクト:" && grep "project(" CMakeLists.txt | head -1
      [ -f Makefile ] && echo "Makefile プロジェクト"
      \`\`\`
-   
+
    - **🧩 ドメイン設計とエンティティ関係の把握**：
      プロジェクトのドメインモデルとビジネスロジックを理解してください：
-     
+
      - **データモデル・エンティティの特定**
        - 各言語の典型的なモデルファイルを探索（model、entity、domain、schema等のディレクトリ・ファイル）
        - データベーススキーマファイルの確認（SQL、ORM設定ファイル等）
        - エンティティ間の関係性の理解
-     
+
      - **ビジネスロジックの把握**
        - サービス層、ユースケース層、リポジトリ層のファイル構造確認
        - 既存のビジネスルールとドメインロジックの理解
        - アプリケーション層とドメイン層の分離パターンの確認
-   
+
    - **📋 コーディング規約とパターンの確立**：
      プロジェクト全体の統一されたコーディング規約を把握してください：
-     
+
      - **コードフォーマット・品質規則の確認**
        - 各言語のリンター・フォーマッター設定ファイルの確認
        - エディタ設定ファイル（.editorconfig等）の確認
        - プロジェクト固有のコーディングガイドラインの確認
-     
+
      - **命名規則とパターンの分析**
        - 既存コードから一貫した命名規則の抽出
        - クラス、関数、変数、ファイル名の命名パターン
        - インポート/エクスポート、モジュール構成のパターン
-     
+
      - **アーキテクチャパターンの確認**
        - ファイル構成とディレクトリ構造の規則
        - レイヤー分離のパターン（MVC、クリーンアーキテクチャ等）
@@ -931,7 +931,7 @@ ${task.worktreePath}
    [ -f jest.config.js ] && echo "Jest設定:" && head -10 jest.config.js
    [ -f vitest.config.js ] && echo "Vitest設定:" && head -10 vitest.config.js
    [ -f cypress.config.js ] && echo "Cypress設定:" && head -10 cypress.config.js
-   
+
    # 既存テストファイルの確認とパターン分析
    echo -e "\n=== 既存テストパターン ==="
    find . -name "*.test.ts" -o -name "*.spec.ts" -o -name "*.test.js" -o -name "*.spec.js" | head -5
@@ -942,11 +942,11 @@ ${task.worktreePath}
    echo "=== 既存実装パターン分析 ==="
    # 類似機能の実装パターンを確認
    find . -name "*.ts" -o -name "*.js" | head -5 | xargs grep -l "export.*function\|export.*class" | head -3
-   
+
    # エラーハンドリングパターンの確認
    echo -e "\n=== エラーハンドリングパターン ==="
    find . -name "*.ts" -o -name "*.js" | head -3 | xargs grep -h "try.*catch\|throw.*Error" | head -5
-   
+
    # APIエンドポイントパターンの確認（該当する場合）
    echo -e "\n=== APIパターン ==="
    find . -name "*.ts" -o -name "*.js" | xargs grep -h "app\\.get\|app\\.post\|router\\.get\|router\\.post" | head -5
@@ -962,35 +962,35 @@ ${task.worktreePath}
 
 6. **必須確認事項**:
    - **リポジトリで定義されたコマンドを優先使用**: 手順2で確認したコマンドを最優先で使用
-   
+
    - **テスト実行**: 新規・既存すべてのテストが通ることを確認
      \`\`\`bash
      # リポジトリで定義されたテストコマンドを実行（最優先）
      # 例: npm run test, make test, yarn test など
      # 手順2で確認したコマンドを使用
      \`\`\`
-   
+
    - **ビルドの実行**: ビルドが成功することを確認
      \`\`\`bash
      # リポジトリで定義されたビルドコマンドを実行（最優先）
      # 例: npm run build, make build, yarn build など
      # 手順2で確認したコマンドを使用
      \`\`\`
-   
+
    - **リント・コード品質チェック**: コード品質チェックが通ることを確認
      \`\`\`bash
      # リポジトリで定義されたリントコマンドを実行（最優先）
      # 例: npm run lint, make lint, yarn lint など
      # 手順2で確認したコマンドを使用
      \`\`\`
-   
+
    - **型チェック**: TypeScriptプロジェクトの場合
      \`\`\`bash
      # リポジトリで定義された型チェックコマンドを実行（最優先）
      # 例: npm run typecheck, make typecheck など
      # 手順2で確認したコマンドを使用
      \`\`\`
-   
+
    - **重要**: このリポジトリで定義されたコマンドを優先的に使用し、なければ標準コマンドを使用
 
 7. **上記すべて成功後**: 変更内容を明確で詳細なコミットメッセージでコミット
@@ -1026,7 +1026,7 @@ ${task.worktreePath}
 
 ### 必須確認事項
 - **テスト成功**: すべてのテストが通る（npm test等で確認）
-- **ビルド成功**: ビルドが成功する（npm run build等で確認）  
+- **ビルド成功**: ビルドが成功する（npm run build等で確認）
 - **リント成功**: リントチェックが通る（npm run lint等で確認）
 - **コード品質**: コードが規約に従っている
 

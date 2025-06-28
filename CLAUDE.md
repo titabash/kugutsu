@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Important Git Policy
+
+**DO NOT automatically run `git add` and `git commit` after making changes.** Only perform git operations when explicitly requested by the user. When making code changes, stop after the changes are complete and let the user decide when to commit.
+
 ## Project Overview
 
 This is an AI-powered parallel development system built with TypeScript and the Claude Code SDK. It enables multiple AI engineers to work simultaneously on different tasks using git worktrees for isolation. The system includes task orchestration, automated code review, and intelligent merge coordination.

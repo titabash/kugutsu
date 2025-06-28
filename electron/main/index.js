@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain } from 'electron';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import { existsSync } from 'fs';
 // ESM用の__dirname代替
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -16,14 +17,18 @@ if (cwdIndex !== -1 && process.argv[cwdIndex + 1]) {
     console.log('[Electron Main] Original working directory:', originalCwd);
 }
 function createWindow() {
+    const preloadPath = path.join(__dirname, '../preload/index.js');
+    console.log('[Electron Main] Preload script path:', preloadPath);
+    console.log('[Electron Main] Preload script exists:', existsSync(preloadPath));
     mainWindow = new BrowserWindow({
         width: 1600,
         height: 1000,
         webPreferences: {
-            preload: path.join(__dirname, '../preload/index.js'),
+            preload: preloadPath,
             contextIsolation: false,
             nodeIntegration: true,
-            sandbox: false
+            sandbox: false,
+            webSecurity: false
         },
         title: 'Multi-Engineer Parallel Development'
     });

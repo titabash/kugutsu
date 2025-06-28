@@ -1,6 +1,89 @@
 // ES Moduleとして動作させるため、window.requireを使用
 const electronRequire = window.require;
 
+// electronAPIの確認と設定
+console.log('[App.js] Initial check - window.electronAPI exists:', !!window.electronAPI);
+console.log('[App.js] Initial check - globalThis.electronAPI exists:', !!globalThis.electronAPI);
+
+// nodeIntegrationが有効な場合、直接ipcRendererを使用してelectronAPIを作成
+if (!window.electronAPI && window.require) {
+    console.log('[App.js] Creating electronAPI directly using ipcRenderer...');
+    try {
+        const { ipcRenderer } = window.require('electron');
+        
+        window.electronAPI = {
+            // ログ関連
+            sendLog: (data) => ipcRenderer.invoke('log-message', data),
+            onLogData: (callback) => {
+                ipcRenderer.on('log-data', (event, data) => callback(data));
+            },
+            onStructuredLogData: (callback) => {
+                ipcRenderer.on('structured-log-data', (event, data) => callback(data));
+            },
+            // レイアウト関連
+            updateLayout: (engineerCount) => ipcRenderer.invoke('update-layout', engineerCount),
+            onLayoutUpdate: (callback) => {
+                ipcRenderer.on('layout-update', (event, engineerCount) => callback(engineerCount));
+            },
+            // タスクステータス関連
+            onTaskStatusUpdate: (callback) => {
+                ipcRenderer.on('task-status-update', (event, data) => callback(data));
+            },
+            // 全タスク完了通知
+            onAllTasksCompleted: (callback) => {
+                ipcRenderer.on('all-tasks-completed', (event, data) => callback(data));
+            },
+            // ターミナルクリア
+            onClearTerminal: (callback) => {
+                ipcRenderer.on('clear-terminal', (event, terminalId) => callback(terminalId));
+            },
+            // 接続ステータス
+            onConnectionStatus: (callback) => {
+                ipcRenderer.on('connection-status', (event, connected) => callback(connected));
+            },
+            // TechLeadとEngineerの関連付け
+            onAssociateTechLeadEngineer: (callback) => {
+                ipcRenderer.on('associate-techlead-engineer', (event, data) => callback(data));
+            },
+            // イベントリスナーの削除
+            removeAllListeners: (channel) => {
+                ipcRenderer.removeAllListeners(channel);
+            },
+            // タスク管理関連
+            getTasks: () => ipcRenderer.invoke('get-tasks'),
+            getTaskOverview: () => ipcRenderer.invoke('get-task-overview'),
+            getTaskInstruction: (taskId) => ipcRenderer.invoke('get-task-instruction', taskId),
+            getWorkingDirectory: () => ipcRenderer.invoke('get-working-directory'),
+            onTaskUpdate: (callback) => {
+                ipcRenderer.on('tasks-updated', (event, tasks) => callback(tasks));
+            },
+            onTaskOverviewUpdate: (callback) => {
+                ipcRenderer.on('task-overview-updated', (event, overview) => callback(overview));
+            }
+        };
+        
+        console.log('[App.js] ✅ electronAPI created successfully using ipcRenderer');
+        console.log('[App.js] Available methods:', Object.keys(window.electronAPI));
+    } catch (error) {
+        console.error('[App.js] Failed to create electronAPI:', error);
+    }
+}
+
+// electronAPIが見つからない場合、globalThisから取得
+if (!window.electronAPI && globalThis.electronAPI) {
+    console.log('[App.js] Found electronAPI in globalThis, copying to window');
+    window.electronAPI = globalThis.electronAPI;
+}
+
+// 最終確認
+if (window.electronAPI) {
+    console.log('[App.js] ✅ electronAPI is available');
+    console.log('[App.js] Available methods:', Object.keys(window.electronAPI));
+} else {
+    console.error('[App.js] ❌ electronAPI is NOT available');
+    console.error('[App.js] This may be due to preload script not executing or timing issues');
+}
+
 // Electronのrequireを使用してモジュールを読み込む
 const { Terminal } = electronRequire('@xterm/xterm');
 const { FitAddon } = electronRequire('@xterm/addon-fit');
@@ -640,6 +723,15 @@ async function loadTasksDirectly() {
     const fs = electronRequire('fs');
     const path = electronRequire('path');
     
+    // DOM要素を最初に取得
+    const tasksContainer = document.getElementById('tasks-grid');
+    const overviewContainer = document.getElementById('overview-content');
+    
+    if (!tasksContainer || !overviewContainer) {
+        console.error('[Tasks] Required DOM elements not found');
+        return;
+    }
+    
     // Electronメインプロセスから元のワーキングディレクトリを取得
     let baseDir;
     try {
@@ -651,32 +743,71 @@ async function loadTasksDirectly() {
             throw new Error('electronAPI not available');
         }
     } catch (error) {
-        console.warn('[Tasks] Could not get working directory from IPC, using fallback:', error);
-        // フォールバック: window.location.hrefから推測
-        const currentPath = window.location.href;
-        console.log('[Tasks] Current location:', currentPath);
+        console.error('[Tasks] Could not get working directory from IPC:', error);
         
-        if (currentPath.startsWith('file://')) {
-            const filePath = currentPath.replace('file://', '');
-            const rendererPath = path.dirname(filePath);
-            // electron/renderer から2階層上がプロジェクトルート
-            baseDir = path.resolve(rendererPath, '../..');
-        } else {
-            // 最後のフォールバック: プロセスの実行ディレクトリを使用
-            baseDir = process.cwd();
+        // エラーが発生した場合はローディング状態を表示
+        tasksContainer.innerHTML = `<div class="no-tasks loading">
+            <div class="loading-spinner"></div>
+            <p>⏳ ワーキングディレクトリを取得中...</p>
+            <p style="font-size: 0.8em; margin-top: 10px;">Electron UIとの接続を待っています</p>
+            <p style="font-size: 0.7em; margin-top: 5px; opacity: 0.7;">electronAPIが利用できません</p>
+        </div>`;
+        
+        // ローディングアニメーション用のCSSを追加（存在しない場合）
+        if (!document.getElementById('loading-styles')) {
+            const style = document.createElement('style');
+            style.id = 'loading-styles';
+            style.textContent = `
+                .loading-spinner {
+                    width: 40px;
+                    height: 40px;
+                    margin: 0 auto 20px;
+                    border: 3px solid rgba(255, 255, 255, 0.1);
+                    border-radius: 50%;
+                    border-top-color: #4caf50;
+                    animation: spin 1s ease-in-out infinite;
+                }
+                
+                @keyframes spin {
+                    to { transform: rotate(360deg); }
+                }
+                
+                .no-tasks.loading {
+                    text-align: center;
+                    padding: 40px;
+                }
+            `;
+            document.head.appendChild(style);
         }
+        
+        return; // ここで処理を中断
     }
     
     const kugutsuDir = path.join(baseDir, '.kugutsu');
     console.log('[Tasks] Base directory:', baseDir);
     console.log('[Tasks] Kugutsu directory:', kugutsuDir);
     
-    const tasksContainer = document.getElementById('tasks-grid');
-    const overviewContainer = document.getElementById('overview-content');
+    // 現在のディレクトリパスを表示
+    // 既存のディレクトリ情報を削除
+    const existingPathInfo = document.getElementById('directory-info');
+    if (existingPathInfo) {
+        existingPathInfo.remove();
+    }
     
-    if (!tasksContainer || !overviewContainer) {
-        console.error('[Tasks] Required DOM elements not found');
-        return;
+    const pathInfoDiv = document.createElement('div');
+    pathInfoDiv.id = 'directory-info';
+    pathInfoDiv.style.cssText = 'background: rgba(0,0,0,0.3); padding: 10px; margin-bottom: 10px; border-radius: 5px; font-size: 0.9em;';
+    pathInfoDiv.innerHTML = `
+        <div style="color: #4caf50; margin-bottom: 5px;">📁 現在のディレクトリ情報</div>
+        <div style="color: #aaa; font-family: monospace;">
+            <div>ベースディレクトリ: ${baseDir}</div>
+            <div>.kugutsuディレクトリ: ${kugutsuDir}</div>
+        </div>
+    `;
+    
+    // overviewContainerの前に挿入
+    if (overviewContainer && overviewContainer.parentNode) {
+        overviewContainer.parentNode.insertBefore(pathInfoDiv, overviewContainer);
     }
     
     try {
@@ -684,19 +815,56 @@ async function loadTasksDirectly() {
         const projectsDir = path.join(kugutsuDir, 'projects');
         
         if (!fs.existsSync(kugutsuDir)) {
-            console.error('[Tasks] .kugutsu directory not found at:', kugutsuDir);
-            console.error('[Tasks] Make sure you run the command from the correct directory');
-            tasksContainer.innerHTML = `<div class="no-tasks">
-                <p>❌ .kugutsu directory not found</p>
-                <p style="font-size: 0.9em; margin-top: 10px;">Expected location: ${kugutsuDir}</p>
-                <p style="font-size: 0.8em; margin-top: 5px;">Make sure you run the command from your project directory.</p>
+            console.log('[Tasks] .kugutsu directory not found at:', kugutsuDir);
+            console.log('[Tasks] Waiting for tasks to be generated...');
+            
+            // ローディング状態を表示（タスクがまだ生成されていない場合）
+            tasksContainer.innerHTML = `<div class="no-tasks loading">
+                <div class="loading-spinner"></div>
+                <p>⏳ タスクを待機中...</p>
+                <p style="font-size: 0.8em; margin-top: 10px;">.kugutsuディレクトリが作成されるのを待っています</p>
+                <div style="font-size: 0.7em; margin-top: 10px; opacity: 0.7; font-family: monospace; text-align: left; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 3px;">
+                    <div>期待される場所:</div>
+                    <div style="color: #ffa726;">${kugutsuDir}</div>
+                </div>
             </div>`;
+            
+            // ローディングアニメーション用のCSSを追加（存在しない場合）
+            if (!document.getElementById('loading-styles')) {
+                const style = document.createElement('style');
+                style.id = 'loading-styles';
+                style.textContent = `
+                    .loading-spinner {
+                        width: 40px;
+                        height: 40px;
+                        margin: 0 auto 20px;
+                        border: 3px solid rgba(255, 255, 255, 0.1);
+                        border-radius: 50%;
+                        border-top-color: #4caf50;
+                        animation: spin 1s ease-in-out infinite;
+                    }
+                    
+                    @keyframes spin {
+                        to { transform: rotate(360deg); }
+                    }
+                    
+                    .no-tasks.loading {
+                        text-align: center;
+                        padding: 40px;
+                    }
+                `;
+                document.head.appendChild(style);
+            }
             return;
         }
         
         if (!fs.existsSync(projectsDir)) {
-            console.error('[Tasks] projects directory not found at:', projectsDir);
-            tasksContainer.innerHTML = '<div class="no-tasks">No projects directory found. Run parallel-dev to generate tasks.</div>';
+            console.log('[Tasks] projects directory not found at:', projectsDir);
+            tasksContainer.innerHTML = `<div class="no-tasks loading">
+                <div class="loading-spinner"></div>
+                <p>⏳ プロジェクトを待機中...</p>
+                <p style="font-size: 0.8em; margin-top: 10px;">タスク分析が開始されるのを待っています</p>
+            </div>`;
             return;
         }
         
@@ -709,7 +877,11 @@ async function loadTasksDirectly() {
             
             if (!fs.existsSync(projectDir)) {
                 console.warn('[Tasks] Current project directory not found:', projectDir);
-                tasksContainer.innerHTML = '<div class="no-tasks">Current project not found. Waiting for tasks...</div>';
+                tasksContainer.innerHTML = `<div class="no-tasks loading">
+                    <div class="loading-spinner"></div>
+                    <p>⏳ 現在のプロジェクトを待機中...</p>
+                    <p style="font-size: 0.8em; margin-top: 10px;">プロジェクトが開始されるのを待っています</p>
+                </div>`;
                 return;
             }
         } else {
@@ -739,7 +911,11 @@ async function loadTasksDirectly() {
             console.log('[Tasks] Found project directories with analysis.json:', projectDirs.length);
             
             if (projectDirs.length === 0) {
-                tasksContainer.innerHTML = '<div class="no-tasks">No analyzed projects found. Waiting for task analysis...</div>';
+                tasksContainer.innerHTML = `<div class="no-tasks loading">
+                    <div class="loading-spinner"></div>
+                    <p>⏳ タスク分析を待機中...</p>
+                    <p style="font-size: 0.8em; margin-top: 10px;">プロジェクトの分析が完了するのを待っています</p>
+                </div>`;
                 return;
             }
             
@@ -749,6 +925,16 @@ async function loadTasksDirectly() {
         }
         const instructionsDir = path.join(projectDir, 'instructions');
         console.log('[Tasks] Using project directory:', projectDir);
+        
+        // プロジェクトディレクトリパスを更新
+        const pathInfoDiv = document.querySelector('div[style*="background: rgba(0,0,0,0.3)"]');
+        if (pathInfoDiv) {
+            const pathContent = pathInfoDiv.querySelector('div[style*="font-family: monospace"]');
+            if (pathContent) {
+                pathContent.innerHTML += `<div>プロジェクトディレクトリ: ${projectDir}</div>`;
+                pathContent.innerHTML += `<div>instructionsディレクトリ: ${instructionsDir}</div>`;
+            }
+        }
         
         // task-overview.mdを読み込む
         const overviewPath = path.join(instructionsDir, 'task-overview.md');
@@ -875,7 +1061,11 @@ async function loadTasksDirectly() {
         console.log('[Tasks] Filtered task files for current project:', taskFiles);
         
         if (taskFiles.length === 0) {
-            tasksContainer.innerHTML = '<div class="no-tasks">No task files found for current project</div>';
+            tasksContainer.innerHTML = `<div class="no-tasks loading">
+                <div class="loading-spinner"></div>
+                <p>⏳ タスクファイルを待機中...</p>
+                <p style="font-size: 0.8em; margin-top: 10px;">タスクの詳細が生成されるのを待っています</p>
+            </div>`;
             return;
         }
         

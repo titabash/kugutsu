@@ -538,109 +538,144 @@ cat "${instructionFile}"
      \`\`\`bash
      # ディレクトリ構造からアーキテクチャパターンを分析
      echo "=== プロジェクト構造分析 ==="
-     find . -type d -maxdepth 3 | grep -E "(src|lib|app|components|services|models|controllers|views|domain|infrastructure|presentation)" | head -20
+     find . -type d -maxdepth 3 | grep -E "(src|lib|app|pkg|internal|cmd|components|services|models|controllers|views|domain|infrastructure|presentation|main|test|tests)" | head -20
      
-     # 設定ファイルからフレームワーク特定
-     echo -e "\n=== フレームワーク・アーキテクチャ特定 ==="
+     # 言語・フレームワークの特定
+     echo -e "\n=== 言語・フレームワーク特定 ==="
+     
+     # JavaScript/TypeScript
+     [ -f package.json ] && echo "Node.js プロジェクト:" && grep -E '"name"|"main"|"scripts"' package.json | head -3
      [ -f tsconfig.json ] && echo "TypeScript設定:" && grep -E '"target"|"module"|"lib"' tsconfig.json
      [ -f angular.json ] && echo "Angular プロジェクト"
      [ -f next.config.js ] && echo "Next.js プロジェクト"
      [ -f nuxt.config.js ] && echo "Nuxt.js プロジェクト"
      [ -f vite.config.js ] && echo "Vite プロジェクト"
+     
+     # Python
+     [ -f setup.py ] && echo "Python setup.py プロジェクト:" && grep -E "name=|version=" setup.py | head -2
+     [ -f pyproject.toml ] && echo "Python pyproject.toml:" && grep -E "name =|version =" pyproject.toml | head -2
+     [ -f requirements.txt ] && echo "Python requirements:" && head -5 requirements.txt
+     [ -f Pipfile ] && echo "Python Pipenv プロジェクト"
+     [ -f poetry.lock ] && echo "Python Poetry プロジェクト"
+     [ -f manage.py ] && echo "Django プロジェクト"
+     [ -f app.py ] && echo "Flask プロジェクト候補"
+     
+     # Java
+     [ -f pom.xml ] && echo "Maven プロジェクト:" && grep -E "<groupId>|<artifactId>" pom.xml | head -2
+     [ -f build.gradle ] && echo "Gradle プロジェクト:" && grep -E "group|version" build.gradle | head -2
+     [ -f build.sbt ] && echo "SBT/Scala プロジェクト"
+     
+     # .NET/C#
+     find . -name "*.csproj" | head -1 | xargs -r basename -s .csproj | xargs -r echo ".NET プロジェクト:"
+     [ -f global.json ] && echo ".NET global.json:" && cat global.json
+     
+     # Go
+     [ -f go.mod ] && echo "Go モジュール:" && head -3 go.mod
+     [ -f main.go ] && echo "Go main.go 検出"
+     
+     # Rust
+     [ -f Cargo.toml ] && echo "Rust プロジェクト:" && grep -E "name =|version =" Cargo.toml | head -2
+     
+     # Ruby
+     [ -f Gemfile ] && echo "Ruby Gemfile プロジェクト"
+     [ -f config/application.rb ] && echo "Ruby on Rails プロジェクト"
+     
+     # PHP
+     [ -f composer.json ] && echo "PHP Composer プロジェクト:" && grep -E '"name"|"type"' composer.json | head -2
+     
+     # C/C++
+     [ -f CMakeLists.txt ] && echo "CMake プロジェクト:" && grep "project(" CMakeLists.txt | head -1
+     [ -f Makefile ] && echo "Makefile プロジェクト"
      \`\`\`
    
    - **🧩 ドメイン設計とエンティティ関係の把握**：
-     \`\`\`bash
-     echo "=== ドメインモデル分析 ==="
-     # エンティティ・モデルファイルの探索
-     find . -name "*.ts" -o -name "*.js" | grep -E "(model|entity|domain|schema)" | head -10
+     プロジェクトのドメインモデルとビジネスロジックを理解してください：
      
-     # データベーススキーマの確認
-     [ -f prisma/schema.prisma ] && echo "Prisma スキーマ:" && head -30 prisma/schema.prisma
-     find . -name "*.sql" | head -5
+     - **データモデル・エンティティの特定**
+       - 各言語の典型的なモデルファイルを探索（model、entity、domain、schema等のディレクトリ・ファイル）
+       - データベーススキーマファイルの確認（SQL、ORM設定ファイル等）
+       - エンティティ間の関係性の理解
      
-     # ビジネスロジック関連ファイルの探索
-     find . -name "*.ts" -o -name "*.js" | grep -E "(service|usecase|repository)" | head -10
-     \`\`\`
+     - **ビジネスロジックの把握**
+       - サービス層、ユースケース層、リポジトリ層のファイル構造確認
+       - 既存のビジネスルールとドメインロジックの理解
+       - アプリケーション層とドメイン層の分離パターンの確認
    
    - **📋 コーディング規約とパターンの確立**：
-     \`\`\`bash
-     echo "=== コーディング規約分析 ==="
-     # 設定ファイルから規約を特定
-     [ -f .eslintrc.js ] && echo "ESLint設定:" && head -20 .eslintrc.js
-     [ -f .prettierrc ] && echo "Prettier設定:" && cat .prettierrc
-     [ -f .editorconfig ] && echo "EditorConfig:" && cat .editorconfig
+     プロジェクト全体の統一されたコーディング規約を把握してください：
      
-     # 既存コードから命名規則を分析
-     echo -e "\n=== 命名規則分析 ==="
-     find . -name "*.ts" -o -name "*.js" | head -5 | xargs grep -h "^export.*function\|^export.*class\|^export.*interface\|^export.*type" | head -10
+     - **コードフォーマット・品質規則の確認**
+       - 各言語のリンター・フォーマッター設定ファイルの確認
+       - エディタ設定ファイル（.editorconfig等）の確認
+       - プロジェクト固有のコーディングガイドラインの確認
      
-     # インポート/エクスポートパターンの確認
-     echo -e "\n=== インポートパターン ==="
-     find . -name "*.ts" -o -name "*.js" | head -3 | xargs grep -h "^import" | head -10
-     \`\`\`
+     - **命名規則とパターンの分析**
+       - 既存コードから一貫した命名規則の抽出
+       - クラス、関数、変数、ファイル名の命名パターン
+       - インポート/エクスポート、モジュール構成のパターン
+     
+     - **アーキテクチャパターンの確認**
+       - ファイル構成とディレクトリ構造の規則
+       - レイヤー分離のパターン（MVC、クリーンアーキテクチャ等）
+       - 依存関係の方向性とパターン
 
-4. **リポジトリ固有のコマンド確認**（必須・最優先）
-   - **コマンド定義ファイルの存在確認**：
-     \`\`\`bash
-     # プロジェクトのコマンド定義ファイルを確認
-     ls -la | grep -E "(package\.json|Makefile|build\.gradle|pom\.xml|Cargo\.toml|setup\.py|composer\.json|go\.mod|CMakeLists\.txt)"
-     \`\`\`
+4. **🔧 ビルド・テスト・品質管理システムの理解**：
+   プロジェクトのビルドシステムとコマンド体系を把握してください：
    
-   - **定義されているコマンドの確認**：
-     \`\`\`bash
-     # package.jsonのスクリプトを確認（最優先）
-     if [ -f package.json ]; then
-       echo "=== package.json scripts ==="
-       cat package.json | jq '.scripts'
-     fi
-     
-     # Makefileのターゲットを確認
-     if [ -f Makefile ]; then
-       echo "=== Makefile targets ==="
-       cat Makefile
-     fi
-     
-     # その他のビルドファイルを確認
-     [ -f build.gradle ] && echo "=== Gradle build.gradle ===" && cat build.gradle
-     [ -f pom.xml ] && echo "=== Maven pom.xml ===" && head -20 pom.xml
-     [ -f Cargo.toml ] && echo "=== Rust Cargo.toml ===" && cat Cargo.toml
-     [ -f setup.py ] && echo "=== Python setup.py ===" && head -20 setup.py
-     [ -f composer.json ] && echo "=== PHP composer.json ===" && cat composer.json | jq '.scripts'
-     \`\`\`
+   - **ビルドシステムとツールチェーンの特定**
+     - 各言語・フレームワークのビルド定義ファイルの確認
+     - 依存関係管理システムの理解
+     - 開発、テスト、本番環境の違いの把握
    
-   - **このリポジトリで使用すべきコマンドを特定**：
+   - **プロジェクト固有のコマンド体系の探索**（必須）：
+     各言語・フレームワークのコマンド定義ファイルを確認し、利用可能なスクリプトやタスクを把握してください：
+     
+     - **JavaScript/TypeScript**: package.json の scripts セクション
+     - **Python**: setup.py、pyproject.toml、requirements.txt、Pipfile
+     - **Java**: pom.xml（Maven）、build.gradle（Gradle）、build.sbt（SBT）
+     - **.NET/C#**: *.csproj ファイル、global.json
+     - **Go**: go.mod ファイル、main.go の構成
+     - **Rust**: Cargo.toml の [bin]、[lib] セクション
+     - **Ruby**: Gemfile、Rakefile
+     - **PHP**: composer.json の scripts セクション
+     - **Make**: Makefile のターゲット定義
+     - **CMake**: CMakeLists.txt のプロジェクト設定
+   
+   - **コマンド優先順位の特定**：
      - **第1優先**: リポジトリで定義されたコマンド（npm scripts、Makefileターゲット等）
-     - **第2優先**: 標準的なコマンド（npm test、cargo build等）
+     - **第2優先**: 標準的なコマンド（npm test、cargo build、mvn test等）
      - **重要**: リポジトリで定義されたコマンドが存在する場合は、それを優先的に使用する
 
 5. **🧪 テスト環境と品質基準の把握**：
-   \`\`\`bash
-   echo "=== テスト環境分析 ==="
-   # テストフレームワークの特定
-   [ -f jest.config.js ] && echo "Jest設定:" && head -10 jest.config.js
-   [ -f vitest.config.js ] && echo "Vitest設定:" && head -10 vitest.config.js
-   [ -f cypress.config.js ] && echo "Cypress設定:" && head -10 cypress.config.js
+   プロジェクトのテスト戦略と品質基準を理解してください：
    
-   # 既存テストファイルの確認とパターン分析
-   echo -e "\n=== 既存テストパターン ==="
-   find . -name "*.test.ts" -o -name "*.spec.ts" -o -name "*.test.js" -o -name "*.spec.js" | head -5
-   \`\`\`
+   - **テストフレームワークの特定**
+     - 各言語・フレームワークのテスト設定ファイルの確認
+     - 単体テスト、結合テスト、E2Eテストの構成理解
+     - テストの実行方法とカバレッジ要件の確認
+   
+   - **既存テストパターンの分析**
+     - テストファイルの命名規則と配置パターン
+     - テストケースの構造とアサーション方法
+     - モックやスタブの使用パターン
 
 6. **📊 既存の実装パターンの理解**：
-   \`\`\`bash
-   echo "=== 既存実装パターン分析 ==="
-   # 類似機能の実装パターンを確認
-   find . -name "*.ts" -o -name "*.js" | head -5 | xargs grep -l "export.*function\|export.*class" | head -3
+   プロジェクトの実装パターンとベストプラクティスを把握してください：
    
-   # エラーハンドリングパターンの確認
-   echo -e "\n=== エラーハンドリングパターン ==="
-   find . -name "*.ts" -o -name "*.js" | head -3 | xargs grep -h "try.*catch\|throw.*Error" | head -5
+   - **実装パターンの確認**
+     - 類似機能の実装方法と構造パターン
+     - 各言語・フレームワーク固有の慣用句（イディオム）
+     - 継承、コンポジション、依存性注入等の使用パターン
    
-   # APIエンドポイントパターンの確認（該当する場合）
-   echo -e "\n=== APIパターン ==="
-   find . -name "*.ts" -o -name "*.js" | xargs grep -h "app\\.get\|app\\.post\|router\\.get\|router\\.post" | head -5
-   \`\`\`
+   - **エラーハンドリングと例外処理**
+     - プロジェクトのエラーハンドリング戦略
+     - ログ出力のパターンとレベル分け
+     - 例外の種類と処理方法
+   
+   - **API・インターフェース設計パターン**
+     - REST API、GraphQL等のAPI設計パターン
+     - 入出力データの検証とシリアライゼーション
+     - 認証・認可の実装パターン
 
 7. **実装の実行**
    - **機能実装の場合**: TDDサイクルに従って実装（テスト → 実装 → リファクタリング）
@@ -784,47 +819,86 @@ ${task.worktreePath}
      \`\`\`bash
      # ディレクトリ構造からアーキテクチャパターンを分析
      echo "=== プロジェクト構造分析 ==="
-     find . -type d -maxdepth 3 | grep -E "(src|lib|app|components|services|models|controllers|views|domain|infrastructure|presentation)" | head -20
+     find . -type d -maxdepth 3 | grep -E "(src|lib|app|pkg|internal|cmd|components|services|models|controllers|views|domain|infrastructure|presentation|main|test|tests)" | head -20
      
-     # 設定ファイルからフレームワーク特定
-     echo -e "\n=== フレームワーク・アーキテクチャ特定 ==="
+     # 言語・フレームワークの特定
+     echo -e "\n=== 言語・フレームワーク特定 ==="
+     
+     # JavaScript/TypeScript
+     [ -f package.json ] && echo "Node.js プロジェクト:" && grep -E '"name"|"main"|"scripts"' package.json | head -3
      [ -f tsconfig.json ] && echo "TypeScript設定:" && grep -E '"target"|"module"|"lib"' tsconfig.json
      [ -f angular.json ] && echo "Angular プロジェクト"
      [ -f next.config.js ] && echo "Next.js プロジェクト"
      [ -f nuxt.config.js ] && echo "Nuxt.js プロジェクト"
      [ -f vite.config.js ] && echo "Vite プロジェクト"
+     
+     # Python
+     [ -f setup.py ] && echo "Python setup.py プロジェクト:" && grep -E "name=|version=" setup.py | head -2
+     [ -f pyproject.toml ] && echo "Python pyproject.toml:" && grep -E "name =|version =" pyproject.toml | head -2
+     [ -f requirements.txt ] && echo "Python requirements:" && head -5 requirements.txt
+     [ -f Pipfile ] && echo "Python Pipenv プロジェクト"
+     [ -f poetry.lock ] && echo "Python Poetry プロジェクト"
+     [ -f manage.py ] && echo "Django プロジェクト"
+     [ -f app.py ] && echo "Flask プロジェクト候補"
+     
+     # Java
+     [ -f pom.xml ] && echo "Maven プロジェクト:" && grep -E "<groupId>|<artifactId>" pom.xml | head -2
+     [ -f build.gradle ] && echo "Gradle プロジェクト:" && grep -E "group|version" build.gradle | head -2
+     [ -f build.sbt ] && echo "SBT/Scala プロジェクト"
+     
+     # .NET/C#
+     find . -name "*.csproj" | head -1 | xargs -r basename -s .csproj | xargs -r echo ".NET プロジェクト:"
+     [ -f global.json ] && echo ".NET global.json:" && cat global.json
+     
+     # Go
+     [ -f go.mod ] && echo "Go モジュール:" && head -3 go.mod
+     [ -f main.go ] && echo "Go main.go 検出"
+     
+     # Rust
+     [ -f Cargo.toml ] && echo "Rust プロジェクト:" && grep -E "name =|version =" Cargo.toml | head -2
+     
+     # Ruby
+     [ -f Gemfile ] && echo "Ruby Gemfile プロジェクト"
+     [ -f config/application.rb ] && echo "Ruby on Rails プロジェクト"
+     
+     # PHP
+     [ -f composer.json ] && echo "PHP Composer プロジェクト:" && grep -E '"name"|"type"' composer.json | head -2
+     
+     # C/C++
+     [ -f CMakeLists.txt ] && echo "CMake プロジェクト:" && grep "project(" CMakeLists.txt | head -1
+     [ -f Makefile ] && echo "Makefile プロジェクト"
      \`\`\`
    
    - **🧩 ドメイン設計とエンティティ関係の把握**：
-     \`\`\`bash
-     echo "=== ドメインモデル分析 ==="
-     # エンティティ・モデルファイルの探索
-     find . -name "*.ts" -o -name "*.js" | grep -E "(model|entity|domain|schema)" | head -10
+     プロジェクトのドメインモデルとビジネスロジックを理解してください：
      
-     # データベーススキーマの確認
-     [ -f prisma/schema.prisma ] && echo "Prisma スキーマ:" && head -30 prisma/schema.prisma
-     find . -name "*.sql" | head -5
+     - **データモデル・エンティティの特定**
+       - 各言語の典型的なモデルファイルを探索（model、entity、domain、schema等のディレクトリ・ファイル）
+       - データベーススキーマファイルの確認（SQL、ORM設定ファイル等）
+       - エンティティ間の関係性の理解
      
-     # ビジネスロジック関連ファイルの探索
-     find . -name "*.ts" -o -name "*.js" | grep -E "(service|usecase|repository)" | head -10
-     \`\`\`
+     - **ビジネスロジックの把握**
+       - サービス層、ユースケース層、リポジトリ層のファイル構造確認
+       - 既存のビジネスルールとドメインロジックの理解
+       - アプリケーション層とドメイン層の分離パターンの確認
    
    - **📋 コーディング規約とパターンの確立**：
-     \`\`\`bash
-     echo "=== コーディング規約分析 ==="
-     # 設定ファイルから規約を特定
-     [ -f .eslintrc.js ] && echo "ESLint設定:" && head -20 .eslintrc.js
-     [ -f .prettierrc ] && echo "Prettier設定:" && cat .prettierrc
-     [ -f .editorconfig ] && echo "EditorConfig:" && cat .editorconfig
+     プロジェクト全体の統一されたコーディング規約を把握してください：
      
-     # 既存コードから命名規則を分析
-     echo -e "\n=== 命名規則分析 ==="
-     find . -name "*.ts" -o -name "*.js" | head -5 | xargs grep -h "^export.*function\|^export.*class\|^export.*interface\|^export.*type" | head -10
+     - **コードフォーマット・品質規則の確認**
+       - 各言語のリンター・フォーマッター設定ファイルの確認
+       - エディタ設定ファイル（.editorconfig等）の確認
+       - プロジェクト固有のコーディングガイドラインの確認
      
-     # インポート/エクスポートパターンの確認
-     echo -e "\n=== インポートパターン ==="
-     find . -name "*.ts" -o -name "*.js" | head -3 | xargs grep -h "^import" | head -10
-     \`\`\`
+     - **命名規則とパターンの分析**
+       - 既存コードから一貫した命名規則の抽出
+       - クラス、関数、変数、ファイル名の命名パターン
+       - インポート/エクスポート、モジュール構成のパターン
+     
+     - **アーキテクチャパターンの確認**
+       - ファイル構成とディレクトリ構造の規則
+       - レイヤー分離のパターン（MVC、クリーンアーキテクチャ等）
+       - 依存関係の方向性とパターン
 
 4. **🧪 テスト環境と品質基準の把握**：
    \`\`\`bash

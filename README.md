@@ -10,25 +10,55 @@ AI-powered parallel development system that orchestrates multiple AI engineers t
 - Git 2.7+
 - Claude Code (authenticated via Anthropic Console or API Key)
 
+> **⚠️ Note**: This package is currently not published to the public npm registry. It is distributed through GitHub Packages. Please configure GitHub Packages authentication before installation as described in the Quick Start section below.
+
 ## Quick Start
 
 ```bash
 # 1. Set up Claude Code (if not already done)
 # Follow: https://docs.anthropic.com/en/docs/claude-code/quickstart
 
-# 2. Install kugutsu
+# 2. Configure GitHub Packages authentication
+# Create a Personal Access Token (PAT) with 'read:packages' scope:
+# https://github.com/settings/tokens/new?scopes=read:packages
+npm config set @titabash:registry https://npm.pkg.github.com
+npm config set //npm.pkg.github.com/:_authToken YOUR_GITHUB_TOKEN
+
+# 3. Install kugutsu
 npm install -g @titabash/kugutsu
 
-# 3. Navigate to your project
+# 4. Navigate to your project
 cd your-project
 
-# 4. Run kugutsu
+# 5. Run kugutsu
 kugutsu "Add user authentication"
 ```
 
 ## Installation
 
+### GitHub Packages Setup
+
+Since this package is distributed through GitHub Packages, you need to configure npm to use GitHub Packages registry:
+
 ```bash
+# 1. Create a GitHub Personal Access Token with 'read:packages' scope
+# Visit: https://github.com/settings/tokens/new?scopes=read:packages
+
+# 2. Configure npm to use GitHub Packages for @titabash scope
+npm config set @titabash:registry https://npm.pkg.github.com
+npm config set //npm.pkg.github.com/:_authToken YOUR_GITHUB_TOKEN
+
+# 3. Install the package
+npm install -g @titabash/kugutsu
+```
+
+### Alternative: Using .npmrc file
+
+You can also create a `.npmrc` file in your home directory:
+
+```bash
+echo "@titabash:registry=https://npm.pkg.github.com" >> ~/.npmrc
+echo "//npm.pkg.github.com/:_authToken=YOUR_GITHUB_TOKEN" >> ~/.npmrc
 npm install -g @titabash/kugutsu
 ```
 

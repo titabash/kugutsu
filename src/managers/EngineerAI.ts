@@ -48,7 +48,10 @@ export class EngineerAI extends BaseAI {
 
 ### 作業手順
 1. **最新コード同期**: 作業開始前に必ず最新のベースブランチ（worktree作成元）を取り込む
-2. **コードベース理解**: 現在のコードベースとテスト環境を理解
+2. **プロジェクト設計の体系的理解**（最重要・必須）:
+   - **アーキテクチャパターン分析**: 既存のアーキテクチャパターンを特定・理解
+   - **ドメイン設計の把握**: ビジネスドメイン、エンティティ関係、ドメインルールの理解
+   - **コーディング規約の確立**: プロジェクト全体の統一規約とパターンの把握
 3. **要件分析**: タスクの要件を正確に把握し、期待される入出力を明確化
 4. **タスクタイプ判定**: 機能実装か、ドキュメント・設定変更かを判定
 5. **機能実装の場合**:
@@ -528,7 +531,56 @@ cat "${instructionFile}"
 2. **指示ファイルの確認**
    - 上記のcatコマンドで詳細指示を必ず読んでください
 
-3. **リポジトリ固有のコマンド確認**（必須・最優先）
+3. **🏗️ プロジェクト設計の体系的理解**（最重要・必須）
+   作業開始前に、プロジェクト全体の設計思想を理解してください：
+   
+   - **📐 アーキテクチャパターンの特定**：
+     \`\`\`bash
+     # ディレクトリ構造からアーキテクチャパターンを分析
+     echo "=== プロジェクト構造分析 ==="
+     find . -type d -maxdepth 3 | grep -E "(src|lib|app|components|services|models|controllers|views|domain|infrastructure|presentation)" | head -20
+     
+     # 設定ファイルからフレームワーク特定
+     echo -e "\n=== フレームワーク・アーキテクチャ特定 ==="
+     [ -f tsconfig.json ] && echo "TypeScript設定:" && grep -E '"target"|"module"|"lib"' tsconfig.json
+     [ -f angular.json ] && echo "Angular プロジェクト"
+     [ -f next.config.js ] && echo "Next.js プロジェクト"
+     [ -f nuxt.config.js ] && echo "Nuxt.js プロジェクト"
+     [ -f vite.config.js ] && echo "Vite プロジェクト"
+     \`\`\`
+   
+   - **🧩 ドメイン設計とエンティティ関係の把握**：
+     \`\`\`bash
+     echo "=== ドメインモデル分析 ==="
+     # エンティティ・モデルファイルの探索
+     find . -name "*.ts" -o -name "*.js" | grep -E "(model|entity|domain|schema)" | head -10
+     
+     # データベーススキーマの確認
+     [ -f prisma/schema.prisma ] && echo "Prisma スキーマ:" && head -30 prisma/schema.prisma
+     find . -name "*.sql" | head -5
+     
+     # ビジネスロジック関連ファイルの探索
+     find . -name "*.ts" -o -name "*.js" | grep -E "(service|usecase|repository)" | head -10
+     \`\`\`
+   
+   - **📋 コーディング規約とパターンの確立**：
+     \`\`\`bash
+     echo "=== コーディング規約分析 ==="
+     # 設定ファイルから規約を特定
+     [ -f .eslintrc.js ] && echo "ESLint設定:" && head -20 .eslintrc.js
+     [ -f .prettierrc ] && echo "Prettier設定:" && cat .prettierrc
+     [ -f .editorconfig ] && echo "EditorConfig:" && cat .editorconfig
+     
+     # 既存コードから命名規則を分析
+     echo -e "\n=== 命名規則分析 ==="
+     find . -name "*.ts" -o -name "*.js" | head -5 | xargs grep -h "^export.*function\|^export.*class\|^export.*interface\|^export.*type" | head -10
+     
+     # インポート/エクスポートパターンの確認
+     echo -e "\n=== インポートパターン ==="
+     find . -name "*.ts" -o -name "*.js" | head -3 | xargs grep -h "^import" | head -10
+     \`\`\`
+
+4. **リポジトリ固有のコマンド確認**（必須・最優先）
    - **コマンド定義ファイルの存在確認**：
      \`\`\`bash
      # プロジェクトのコマンド定義ファイルを確認
@@ -562,11 +614,35 @@ cat "${instructionFile}"
      - **第2優先**: 標準的なコマンド（npm test、cargo build等）
      - **重要**: リポジトリで定義されたコマンドが存在する場合は、それを優先的に使用する
 
-4. **コードベースの理解**
-   - プロジェクト構造の把握
-   - 既存のコード規約の確認
+5. **🧪 テスト環境と品質基準の把握**：
+   \`\`\`bash
+   echo "=== テスト環境分析 ==="
+   # テストフレームワークの特定
+   [ -f jest.config.js ] && echo "Jest設定:" && head -10 jest.config.js
+   [ -f vitest.config.js ] && echo "Vitest設定:" && head -10 vitest.config.js
+   [ -f cypress.config.js ] && echo "Cypress設定:" && head -10 cypress.config.js
+   
+   # 既存テストファイルの確認とパターン分析
+   echo -e "\n=== 既存テストパターン ==="
+   find . -name "*.test.ts" -o -name "*.spec.ts" -o -name "*.test.js" -o -name "*.spec.js" | head -5
+   \`\`\`
 
-5. **実装の実行**
+6. **📊 既存の実装パターンの理解**：
+   \`\`\`bash
+   echo "=== 既存実装パターン分析 ==="
+   # 類似機能の実装パターンを確認
+   find . -name "*.ts" -o -name "*.js" | head -5 | xargs grep -l "export.*function\|export.*class" | head -3
+   
+   # エラーハンドリングパターンの確認
+   echo -e "\n=== エラーハンドリングパターン ==="
+   find . -name "*.ts" -o -name "*.js" | head -3 | xargs grep -h "try.*catch\|throw.*Error" | head -5
+   
+   # APIエンドポイントパターンの確認（該当する場合）
+   echo -e "\n=== APIパターン ==="
+   find . -name "*.ts" -o -name "*.js" | xargs grep -h "app\\.get\|app\\.post\|router\\.get\|router\\.post" | head -5
+   \`\`\`
+
+7. **実装の実行**
    - **機能実装の場合**: TDDサイクルに従って実装（テスト → 実装 → リファクタリング）
    - **ドキュメント等の場合**: 直接実装
    - 段階的な進行
@@ -701,11 +777,86 @@ ${task.worktreePath}
      - **第2優先**: 標準的なコマンド（npm test、cargo build等）
      - **重要**: リポジトリで定義されたコマンドが存在する場合は、それを優先的に使用する
 
-3. **現在のコードベース調査**: コードベースを調査して理解してください
+3. **🏗️ プロジェクト設計の体系的理解**（最重要・必須）
+   作業開始前に、プロジェクト全体の設計思想を理解してください：
+   
+   - **📐 アーキテクチャパターンの特定**：
+     \`\`\`bash
+     # ディレクトリ構造からアーキテクチャパターンを分析
+     echo "=== プロジェクト構造分析 ==="
+     find . -type d -maxdepth 3 | grep -E "(src|lib|app|components|services|models|controllers|views|domain|infrastructure|presentation)" | head -20
+     
+     # 設定ファイルからフレームワーク特定
+     echo -e "\n=== フレームワーク・アーキテクチャ特定 ==="
+     [ -f tsconfig.json ] && echo "TypeScript設定:" && grep -E '"target"|"module"|"lib"' tsconfig.json
+     [ -f angular.json ] && echo "Angular プロジェクト"
+     [ -f next.config.js ] && echo "Next.js プロジェクト"
+     [ -f nuxt.config.js ] && echo "Nuxt.js プロジェクト"
+     [ -f vite.config.js ] && echo "Vite プロジェクト"
+     \`\`\`
+   
+   - **🧩 ドメイン設計とエンティティ関係の把握**：
+     \`\`\`bash
+     echo "=== ドメインモデル分析 ==="
+     # エンティティ・モデルファイルの探索
+     find . -name "*.ts" -o -name "*.js" | grep -E "(model|entity|domain|schema)" | head -10
+     
+     # データベーススキーマの確認
+     [ -f prisma/schema.prisma ] && echo "Prisma スキーマ:" && head -30 prisma/schema.prisma
+     find . -name "*.sql" | head -5
+     
+     # ビジネスロジック関連ファイルの探索
+     find . -name "*.ts" -o -name "*.js" | grep -E "(service|usecase|repository)" | head -10
+     \`\`\`
+   
+   - **📋 コーディング規約とパターンの確立**：
+     \`\`\`bash
+     echo "=== コーディング規約分析 ==="
+     # 設定ファイルから規約を特定
+     [ -f .eslintrc.js ] && echo "ESLint設定:" && head -20 .eslintrc.js
+     [ -f .prettierrc ] && echo "Prettier設定:" && cat .prettierrc
+     [ -f .editorconfig ] && echo "EditorConfig:" && cat .editorconfig
+     
+     # 既存コードから命名規則を分析
+     echo -e "\n=== 命名規則分析 ==="
+     find . -name "*.ts" -o -name "*.js" | head -5 | xargs grep -h "^export.*function\|^export.*class\|^export.*interface\|^export.*type" | head -10
+     
+     # インポート/エクスポートパターンの確認
+     echo -e "\n=== インポートパターン ==="
+     find . -name "*.ts" -o -name "*.js" | head -3 | xargs grep -h "^import" | head -10
+     \`\`\`
 
-4. **実装計画**: タスクの要件を満たすための実装計画を立ててください
+4. **🧪 テスト環境と品質基準の把握**：
+   \`\`\`bash
+   echo "=== テスト環境分析 ==="
+   # テストフレームワークの特定
+   [ -f jest.config.js ] && echo "Jest設定:" && head -10 jest.config.js
+   [ -f vitest.config.js ] && echo "Vitest設定:" && head -10 vitest.config.js
+   [ -f cypress.config.js ] && echo "Cypress設定:" && head -10 cypress.config.js
+   
+   # 既存テストファイルの確認とパターン分析
+   echo -e "\n=== 既存テストパターン ==="
+   find . -name "*.test.ts" -o -name "*.spec.ts" -o -name "*.test.js" -o -name "*.spec.js" | head -5
+   \`\`\`
 
-5. **段階的実装**:
+5. **📊 既存の実装パターンの理解**：
+   \`\`\`bash
+   echo "=== 既存実装パターン分析 ==="
+   # 類似機能の実装パターンを確認
+   find . -name "*.ts" -o -name "*.js" | head -5 | xargs grep -l "export.*function\|export.*class" | head -3
+   
+   # エラーハンドリングパターンの確認
+   echo -e "\n=== エラーハンドリングパターン ==="
+   find . -name "*.ts" -o -name "*.js" | head -3 | xargs grep -h "try.*catch\|throw.*Error" | head -5
+   
+   # APIエンドポイントパターンの確認（該当する場合）
+   echo -e "\n=== APIパターン ==="
+   find . -name "*.ts" -o -name "*.js" | xargs grep -h "app\\.get\|app\\.post\|router\\.get\|router\\.post" | head -5
+   \`\`\`
+
+6. **実装計画**: タスクの要件を満たすための実装計画を立ててください
+
+7. **段階的実装**:
    - **機能実装の場合**: TDDサイクルで実装（テスト作成 → 最小実装 → リファクタリング）
    - **ドキュメント等の場合**: 直接実装
    - 必要なファイルとディレクトリの作成

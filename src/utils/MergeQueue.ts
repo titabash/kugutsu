@@ -91,7 +91,7 @@ export class MergeQueue {
     };
 
     this.queue.push(item);
-    console.log(`📥 マージキューに追加: ${task.title} (待機数: ${this.queue.length})`);
+    console.log(`📥 [Merge Coordinator] マージキューに追加: ${task.title} ("${task.branchName}" → "${this.config.baseBranch}") (待機数: ${this.queue.length})`);
 
     // 非同期で次の処理を開始
     this.processNext().catch(error => {
@@ -119,14 +119,14 @@ export class MergeQueue {
       this.isProcessing = true;
       const item = this.queue.shift()!;
 
-      console.log(`\n🔀 マージ処理開始: ${item.task.title}`);
-      console.log(`📊 残りキュー: ${this.queue.length}件`);
+      console.log(`\n🔀 [Merge Coordinator] マージ処理開始: ${item.task.title} ("${item.task.branchName}" → "${this.config.baseBranch}")`);
+      console.log(`📊 [Merge Coordinator] 残りキュー: ${this.queue.length}件`);
 
       // マージ処理の実行
       const success = await this.executeMergeWithRetry(item);
 
       if (success) {
-        console.log(`✅ マージ成功: ${item.task.title}`);
+        console.log(`✅ [Merge Coordinator] マージ成功: ${item.task.title} ("${item.task.branchName}" → "${this.config.baseBranch}")`);
         this.eventEmitter.emitMergeCompleted(item.task, true);
         
         // クリーンアップ
@@ -151,11 +151,11 @@ export class MergeQueue {
           console.log(`[MergeQueue] CompletionReporter not available`);
         }
       } else if (item.conflictDetected) {
-        console.log(`⚠️ コンフリクト検出によりマージ中断: ${item.task.title}`);
+        console.log(`⚠️ [Merge Coordinator] コンフリクト検出によりマージ中断: ${item.task.title} ("${item.task.branchName}")`);
         // コンフリクト検出時はcleanup処理を行わない（ワークツリーを保持）
         // イベントも発火しない（既に emitMergeConflictDetected で発火済み）
       } else {
-        console.error(`❌ マージ失敗: ${item.task.title}`);
+        console.error(`❌ [Merge Coordinator] マージ失敗: ${item.task.title} ("${item.task.branchName}" → "${this.config.baseBranch}")`);
         this.eventEmitter.emitMergeCompleted(item.task, false, 'マージに失敗しました');
       }
 
@@ -183,7 +183,7 @@ export class MergeQueue {
   private async executeMergeWithRetry(item: MergeQueueItem): Promise<boolean> {
     while (item.retryCount < this.maxRetries) {
       try {
-        console.log(`\n🔄 マージ試行 ${item.retryCount + 1}/${this.maxRetries}: ${item.task.title}`);
+        console.log(`\n🔄 [Merge Coordinator] マージ試行 ${item.retryCount + 1}/${this.maxRetries}: ${item.task.title} ("${item.task.branchName}" → "${this.config.baseBranch}")`);
 
         // Step 1: 最新のメインブランチを取り込む
         const pullSuccess = await this.pullLatestMain(item.task);
@@ -196,7 +196,7 @@ export class MergeQueue {
         // Step 2: コンフリクトチェック
         const hasConflict = await this.detectConflict(item.task.worktreePath!);
         if (hasConflict) {
-          console.log(`⚠️ コンフリクト検出 - コンフリクト解消タスクを作成`);
+          console.log(`⚠️ [Merge Coordinator] コンフリクト検出: "${item.task.branchName}" ⟷ "${this.config.baseBranch}" - コンフリクト解消タスクを作成`);
           // コンフリクト検出イベントを発火
           this.eventEmitter.emitMergeConflictDetected(
             item.task,
@@ -236,7 +236,7 @@ export class MergeQueue {
     }
 
     try {
-      console.log(`📥 ローカルのメインブランチをマージ中...`);
+      console.log(`📥 [Merge Coordinator] "${this.config.baseBranch}" を "${task.branchName}" にマージ中...`);
 
       // ワークツリーでフィーチャーブランチを確認
       execSync(`git checkout ${task.branchName}`, {
@@ -253,7 +253,7 @@ export class MergeQueue {
           cwd: task.worktreePath,
           stdio: 'pipe'
         });
-        console.log(`✅ ローカルメインブランチのマージ完了`);
+        console.log(`✅ [Merge Coordinator] "${this.config.baseBranch}" を "${task.branchName}" にマージ完了`);
         return true;
       } catch (mergeError) {
         // マージエラーの場合、コンフリクトの可能性
@@ -291,7 +291,7 @@ export class MergeQueue {
     if (!task.branchName) return false;
 
     try {
-      console.log(`🔀 メインブランチへの最終マージ実行中...`);
+      console.log(`🔀 [Merge Coordinator] 最終マージ実行: "${task.branchName}" → "${this.config.baseBranch}"`);
 
       // メインリポジトリでメインブランチに切り替え
       execSync(`git checkout ${this.config.baseBranch}`, {
@@ -305,7 +305,7 @@ export class MergeQueue {
         stdio: 'pipe'
       });
 
-      console.log(`✅ マージ完了: ${task.branchName} -> ${this.config.baseBranch}`);
+      console.log(`✅ [Merge Coordinator] マージ完了: "${task.branchName}" → "${this.config.baseBranch}"`);
       return true;
     } catch (error) {
       console.error(`❌ 最終マージエラー:`, error);

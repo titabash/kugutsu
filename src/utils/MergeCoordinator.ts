@@ -81,13 +81,13 @@ export class MergeCoordinator {
     conflictResolutionInProgress?: boolean;
     error?: string;
   }> {
-    console.log(`🔒 マージ待機中: ${task.title} (キュー: ${this.mergeMutex.getQueueLength()})`);
+    console.log(`🔒 [Merge Coordinator] マージ待機中: ${task.title} ("${task.branchName}" → "${this.config.baseBranch}") (キュー: ${this.mergeMutex.getQueueLength()})`);
     
     // Taskオブジェクトを登録
     this.taskRegistry.set(task.id, task);
     
     return await this.mergeMutex.acquire(async () => {
-      console.log(`🔀 マージ実行開始: ${task.title}`);
+      console.log(`🔀 [Merge Coordinator] マージ実行開始: ${task.title} ("${task.branchName}" → "${this.config.baseBranch}")`);
       
       try {
         // メインブランチの最新化
@@ -97,10 +97,10 @@ export class MergeCoordinator {
         const mergeResult = await this.performMerge(task);
         
         if (mergeResult === true) {
-          console.log(`✅ マージ成功: ${task.title}`);
+          console.log(`✅ [Merge Coordinator] マージ成功: ${task.title} ("${task.branchName}" → "${this.config.baseBranch}")`);
           return { success: true };
         } else if (mergeResult === 'CONFLICT') {
-          console.log(`⚠️ コンフリクト検出: ${task.title}`);
+          console.log(`⚠️ [Merge Coordinator] コンフリクト検出: ${task.title} ("${task.branchName}" ⟷ "${this.config.baseBranch}")`);
           
           // コンフリクト解消を非同期で開始（Mutex外で実行）
           if (onConflictResolution) {
@@ -125,7 +125,7 @@ export class MergeCoordinator {
           };
         }
       } catch (error) {
-        console.error(`❌ マージ中にエラー: ${task.title}`, error);
+        console.error(`❌ [Merge Coordinator] マージ中にエラー: ${task.title} ("${task.branchName}" → "${this.config.baseBranch}")`, error);
         return { 
           success: false, 
           error: error instanceof Error ? error.message : String(error) 
@@ -141,16 +141,13 @@ export class MergeCoordinator {
     task: Task,
     onConflictResolution: (task: Task, engineerId: string, existingEngineer?: EngineerAI) => Promise<EngineerResult>
   ): Promise<EngineerResult> {
-    console.log(`🔧 コンフリクト解消開始（並列実行）: ${task.title}`);
+    console.log(`🔧 [Merge Coordinator] コンフリクト解消開始（並列実行）: ${task.title} ("${task.branchName}" ⟷ "${this.config.baseBranch}")`);
     
     try {
       const engineerId = `conflict-resolver-${Date.now()}`;
       const result = await onConflictResolution(task, engineerId);
       
-      console.log(`✅ コンフリクト解消完了: ${task.title}`);
-      
-      // コンフリクト解消完了 - 再レビューのために処理を終了
-      console.log(`✅ コンフリクト解消完了（再レビュー待ち）: ${task.title}`);
+      console.log(`✅ [Merge Coordinator] コンフリクト解消完了: ${task.title} ("${task.branchName}")`);
       
       // 結果に再レビューが必要であることを示すマーカーを追加
       result.needsReReview = true;
@@ -160,7 +157,7 @@ export class MergeCoordinator {
       this.pendingConflictResolutions.delete(task.id);
       return result;
     } catch (error) {
-      console.error(`❌ コンフリクト解消失敗: ${task.title}`, error);
+      console.error(`❌ [Merge Coordinator] コンフリクト解消失敗: ${task.title} ("${task.branchName}")`, error);
       this.pendingConflictResolutions.delete(task.id);
       
       return {
@@ -180,7 +177,7 @@ export class MergeCoordinator {
    */
   private async pullLatestMain(): Promise<void> {
     try {
-      console.log(`🔄 メインブランチを最新化中...`);
+      console.log(`🔄 [Merge Coordinator] メインブランチ "${this.config.baseBranch}" を最新化中...`);
       
       // メインブランチに切り替え
       execSync(`git checkout ${this.config.baseBranch}`, {
@@ -192,20 +189,20 @@ export class MergeCoordinator {
       const hasRemote = this.hasRemoteOrigin();
       
       if (this.config.useRemote && hasRemote) {
-        console.log(`📡 リモートリポジトリから最新化`);
+        console.log(`📡 [Merge Coordinator] リモートリポジトリから "${this.config.baseBranch}" を最新化`);
         execSync(`git pull origin ${this.config.baseBranch}`, {
           cwd: this.config.baseRepoPath,
           stdio: 'pipe'
         });
-        console.log(`✅ メインブランチ最新化完了`);
+        console.log(`✅ [Merge Coordinator] メインブランチ "${this.config.baseBranch}" 最新化完了`);
       } else if (!this.config.useRemote) {
-        console.log(`📂 ローカルモード - リモート更新をスキップ`);
+        console.log(`📂 [Merge Coordinator] ローカルモード - リモート更新をスキップ`);
       } else {
-        console.log(`📂 リモートリポジトリなし - プルをスキップ`);
+        console.log(`📂 [Merge Coordinator] リモートリポジトリなし - プルをスキップ`);
       }
       
     } catch (error) {
-      console.warn(`⚠️ メインブランチ最新化でエラー（継続）:`, error);
+      console.warn(`⚠️ [Merge Coordinator] メインブランチ "${this.config.baseBranch}" 最新化でエラー（継続）:`, error);
       // プル失敗でも継続（ローカルのみの場合など）
     }
   }
@@ -241,10 +238,11 @@ export class MergeCoordinator {
     }
 
     try {
-      console.log(`🔀 マージ実行: ${task.branchName} -> ${this.config.baseBranch}`);
+      console.log(`🔀 [Merge Coordinator] マージ実行: "${task.branchName}" → "${this.config.baseBranch}"`);
+      console.log(`📋 [Merge Coordinator] タスク: ${task.title} (ID: ${task.id})`);
 
       // Step 1: worktree側でmainブランチをマージしてコンフリクトチェック
-      console.log(`📥 worktree側でmainブランチをマージ中...`);
+      console.log(`📥 [Merge Coordinator] Worktree側で "${this.config.baseBranch}" をマージしてコンフリクトをチェック中...`);
       
       execSync(`git merge ${this.config.baseBranch}`, {
         cwd: worktreePath,
@@ -252,7 +250,7 @@ export class MergeCoordinator {
       });
 
       // Step 2: worktree側でマージが成功したら、mainブランチに切り替えてフィーチャーブランチをマージ
-      console.log(`📤 mainブランチにフィーチャーブランチをマージ中...`);
+      console.log(`📤 [Merge Coordinator] "${this.config.baseBranch}" ブランチに "${task.branchName}" をマージ中...`);
       
       execSync(`git checkout ${this.config.baseBranch}`, {
         cwd: this.config.baseRepoPath,
@@ -271,7 +269,7 @@ export class MergeCoordinator {
       const conflictDetected = await this.detectMergeConflictInWorktree(worktreePath);
       
       if (conflictDetected) {
-        console.log(`⚠️ worktree側でコンフリクト検出: ${task.branchName}`);
+        console.log(`⚠️ [Merge Coordinator] Worktree側でコンフリクト検出: "${task.branchName}" ⟷ "${this.config.baseBranch}"`);
         return 'CONFLICT';
       } else {
         // 通常のマージエラー - worktree側のマージを中止
@@ -342,7 +340,7 @@ export class MergeCoordinator {
     // Mutexで排他制御してマージを実行
     return await this.mergeMutex.acquire(async () => {
       try {
-        console.log(`🔄 最終マージ実行: ${task.title}`);
+        console.log(`🔄 [Merge Coordinator] 最終マージ実行: ${task.title} ("${task.branchName}" → "${this.config.baseBranch}")`);
         
         // メインブランチを最新化
         await this.pullLatestMain();
@@ -352,12 +350,12 @@ export class MergeCoordinator {
         
         if (result === true) {
           // マージ成功 - クリーンアップは呼び出し元で実行
-          console.log(`✅ 最終マージ成功: ${task.title}`);
+          console.log(`✅ [Merge Coordinator] 最終マージ成功: ${task.title} ("${task.branchName}" → "${this.config.baseBranch}")`);
         }
         
         return result;
       } catch (error) {
-        console.error(`❌ 最終マージエラー: ${task.title}`, error);
+        console.error(`❌ [Merge Coordinator] 最終マージエラー: ${task.title} ("${task.branchName}" → "${this.config.baseBranch}")`, error);
         return false;
       }
     });

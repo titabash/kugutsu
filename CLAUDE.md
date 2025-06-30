@@ -6,6 +6,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **DO NOT automatically run `git add` and `git commit` after making changes.** Only perform git operations when explicitly requested by the user. When making code changes, stop after the changes are complete and let the user decide when to commit.
 
+## Critical: Local Repository Only
+
+**This system MUST operate entirely within the local repository. DO NOT use any remote git operations such as:**
+- `git fetch origin`
+- `git pull origin`
+- `git push origin`
+- Any other commands that require network access or remote repositories
+
+All operations must be completed using only the local git repository. This is a hard requirement that must never be violated.
+
 ## Project Overview
 
 This is an AI-powered parallel development system built with TypeScript and the Claude Code SDK. It enables multiple AI engineers to work simultaneously on different tasks using git worktrees for isolation. The system includes task orchestration, automated code review, and intelligent merge coordination.

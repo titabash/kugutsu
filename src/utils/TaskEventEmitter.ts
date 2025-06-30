@@ -5,7 +5,7 @@ import { Task, EngineerResult, ReviewResult } from '../types/index.js';
  * タスクイベントの型定義
  */
 export interface TaskEvent {
-  type: 'DEVELOPMENT_COMPLETED' | 'REVIEW_COMPLETED' | 'MERGE_READY' | 'MERGE_COMPLETED' | 'TASK_FAILED' | 'MERGE_CONFLICT_DETECTED';
+  type: 'DEVELOPMENT_COMPLETED' | 'REVIEW_COMPLETED' | 'MERGE_READY' | 'MERGE_COMPLETED' | 'TASK_FAILED' | 'MERGE_CONFLICT_DETECTED' | 'TASK_COMPLETED' | 'DEPENDENCY_RESOLVED';
   taskId: string;
   timestamp: Date;
   payload: any;
@@ -65,6 +65,23 @@ export interface MergeConflictDetectedPayload {
   finalResult: EngineerResult;
   reviewHistory: ReviewResult[];
   engineerId: string;
+}
+
+/**
+ * タスク完了イベントのペイロード
+ */
+export interface TaskCompletedPayload {
+  task: Task;
+  result: EngineerResult;
+  engineerId: string;
+}
+
+/**
+ * 依存関係解決イベントのペイロード
+ */
+export interface DependencyResolvedPayload {
+  resolvedTaskId: string;
+  newReadyTasks: Task[];
 }
 
 /**
@@ -235,6 +252,52 @@ export class TaskEventEmitter extends EventEmitter {
    */
   onMergeConflictDetected(callback: (event: TaskEvent) => void): void {
     this.on('MERGE_CONFLICT_DETECTED', callback);
+  }
+
+  /**
+   * タスク完了イベントの発火（依存関係管理用）
+   */
+  emitTaskCompleted(task: Task, result: EngineerResult, engineerId: string): void {
+    const event: TaskEvent = {
+      type: 'TASK_COMPLETED',
+      taskId: task.id,
+      timestamp: new Date(),
+      payload: { task, result, engineerId } as TaskCompletedPayload
+    };
+    
+    console.log(`📢 タスク完了イベント発火: ${task.title}`);
+    this.emit('TASK_COMPLETED', event);
+    this.emit('task-event', event);
+  }
+
+  /**
+   * 依存関係解決イベントの発火
+   */
+  emitDependencyResolved(resolvedTaskId: string, newReadyTasks: Task[]): void {
+    const event: TaskEvent = {
+      type: 'DEPENDENCY_RESOLVED',
+      taskId: resolvedTaskId,
+      timestamp: new Date(),
+      payload: { resolvedTaskId, newReadyTasks } as DependencyResolvedPayload
+    };
+    
+    console.log(`📢 依存関係解決イベント発火: ${resolvedTaskId} → 新たに実行可能: ${newReadyTasks.map(t => t.title).join(', ')}`);
+    this.emit('DEPENDENCY_RESOLVED', event);
+    this.emit('task-event', event);
+  }
+
+  /**
+   * タスク完了イベントのリスナー登録
+   */
+  onTaskCompleted(callback: (event: TaskEvent) => void): void {
+    this.on('TASK_COMPLETED', callback);
+  }
+
+  /**
+   * 依存関係解決イベントのリスナー登録
+   */
+  onDependencyResolved(callback: (event: TaskEvent) => void): void {
+    this.on('DEPENDENCY_RESOLVED', callback);
   }
 
   /**

@@ -54,6 +54,33 @@ export class GitWorktreeManager {
   }
 
   /**
+   * タスクID用のworktreeを強制的に新規作成（依存関係解決後用）
+   */
+  async createWorktreeForced(taskId: string): Promise<{ path: string; branchName: string }> {
+    console.log(`🔄 強制的に新規Worktreeを作成: task-${taskId}`);
+    
+    // 既存の作成処理を待つ（排他制御）
+    if (this.worktreeMutex.has(taskId)) {
+      console.log(`⏳ Worktree作成処理を待機中: task-${taskId}`);
+      await this.worktreeMutex.get(taskId)!;
+    }
+
+    // 既存のworktreeを削除
+    await this.removeWorktree(taskId);
+
+    // 新しい作成処理を開始
+    const createPromise = this.doCreateWorktree(taskId, true); // 強制フラグを渡す
+    this.worktreeMutex.set(taskId, createPromise);
+    
+    try {
+      const result = await createPromise;
+      return result;
+    } finally {
+      this.worktreeMutex.delete(taskId);
+    }
+  }
+
+  /**
    * タスクIDをサニタイズして安全なブランチ名を生成
    */
   private sanitizeTaskId(taskId: string): string {
@@ -67,7 +94,7 @@ export class GitWorktreeManager {
   /**
    * 実際のworktree作成処理
    */
-  private async doCreateWorktree(taskId: string): Promise<{ path: string; branchName: string }> {
+  private async doCreateWorktree(taskId: string, forceNew: boolean = false): Promise<{ path: string; branchName: string }> {
     const sanitizedTaskId = this.sanitizeTaskId(taskId);
     const branchName = `feature/task-${sanitizedTaskId}`;
     const worktreePath = path.join(this.worktreeBasePath, `task-${sanitizedTaskId}`);
@@ -78,7 +105,7 @@ export class GitWorktreeManager {
         await this.removeWorktree(taskId);
       }
 
-      // ブランチが存在するかチェック
+      // ブランチが存在するかチェック（強制作成の場合は既存ブランチを削除）
       let branchExists = false;
       try {
         execSync(`git rev-parse --quiet --verify ${branchName}`, {
@@ -86,11 +113,31 @@ export class GitWorktreeManager {
           stdio: 'pipe'
         });
         branchExists = true;
-        console.log(`♻️ 既存ブランチを再利用: ${branchName}`);
+        
+        if (forceNew) {
+          console.log(`🗑️ 既存ブランチを削除して新規作成: ${branchName}`);
+          // 既存ブランチを強制削除
+          try {
+            execSync(`git branch -D ${branchName}`, {
+              cwd: this.baseRepoPath,
+              stdio: 'pipe'
+            });
+            branchExists = false;
+          } catch (deleteError) {
+            console.warn(`⚠️ ブランチ削除に失敗: ${deleteError}`);
+          }
+        } else {
+          console.log(`♻️ 既存ブランチを再利用: ${branchName}`);
+        }
       } catch {
         // ブランチが存在しない場合
         console.log(`🆕 新規ブランチを作成: ${branchName}`);
       }
+
+      // ローカルのbaseBranchから最新の状態で開始
+      const actionText = forceNew ? '最新の状態から再作成' : '作業を開始';
+      console.log(`📍 ローカルの${this.baseBranch}ブランチから${actionText}`);
+      // 注意: リモートからのfetch/pullは行わず、ローカルリポジトリで完結
 
       // worktreeを作成（既存ブランチの場合は-bオプションなし）
       const command = branchExists

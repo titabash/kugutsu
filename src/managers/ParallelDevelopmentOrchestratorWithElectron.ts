@@ -142,11 +142,7 @@ export class ParallelDevelopmentOrchestratorWithElectron extends ParallelDevelop
         electronLogAdapter.sendMessage('set-current-project-id', analysis.projectId);
       }
 
-      // 2. タスクの依存関係を解決
-      const orderedTasks = this.productOwnerAI.resolveDependencies(analysis.tasks);
-      this.log('ProductOwner', 'info', `🔗 依存関係解決完了`, 'Dependencies', 'Phase 1: Analysis');
-      
-      // CompletionReporterを初期化（プロジェクトIDを使用）
+      // 2. CompletionReporterを初期化（プロジェクトIDを使用）
       if (analysis.projectId) {
         this.completionReporter = new CompletionReporter(this.kugutsuDir, analysis.projectId);
         // PipelineManagerにCompletionReporterを設定
@@ -158,23 +154,31 @@ export class ParallelDevelopmentOrchestratorWithElectron extends ParallelDevelop
         this.pipelineManager.setCompletionReporter(this.completionReporter);
       }
       
-      const taskTitles = orderedTasks.map(t => t.title);
+      const taskTitles = analysis.tasks.map(t => t.title);
       await this.completionReporter.initialize(taskTitles);
       this.log('system', 'info', `📊 タスク完了レポーターを初期化 (${taskTitles.length}タスク)`, 'System', 'Initialization');
       
       // CompletionReporterのイベントリスナーを設定（サブクラスでオーバーライド可能）
       this.setupCompletionReporterListeners();
 
-      // 3. パイプラインマネージャーを開始
-      this.log('system', 'info', '🏗️ フェーズ2: 並列パイプライン開始', 'Orchestrator', 'Phase 2: Pipeline');
+      // 3. タスクの依存関係を初期化
+      this.log('system', 'info', '🔗 フェーズ2: 依存関係の初期化', 'Orchestrator', 'Phase 2: Dependencies');
+      this.log('system', 'info', `📋 初期化するタスク数: ${analysis.tasks.length}`, 'Orchestrator', 'Phase 2: Dependencies');
+      for (const task of analysis.tasks) {
+        this.log('system', 'info', `  - ${task.title} (ID: ${task.id}, 依存: ${task.dependencies.join(', ') || 'なし'})`, 'Orchestrator', 'Phase 2: Dependencies');
+      }
+      await this.pipelineManager.initializeTasks(analysis.tasks);
+      this.log('ProductOwner', 'info', `🔗 依存関係グラフ構築完了`, 'Dependencies', 'Phase 2: Dependencies');
+      
+      // 4. パイプラインマネージャーを開始
+      this.log('system', 'info', '🏗️ フェーズ3: 並列パイプライン開始', 'Orchestrator', 'Phase 3: Pipeline');
       await this.pipelineManager.start();
 
-      // 4. 全タスクをパイプラインに投入
-      this.log('system', 'info', '⚡ フェーズ3: タスク投入', 'Orchestrator', 'Phase 3: Task Enqueue');
-      for (const task of orderedTasks) {
+      // 5. 全タスクを内部状態に登録（依存関係によって自動的にキューに投入される）
+      this.log('system', 'info', '⚡ フェーズ4: タスク登録', 'Orchestrator', 'Phase 4: Task Registration');
+      for (const task of analysis.tasks) {
         this.activeTasks.set(task.id, task);
-        await this.pipelineManager.enqueueDevelopment(task);
-        this.log('system', 'info', `📥 タスク投入: ${task.title}`, 'Pipeline', 'Task Enqueue');
+        this.log('system', 'info', `📥 タスク登録: ${task.title}`, 'Pipeline', 'Task Registration');
       }
 
       // Electronにタスクデータを送信
@@ -182,12 +186,12 @@ export class ParallelDevelopmentOrchestratorWithElectron extends ParallelDevelop
         await this.onTaskAnalysisComplete(analysis);
       }
 
-      // 5. 全パイプラインの完了を待機
-      this.log('system', 'info', '⏳ フェーズ4: パイプライン完了待機', 'Orchestrator', 'Phase 4: Waiting');
+      // 6. 全パイプラインの完了を待機
+      this.log('system', 'info', '⏳ フェーズ5: パイプライン完了待機', 'Orchestrator', 'Phase 5: Waiting');
       await this.pipelineManager.waitForCompletion();
       
-      // 6. 結果の集計
-      this.log('system', 'info', '📊 フェーズ5: 結果集計', 'Orchestrator', 'Phase 5: Results');
+      // 7. 結果の集計
+      this.log('system', 'info', '📊 フェーズ6: 結果集計', 'Orchestrator', 'Phase 6: Results');
       
       // 結果のまとめ
       const results: import('../types/index.js').EngineerResult[] = Array.from(this.taskResults.values());

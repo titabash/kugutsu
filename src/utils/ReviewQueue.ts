@@ -3,6 +3,7 @@ import { ReviewWorkflow } from '../managers/ReviewWorkflow.js';
 import { EngineerAI } from '../managers/EngineerAI.js';
 import { TaskQueue } from './TaskQueue.js';
 import { TaskEventEmitter, ReviewCompletedPayload } from './TaskEventEmitter.js';
+import { DependencyManager } from './DependencyManager.js';
 
 /**
  * レビューキューアイテム
@@ -26,15 +27,18 @@ export class ReviewQueue {
   private maxConcurrentReviews: number;
   private reviewHistory = new Map<string, ReviewResult[]>();
   private maxRetries: number;
+  private dependencyManager?: DependencyManager;
 
   constructor(
     reviewWorkflow: ReviewWorkflow, 
     maxConcurrentReviews: number = 2,
-    maxRetries: number = 5
+    maxRetries: number = 5,
+    dependencyManager?: DependencyManager
   ) {
     this.reviewWorkflow = reviewWorkflow;
     this.maxConcurrentReviews = maxConcurrentReviews;
     this.maxRetries = maxRetries;
+    this.dependencyManager = dependencyManager;
     this.queue = new TaskQueue<ReviewQueueItem>(maxConcurrentReviews);
     this.eventEmitter = TaskEventEmitter.getInstance();
     
@@ -72,6 +76,11 @@ export class ReviewQueue {
    */
   private async processReview(item: ReviewQueueItem): Promise<void> {
     console.log(`\n🔍 レビュー処理開始: ${item.task.title}`);
+    
+    // レビュー中としてマーク
+    if (this.dependencyManager) {
+      this.dependencyManager.markReviewing(item.task.id);
+    }
     
     try {
       // レビューワークフローを実行

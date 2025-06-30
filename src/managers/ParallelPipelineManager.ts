@@ -5,8 +5,9 @@ import { ReviewWorkflow } from './ReviewWorkflow.js';
 import { TaskQueue } from '../utils/TaskQueue.js';
 import { ReviewQueue } from '../utils/ReviewQueue.js';
 import { MergeQueue } from '../utils/MergeQueue.js';
-import { TaskEventEmitter, TaskEvent, DevelopmentCompletedPayload, ReviewCompletedPayload, MergeReadyPayload, MergeConflictDetectedPayload } from '../utils/TaskEventEmitter.js';
+import { TaskEventEmitter, TaskEvent, DevelopmentCompletedPayload, ReviewCompletedPayload, MergeReadyPayload, MergeConflictDetectedPayload, TaskCompletedPayload, DependencyResolvedPayload } from '../utils/TaskEventEmitter.js';
 import { CompletionReporter } from '../utils/CompletionReporter.js';
+import { DependencyManager } from '../utils/DependencyManager.js';
 
 /**
  * 開発キューアイテム
@@ -30,11 +31,14 @@ export class ParallelPipelineManager {
   private eventEmitter: TaskEventEmitter;
   private engineers = new Map<string, EngineerAI>();
   private isRunning = false;
+  private dependencyManager: DependencyManager;
+  private allTasks = new Map<string, Task>();  // 全タスクを保持
 
   constructor(gitManager: GitWorktreeManager, config: SystemConfig, completionReporter?: CompletionReporter | null) {
     this.gitManager = gitManager;
     this.config = config;
     this.eventEmitter = TaskEventEmitter.getInstance();
+    this.dependencyManager = new DependencyManager();
 
     // キューの初期化
     this.developmentQueue = new TaskQueue<DevelopmentQueueItem>(config.maxConcurrentEngineers);
@@ -43,10 +47,11 @@ export class ParallelPipelineManager {
     this.reviewQueue = new ReviewQueue(
       reviewWorkflow, 
       config.maxConcurrentEngineers,
-      config.maxReviewRetries ?? 5
+      config.maxReviewRetries ?? 5,
+      this.dependencyManager
     );
     
-    this.mergeQueue = new MergeQueue(gitManager, config, completionReporter ?? undefined);
+    this.mergeQueue = new MergeQueue(gitManager, config, completionReporter ?? undefined, this.dependencyManager);
 
     // イベントリスナーの設定
     this.setupEventListeners();
@@ -136,6 +141,87 @@ export class ParallelPipelineManager {
       // 開発キューに戻す（優先度高）
       await this.enqueueDevelopment(conflictTask, engineer);
     });
+
+    // マージ完了イベント（依存関係解決）
+    this.eventEmitter.onMergeCompleted(async (event: TaskEvent) => {
+      const payload = event.payload as any; // MergeCompletedPayload
+      
+      if (payload.success) {
+        console.log(`\n✅ マージ完了イベント受信: ${payload.task.title}`);
+        
+        // マージ済みとしてマーク
+        const newReadyTasks = this.dependencyManager.markMerged(payload.task.id);
+        
+        if (newReadyTasks.length > 0) {
+          console.log(`\n🎯 新たに実行可能になったタスク: ${newReadyTasks.map(t => t.title).join(', ')}`);
+          
+          // 依存関係解決イベントを発火
+          this.eventEmitter.emitDependencyResolved(payload.task.id, newReadyTasks);
+          
+          // 新たに実行可能になったタスクをキューに追加
+          for (const task of newReadyTasks) {
+            // 依存関係解決後のタスクには最新のbaseBranchから新規worktreeを作成するフラグを設定
+            task.forceNewWorktree = true;
+            await this.enqueueDevelopment(task);
+          }
+        }
+        
+        // タスク完了イベントも発火（互換性のため）
+        this.eventEmitter.emitTaskCompleted(payload.task, payload.finalResult || {}, payload.engineerId || '');
+      }
+    });
+
+    // タスク完了イベント（互換性のため残す）
+    this.eventEmitter.onTaskCompleted(async (event: TaskEvent) => {
+      const payload = event.payload as TaskCompletedPayload;
+      console.log(`\n📌 タスク完了イベント受信（互換性）: ${payload.task.title}`);
+    });
+
+    // 依存関係解決イベント
+    this.eventEmitter.onDependencyResolved(async (event: TaskEvent) => {
+      const payload = event.payload as DependencyResolvedPayload;
+      console.log(`\n🔓 依存関係解決: ${payload.resolvedTaskId}`);
+    });
+  }
+
+  /**
+   * タスクを初期化（依存関係グラフを構築）
+   */
+  async initializeTasks(tasks: Task[]): Promise<void> {
+    console.log(`\n📊 タスク初期化: ${tasks.length}個のタスク`);
+    
+    // 全タスクを保存
+    for (const task of tasks) {
+      this.allTasks.set(task.id, task);
+      console.log(`📌 タスク登録: ${task.title} (ID: ${task.id})`);
+      console.log(`  - 依存関係: ${task.dependencies.length > 0 ? task.dependencies.join(', ') : 'なし'}`);
+    }
+    
+    // 依存関係グラフを構築
+    this.dependencyManager.buildDependencyGraph(tasks);
+    
+    // 循環依存をチェック
+    const cycles = this.dependencyManager.detectCycles();
+    if (cycles.length > 0) {
+      const errorMessage = `循環依存が検出されました:\n${cycles.map(cycle => cycle.join(' → ')).join('\n')}`;
+      console.error(`❌ ${errorMessage}`);
+      throw new Error(errorMessage);
+    }
+    
+    // 依存関係のステータスサマリーを表示
+    const summary = this.dependencyManager.getStatusSummary();
+    console.log(`\n📈 依存関係ステータス:`);
+    console.log(`  - 合計: ${summary.total}`);
+    console.log(`  - 実行可能: ${summary.ready}`);
+    console.log(`  - 待機中: ${summary.waiting}`);
+    
+    // 実行可能なタスクのみをキューに追加
+    const readyTasks = this.dependencyManager.getReadyTasks();
+    console.log(`\n🚀 実行可能なタスク: ${readyTasks.map(t => t.title).join(', ')}`);
+    
+    for (const task of readyTasks) {
+      await this.enqueueDevelopment(task);
+    }
   }
 
   /**
@@ -171,6 +257,15 @@ export class ParallelPipelineManager {
    * タスクを開発キューに追加
    */
   async enqueueDevelopment(task: Task, engineer?: EngineerAI): Promise<void> {
+    // タスクの依存関係ステータスを更新
+    const depStatus = this.dependencyManager.getTaskDependencyStatus(task.id);
+    if (depStatus) {
+      task.dependencyStatus = depStatus;
+    }
+    
+    // タスクを更新
+    this.allTasks.set(task.id, task);
+    
     const item: DevelopmentQueueItem = {
       task,
       retryCount: 0,
@@ -183,6 +278,16 @@ export class ParallelPipelineManager {
 
     await this.developmentQueue.enqueue(task.id, item, priority);
     console.log(`📥 開発キューに追加: ${task.title} (優先度: ${priority})`);
+    
+    if (depStatus && (depStatus.blockedBy.length > 0 || depStatus.waitingFor.length > 0)) {
+      console.log(`  ⏳ 依存関係待機中:`);
+      if (depStatus.blockedBy.length > 0) {
+        console.log(`    - ブロック: ${depStatus.blockedBy.join(', ')}`);
+      }
+      if (depStatus.waitingFor.length > 0) {
+        console.log(`    - 実行待ち: ${depStatus.waitingFor.join(', ')}`);
+      }
+    }
   }
 
   /**
@@ -191,10 +296,47 @@ export class ParallelPipelineManager {
   private async processDevelopment(item: DevelopmentQueueItem): Promise<void> {
     console.log(`\n👷 開発処理開始: ${item.task.title}`);
     
+    // 依存関係の状態を確認
+    const depStatus = this.dependencyManager.getTaskDependencyStatus(item.task.id);
+    
+    // デバッグ情報を表示
+    console.log(`🔍 依存関係チェック: ${item.task.title} (ID: ${item.task.id})`);
+    console.log(`  - 依存タスクID: ${item.task.dependencies.join(', ') || 'なし'}`);
+    
+    if (depStatus) {
+      console.log(`  - ブロック中: ${depStatus.blockedBy.length > 0 ? depStatus.blockedBy.join(', ') : 'なし'}`);
+      console.log(`  - 実行待ち: ${depStatus.waitingFor.length > 0 ? depStatus.waitingFor.join(', ') : 'なし'}`);
+      console.log(`  - 失敗依存: ${depStatus.failedDependencies.length > 0 ? depStatus.failedDependencies.join(', ') : 'なし'}`);
+      
+      if (depStatus.blockedBy.length > 0 || depStatus.waitingFor.length > 0) {
+        console.log(`⏳ タスクは依存関係待機中: ${item.task.title}`);
+        
+        // すぐにキューに戻す（低優先度で）
+        await this.developmentQueue.enqueue(item.task.id, item, -100);
+        console.log(`🔁 タスクをキューに戻しました: ${item.task.title}`);
+        
+        return;
+      }
+    } else {
+      console.log(`  ⚠️ 依存関係ステータスが取得できません`);
+    }
+    
+    // タスクを実行中としてマーク
+    this.dependencyManager.markRunning(item.task.id);
+    
     try {
-      // ワークツリーを作成（既存のものがある場合は再利用）
-      if (!item.task.worktreePath || !item.task.branchName) {
-        const worktreeInfo = await this.gitManager.createWorktree(item.task.id);
+      // ワークツリーを作成（依存関係解決後は強制的に新規作成）
+      if (!item.task.worktreePath || !item.task.branchName || item.task.forceNewWorktree) {
+        if (item.task.forceNewWorktree) {
+          console.log(`🔄 依存関係解決後のため新規ワークツリーを作成: ${item.task.title}`);
+          // 既存のworktreeとブランチをクリア
+          item.task.worktreePath = undefined;
+          item.task.branchName = undefined;
+          // フラグをリセット
+          item.task.forceNewWorktree = false;
+        }
+        
+        const worktreeInfo = await this.gitManager.createWorktreeForced(item.task.id);
         item.task.branchName = worktreeInfo.branchName;
         item.task.worktreePath = worktreeInfo.path;
       } else {
@@ -215,6 +357,9 @@ export class ParallelPipelineManager {
 
       if (result.success) {
         console.log(`✅ 開発完了: ${item.task.title}`);
+        
+        // 開発完了としてマーク
+        this.dependencyManager.markDeveloped(item.task.id);
         
         // 開発完了イベントを発火
         this.eventEmitter.emitDevelopmentCompleted(item.task, result, engineerId);
@@ -246,11 +391,13 @@ export class ParallelPipelineManager {
     development: { waiting: number; processing: number };
     review: { waiting: number; processing: number; totalReviewed: number };
     merge: { queueLength: number; isProcessing: boolean };
+    dependencies: { total: number; waiting: number; ready: number; running: number; completed: number; failed: number };
   } {
     return {
       development: this.developmentQueue.getStats(),
       review: this.reviewQueue.getStats(),
-      merge: this.mergeQueue.getStats()
+      merge: this.mergeQueue.getStats(),
+      dependencies: this.dependencyManager.getStatusSummary()
     };
   }
 
@@ -263,10 +410,14 @@ export class ParallelPipelineManager {
     // 定期的に統計情報を表示
     const statsInterval = setInterval(() => {
       const stats = this.getStats();
+      // 開発キューの待機数に、依存関係で待機中のタスク数を含める
+      const totalWaitingDev = stats.development.waiting + stats.dependencies.waiting;
+      
       console.log(`📊 パイプライン状況:`);
-      console.log(`  開発: 待機=${stats.development.waiting}, 処理中=${stats.development.processing}`);
+      console.log(`  開発: 待機=${totalWaitingDev}, 処理中=${stats.development.processing}`);
       console.log(`  レビュー: 待機=${stats.review.waiting}, 処理中=${stats.review.processing}`);
       console.log(`  マージ: 待機=${stats.merge.queueLength}, 処理中=${stats.merge.isProcessing}`);
+      console.log(`  依存関係: 待機=${stats.dependencies.waiting}, 実行可能=${stats.dependencies.ready}, 実行中=${stats.dependencies.running}, 完了=${stats.dependencies.completed}`);
     }, 5000);
 
     try {
@@ -280,6 +431,19 @@ export class ParallelPipelineManager {
       while (this.mergeQueue.getStats().queueLength > 0 || this.mergeQueue.getStats().isProcessing) {
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
+      
+      // 全タスクが完了するまで待つ（依存関係も含む）
+      const depStats = this.dependencyManager.getStatusSummary();
+      if (depStats.waiting > 0 || depStats.ready > 0 || depStats.running > 0) {
+        console.log(`⏳ 依存関係の完了を待機中...`);
+        while (true) {
+          const currentStats = this.dependencyManager.getStatusSummary();
+          if (currentStats.waiting === 0 && currentStats.ready === 0 && currentStats.running === 0) {
+            break;
+          }
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
 
       console.log(`\n✅ 全パイプライン処理完了`);
     } finally {
@@ -292,6 +456,18 @@ export class ParallelPipelineManager {
    */
   private async handleTaskError(task: Task, error: Error, phase: string): Promise<void> {
     console.error(`❌ ${phase}処理エラー: ${task.title}`, error);
+    
+    // 依存関係マネージャーで失敗としてマーク
+    const affectedTasks = this.dependencyManager.markFailed(task.id);
+    
+    if (affectedTasks.length > 0) {
+      console.log(`⚠️ 影響を受けるタスク: ${affectedTasks.map(t => t.title).join(', ')}`);
+      
+      // 影響を受けるタスクも失敗させる
+      for (const affectedTask of affectedTasks) {
+        this.eventEmitter.emitTaskFailed(affectedTask, `依存タスク ${task.title} が失敗したため`, phase as any);
+      }
+    }
     
     // リソースクリーンアップ
     try {

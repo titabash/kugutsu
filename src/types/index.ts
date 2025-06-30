@@ -33,6 +33,14 @@ export interface Task {
     reviewHistory: ReviewResult[];
     originalEngineerId: string;
   };
+  // 依存関係ステータス
+  dependencyStatus?: {
+    blockedBy: string[];      // 待機中の依存タスクID
+    waitingFor: string[];     // 完了待ちの依存タスクID
+    failedDependencies: string[];  // 失敗した依存タスク
+  };
+  // ワークツリー強制作成フラグ
+  forceNewWorktree?: boolean;
   // 拡張メタデータ（プロダクトオーナーAIの分析結果）
   metadata?: {
     skillRequirements?: string[];
@@ -163,4 +171,13 @@ export interface PhaseDocument {
   };
   createdAt: Date;
   updatedAt: Date;
+}
+
+/**
+ * 依存タスク失敗時の処理戦略
+ */
+export interface DependencyFailureStrategy {
+  onDependencyFailed: 'skip' | 'retry' | 'continue-partial' | 'fail-cascade';
+  maxRetries?: number;
+  retryDelay?: number;
 }

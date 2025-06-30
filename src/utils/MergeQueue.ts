@@ -3,6 +3,7 @@ import { Task, EngineerResult, ReviewResult, SystemConfig } from '../types/index
 import { GitWorktreeManager } from '../managers/GitWorktreeManager.js';
 import { TaskEventEmitter } from './TaskEventEmitter.js';
 import { CompletionReporter } from './CompletionReporter.js';
+import { DependencyManager } from './DependencyManager.js';
 
 /**
  * マージキューアイテム
@@ -58,12 +59,14 @@ export class MergeQueue {
   private eventEmitter: TaskEventEmitter;
   private maxRetries = 3;
   private completionReporter?: CompletionReporter;
+  private dependencyManager?: DependencyManager;
 
-  constructor(gitManager: GitWorktreeManager, config: SystemConfig, completionReporter?: CompletionReporter) {
+  constructor(gitManager: GitWorktreeManager, config: SystemConfig, completionReporter?: CompletionReporter, dependencyManager?: DependencyManager) {
     this.gitManager = gitManager;
     this.config = config;
     this.eventEmitter = TaskEventEmitter.getInstance();
     this.completionReporter = completionReporter;
+    this.dependencyManager = dependencyManager;
   }
 
   /**
@@ -121,6 +124,11 @@ export class MergeQueue {
 
       console.log(`\n🔀 [Merge Coordinator] マージ処理開始: ${item.task.title} ("${item.task.branchName}" → "${this.config.baseBranch}")`);
       console.log(`📊 [Merge Coordinator] 残りキュー: ${this.queue.length}件`);
+
+      // マージ中としてマーク
+      if (this.dependencyManager) {
+        this.dependencyManager.markMerging(item.task.id);
+      }
 
       // マージ処理の実行
       const success = await this.executeMergeWithRetry(item);

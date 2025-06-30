@@ -426,11 +426,6 @@ Gitのベストプラクティスに従って、フィーチャーブランチ�
             const finalMergeResult = await this.performFinalMergeAfterReReview(task);
             if (finalMergeResult) {
               console.log(`✅ 最終マージ成功: ${task.title}`);
-              
-              // クリーンアップの実行
-              await this.cleanupAfterMerge(task);
-              console.log(`🧹 クリーンアップ完了: ${task.title}`);
-              
               return true;
             } else {
               console.error(`❌ 最終マージ失敗: ${task.title}`);
@@ -471,11 +466,6 @@ Gitのベストプラクティスに従って、フィーチャーブランチ�
             const finalMergeResult = await this.performFinalMergeAfterReReview(task);
             if (finalMergeResult) {
               console.log(`✅ 最終マージ成功（コメント付き承認）: ${task.title}`);
-              
-              // クリーンアップの実行
-              await this.cleanupAfterMerge(task);
-              console.log(`🧹 クリーンアップ完了: ${task.title}`);
-              
               return true;
             } else {
               console.error(`❌ 最終マージ失敗: ${task.title}`);

@@ -816,18 +816,23 @@ ${analysis}
 
       this.info(`📄 分析結果JSONを読み込み: ${jsonData.tasks?.length || 0}個のタスク`);
 
-      // タスクを変換
+      // タスクを変換（タイトル→IDのマッピングを作成）
+      const titleToIdMap = new Map<string, string>();
       const tasks: Task[] = (jsonData.tasks || []).map((taskData: any) => {
         const description = this.buildTaskDescription(taskData);
+        const taskId = uuidv4();
+        
+        // タイトル→IDのマッピングを保存
+        titleToIdMap.set(taskData.title || 'タスク', taskId);
 
         return {
-          id: uuidv4(),
+          id: taskId,
           type: taskData.type || 'feature',
           title: taskData.title || 'タスク',
           description: description,
           priority: taskData.priority || 'medium',
           status: 'pending',
-          dependencies: taskData.dependencies || [],
+          dependencies: taskData.dependencies || [], // 一旦タイトルのまま保存
           createdAt: new Date(),
           updatedAt: new Date(),
           metadata: {
@@ -840,6 +845,24 @@ ${analysis}
             successMetrics: taskData.successMetrics
           }
         };
+      });
+      
+      // 依存関係をタイトルからIDに変換
+      tasks.forEach(task => {
+        this.info(`🔗 タスク依存関係処理: ${task.title}`);
+        this.info(`  - 元の依存関係: ${task.dependencies.join(', ') || 'なし'}`);
+        
+        task.dependencies = task.dependencies.map(depTitle => {
+          const depId = titleToIdMap.get(depTitle);
+          if (!depId) {
+            this.warn(`⚠️ 依存タスク "${depTitle}" が見つかりません`);
+            return depTitle; // 見つからない場合はタイトルのまま（後でエラーになる）
+          }
+          this.info(`  - "${depTitle}" → ${depId}`);
+          return depId;
+        });
+        
+        this.info(`  - 変換後の依存関係: ${task.dependencies.join(', ') || 'なし'}`);
       });
 
       if (tasks.length > 0) {
@@ -917,19 +940,24 @@ ${analysis}
 
         this.info(`📋 JSONタスクリストを検出: ${jsonData.tasks?.length || 0}個のタスク`);
 
-        // 新しいフォーマットと旧フォーマットの両方をサポート
+        // 新しいフォーマットと旧フォーマットの両方をサポート（タイトル→IDのマッピングを作成）
+        const titleToIdMap = new Map<string, string>();
         const tasks: Task[] = (jsonData.tasks || []).map((taskData: any) => {
           // 詳細な指示情報を含む拡張タスクを作成
           const description = this.buildTaskDescription(taskData);
+          const taskId = uuidv4();
+          
+          // タイトル→IDのマッピングを保存
+          titleToIdMap.set(taskData.title || 'タスク', taskId);
 
           return {
-            id: uuidv4(),
+            id: taskId,
             type: taskData.type || 'feature',
             title: taskData.title || 'タスク',
             description: description,
             priority: taskData.priority || 'medium',
             status: 'pending',
-            dependencies: taskData.dependencies || [],
+            dependencies: taskData.dependencies || [], // 一旦タイトルのまま保存
             createdAt: new Date(),
             updatedAt: new Date(),
             // 要件情報をメタデータとして保存
@@ -943,6 +971,18 @@ ${analysis}
               successMetrics: taskData.successMetrics
             }
           };
+        });
+        
+        // 依存関係をタイトルからIDに変換
+        tasks.forEach(task => {
+          task.dependencies = task.dependencies.map(depTitle => {
+            const depId = titleToIdMap.get(depTitle);
+            if (!depId) {
+              this.warn(`⚠️ 依存タスク "${depTitle}" が見つかりません`);
+              return depTitle; // 見つからない場合はタイトルのまま（後でエラーになる）
+            }
+            return depId;
+          });
         });
 
 
@@ -981,54 +1021,12 @@ ${analysis}
 
   /**
    * タスクの依存関係を解決して実行順序を決定
+   * @deprecated DependencyManagerで管理されるため、このメソッドは使用されません
    */
   resolveDependencies(tasks: Task[]): Task[] {
-    const resolved: Task[] = [];
-    const remaining = [...tasks];
-
-    while (remaining.length > 0) {
-      const before = remaining.length;
-
-      for (let i = remaining.length - 1; i >= 0; i--) {
-        const task = remaining[i];
-
-        // 依存関係がすべて解決されているかチェック
-        const dependenciesResolved = task.dependencies.every(depTitle =>
-          resolved.some(resolvedTask => resolvedTask.title === depTitle)
-        );
-
-        if (dependenciesResolved) {
-          resolved.push(task);
-          remaining.splice(i, 1);
-        }
-      }
-
-      // 循環依存のチェック
-      if (remaining.length === before && remaining.length > 0) {
-        // 詳細な循環依存情報をログ出力
-        const cyclicTasks = remaining.map(task => ({
-          title: task.title,
-          dependencies: task.dependencies
-        }));
-
-        this.warn('⚠️ 循環依存が検出されました。詳細:');
-        cyclicTasks.forEach(task => {
-          this.warn(`   - "${task.title}" → 依存: [${task.dependencies.join(', ')}]`);
-        });
-
-        // 依存関係を無視して残タスクを追加
-        const tasksWithoutDeps = remaining.map(task => ({
-          ...task,
-          dependencies: [] // 循環依存を解消
-        }));
-
-        resolved.push(...tasksWithoutDeps);
-        this.info('📝 循環依存を解消して続行します');
-        break;
-      }
-    }
-
-    return resolved;
+    // DependencyManagerが依存関係を管理するため、タスクをそのまま返す
+    this.info('🔗 依存関係の解決はDependencyManagerに委譲されます');
+    return tasks;
   }
 
   /**

@@ -333,40 +333,15 @@ export class MergeQueue {
     try {
       console.log(`🧹 クリーンアップ開始: ${task.title}`);
 
-      // ワークツリーの削除
-      await this.gitManager.removeWorktree(task.id);
-
-      // フィーチャーブランチの削除（マージ成功時のみ）
-      // worktreeで使用中でないことを確認してから削除
-      try {
-        const worktreeList = execSync('git worktree list --porcelain', {
-          cwd: this.config.baseRepoPath,
-          encoding: 'utf-8',
-          stdio: 'pipe'
-        });
-        
-        const isCheckedOut = worktreeList.includes(`branch refs/heads/${task.branchName}`);
-        if (isCheckedOut) {
-          console.log(`⚠️ ブランチ ${task.branchName} はworktreeで使用中のため削除をスキップ`);
-        } else {
-          // コンフリクト解消タスクの場合はブランチを削除しない
-          const isConflictResolution = task.isConflictResolution || task.type === 'conflict-resolution';
-          
-          console.log(`🔍 ブランチ削除判定: タスクタイプ="${task.type}" isConflictResolution=${task.isConflictResolution} 削除スキップ=${isConflictResolution}`);
-          
-          if (isConflictResolution) {
-            console.log(`🔄 コンフリクト解消タスクのためブランチを保持: ${task.branchName}`);
-          } else {
-            execSync(`git branch -d ${task.branchName}`, {
-              cwd: this.config.baseRepoPath,
-              stdio: 'pipe'
-            });
-            console.log(`🗑️ ブランチ削除完了: ${task.branchName}`);
-          }
-        }
-      } catch (branchError) {
-        console.warn(`⚠️ ブランチ削除中にエラー: ${branchError}`);
-      }
+      // コンフリクト解消タスクの場合はブランチを削除しない
+      const isConflictResolution = task.isConflictResolution || task.type === 'conflict-resolution';
+      
+      console.log(`🔍 ブランチ削除判定: タスクタイプ="${task.type}" isConflictResolution=${task.isConflictResolution} 削除スキップ=${isConflictResolution}`);
+      
+      // ワークツリーとブランチを同時に削除
+      await this.gitManager.cleanupCompletedTask(task.id, {
+        deleteBranch: !isConflictResolution
+      });
 
       console.log(`✅ クリーンアップ完了`);
     } catch (error) {

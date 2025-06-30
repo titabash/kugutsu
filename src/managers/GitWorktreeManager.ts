@@ -241,7 +241,7 @@ export class GitWorktreeManager {
   /**
    * タスク完了後のクリーンアップ
    */
-  async cleanupCompletedTask(taskId: string): Promise<void> {
+  async cleanupCompletedTask(taskId: string, options: { deleteBranch?: boolean } = {}): Promise<void> {
     const sanitizedTaskId = this.sanitizeTaskId(taskId);
     const branchName = `feature/task-${sanitizedTaskId}`;
     
@@ -249,11 +249,27 @@ export class GitWorktreeManager {
       // worktreeを削除
       await this.removeWorktree(taskId);
 
-      // ブランチを削除（オプション - 設定で制御可能）
-      // execSync(`git branch -D ${branchName}`, {
-      //   cwd: this.baseRepoPath,
-      //   stdio: 'pipe'
-      // });
+      // ブランチを削除（オプション）
+      if (options.deleteBranch) {
+        try {
+          execSync(`git branch -d ${branchName}`, {
+            cwd: this.baseRepoPath,
+            stdio: 'pipe'
+          });
+          console.log(`🗑️ ブランチ削除完了: ${branchName}`);
+        } catch (branchError) {
+          // -dで削除できない場合は-Dで強制削除を試みる
+          try {
+            execSync(`git branch -D ${branchName}`, {
+              cwd: this.baseRepoPath,
+              stdio: 'pipe'
+            });
+            console.log(`🗑️ ブランチ強制削除完了: ${branchName}`);
+          } catch (forceBranchError) {
+            console.warn(`⚠️ ブランチ削除中にエラー: ${forceBranchError}`);
+          }
+        }
+      }
 
       console.log(`🧹 クリーンアップ完了: task-${taskId}`);
 

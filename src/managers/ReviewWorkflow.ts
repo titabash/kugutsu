@@ -348,34 +348,6 @@ Gitのベストプラクティスに従って、フィーチャーブランチ�
 判断に迷った場合は、より保守的な選択（既存機能を確実に保護する選択）を行ってください。`;
   }
 
-  /**
-   * マージ後のクリーンアップ
-   * @deprecated 新しいパイプラインではMergeQueueで実行
-   */
-  private async cleanupAfterMerge(task: Task): Promise<void> {
-    if (!task.branchName) {
-      return;
-    }
-
-    try {
-      console.log(`🧹 クリーンアップ開始: ${task.id}`);
-
-      // ワークツリーの削除
-      await this.gitManager.removeWorktree(task.id);
-
-      // フィーチャーブランチの削除
-      execSync(`git branch -d ${task.branchName}`, {
-        cwd: this.config.baseRepoPath,
-        stdio: 'pipe'
-      });
-
-      console.log(`✅ クリーンアップ完了: ${task.id}`);
-
-    } catch (error) {
-      console.warn(`⚠️ クリーンアップ中にエラー:`, error);
-      // クリーンアップエラーは継続可能
-    }
-  }
 
   /**
    * レビューワークフローの統計情報を取得

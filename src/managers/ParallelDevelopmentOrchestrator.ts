@@ -284,7 +284,7 @@ export class ParallelDevelopmentOrchestrator {
       this.activeTasks.delete(taskId);
       
       if (task.worktreePath) {
-        await this.gitManager.cleanupCompletedTask(taskId);
+        await this.gitManager.cleanupCompletedTask(taskId, { deleteBranch: true });
       }
 
       console.log(`🛑 タスク ${taskId} を強制停止しました`);

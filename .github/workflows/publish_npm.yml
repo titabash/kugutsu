@@ -1,0 +1,27 @@
+name: Publish package to npm registry
+on:
+  release:
+    types: [published]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      # Setup .npmrc file to publish to npm registry
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+          registry-url: "https://registry.npmjs.org"
+          scope: "@titabash"
+      - run: npm ci
+      # Remove prerelease suffix and set to release version
+      - run: |
+          RELEASE_VERSION=$(echo ${{ github.ref_name }} | sed 's/^v//')
+          npm version $RELEASE_VERSION --no-git-tag-version
+      - run: npm run build
+      - run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

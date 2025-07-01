@@ -17,10 +17,10 @@ jobs:
           registry-url: "https://registry.npmjs.org"
           scope: "@titabash"
       - run: npm ci
-      # Remove prerelease suffix and set to release version
+      # Use version from package.json as the release version
       - run: |
-          RELEASE_VERSION=$(echo ${{ github.ref_name }} | sed 's/^v//')
-          npm version $RELEASE_VERSION --no-git-tag-version
+          CURRENT_VERSION=$(node -p "require('./package.json').version")
+          echo "Publishing version: $CURRENT_VERSION"
       - run: npm run build
       - run: npm publish --access public
         env:

@@ -28,29 +28,8 @@ kugutsu "Add user authentication"
 
 ## Installation
 
-### GitHub Packages Setup
-
-Since this package is distributed through GitHub Packages, you need to configure npm to use GitHub Packages registry:
-
 ```bash
-# 1. Create a GitHub Personal Access Token with 'read:packages' scope
-# Visit: https://github.com/settings/tokens/new?scopes=read:packages
-
-# 2. Configure npm to use GitHub Packages for @titabash scope
-npm config set @titabash:registry https://npm.pkg.github.com
-npm config set //npm.pkg.github.com/:_authToken YOUR_GITHUB_TOKEN
-
-# 3. Install the package
-npm install -g @titabash/kugutsu
-```
-
-### Alternative: Using .npmrc file
-
-You can also create a `.npmrc` file in your home directory:
-
-```bash
-echo "@titabash:registry=https://npm.pkg.github.com" >> ~/.npmrc
-echo "//npm.pkg.github.com/:_authToken=YOUR_GITHUB_TOKEN" >> ~/.npmrc
+# 1. Install the package
 npm install -g @titabash/kugutsu
 ```
 

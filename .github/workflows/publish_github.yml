@@ -18,7 +18,9 @@ jobs:
           # Defaults to the user or organization that owns the workflow file
           scope: "@titabash"
       - run: npm ci
-      - run: npm version prerelease --preid=alpha --no-git-tag-version
+      - run: |
+          CURRENT_VERSION=$(node -p "require('./package.json').version")
+          npm version $CURRENT_VERSION-alpha.$(date +%s) --no-git-tag-version
       - run: npm run build
       - run: npm publish
         env:

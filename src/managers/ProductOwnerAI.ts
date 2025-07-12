@@ -7,6 +7,7 @@ import { ComponentType } from '../types/logging.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { createHash } from 'crypto';
+import { designDocTemplate } from '../templates/design-doc-template.js';
 
 /**
  * プロダクトオーナーAIクラス
@@ -55,6 +56,8 @@ export class ProductOwnerAI extends BaseAI {
     // ユーザーリクエストからMD5ハッシュを生成（同じリクエストは同じIDになる）
     return createHash('md5').update(userRequest).digest('hex').substring(0, 8);
   }
+
+
 
   /**
    * .kugutsuディレクトリを初期化
@@ -112,6 +115,7 @@ export class ProductOwnerAI extends BaseAI {
 ## 🎯 核心責務
 - **要件定義**: ユーザー要求を完全なアプリケーションに必要な機能要件に変換
 - **網羅的分析**: アプリケーションとして動作するために必要なすべての要素を特定
+- **Design Docs作成**: 新規アプリ・システム開発時に設計ドキュメントを作成
 - **タスク分割**: 機能要件を実装可能なタスクに分割
 - **完成責任**: すべてのタスク完了時にユーザーが実際に使用可能なアプリケーションが完成することを保証
 - **品質基準**: 実用レベルの品質要件を定義
@@ -120,7 +124,7 @@ export class ProductOwnerAI extends BaseAI {
 
 ## 🔒 ファイル書き込み制限
 **重要**: Writeツールの使用は.kugutsuディレクトリ内のファイルのみに制限されています。
-- 許可: .kugutsu/phase-*.json, .kugutsu/implementation-notes-*.md 等
+- 許可: .kugutsu/phase-*.json, .kugutsu/implementation-notes-*.md, .kugutsu/design-doc-*.md 等
 - 禁止: プロジェクトのソースコード、設定ファイル、その他全てのファイル
 
 ## 🔧 網羅的分析アプローチ
@@ -248,12 +252,12 @@ export class ProductOwnerAI extends BaseAI {
     let prompt: string;
     if (existingDoc) {
       // 既存のフェーズドキュメントがある場合は続きから実行
-      prompt = this.buildContinuationPrompt(userRequest, existingDoc, sessionId);
+      prompt = await this.buildContinuationPrompt(userRequest, existingDoc, sessionId);
     } else {
       // projectsdirを作成
       const projectsDir = path.join(this.getKugutsuDir(), 'projects', projectId);
       await fs.mkdir(projectsDir, { recursive: true });
-      prompt = this.buildAnalysisPrompt(userRequest, projectId, sessionId);
+      prompt = await this.buildAnalysisPrompt(userRequest, projectId, sessionId);
     }
 
     try {
@@ -528,7 +532,7 @@ export class ProductOwnerAI extends BaseAI {
   /**
    * 分析用プロンプトを構築
    */
-  private buildAnalysisPrompt(userRequest: string, projectId: string, sessionId?: string): string {
+  private async buildAnalysisPrompt(userRequest: string, projectId: string, sessionId?: string): Promise<string> {
     return `
 プロダクトオーナーとして、以下のユーザー要求を包括的に分析し、エンジニアチームに対する具体的な実装指示を策定してください：
 
@@ -587,6 +591,31 @@ ${userRequest}
    - 各フェーズの機能要件と品質要件の詳細
    - ビジネスルールと制約条件
    - 次回実行時に要件を理解するための重要な情報
+
+3. **Design Docs（新規アプリ・システム開発時のみ）**: .kugutsu/design-doc-{プロジェクトID}.md
+   - システム全体の設計ドキュメント
+   - アーキテクチャ概要と設計判断の根拠
+   - システムの技術仕様と統合方針
+   - **重要**: 新規アプリ・システム開発と判断した場合は必ず作成してください
+
+### 📝 新規アプリ・システム開発の判断基準
+以下のいずれかに該当する場合は「新規アプリ・システム開発」と判断し、Design Docsを作成してください：
+- 新しいアプリケーションをゼロから作成する要求
+- 既存システムの大規模リニューアル・リアーキテクチャ
+- 新しいサービス・プロダクトの開発
+- 独立したマイクロサービスの新規構築
+- 複数の機能を持つ統合システムの開発
+
+**注意**: 単なる機能追加、バグ修正、小規模な改善の場合はDesign Docsは不要です。
+
+### 📄 Design Docsテンプレート
+新規アプリ・システム開発時は、以下のテンプレート構造に従ってDesign Docsを作成してください：
+
+\`\`\`markdown
+${designDocTemplate}
+\`\`\`
+
+**重要**: 各セクションにはAIエンジニアが実装に必要な具体的な情報を記載してください。特に、画面設計（サイトマップ）、API設計、命名規則、共通コンポーネントなどは、チーム全体の規律を保つために詳細に定義することが重要です。
 
 ### 📋 継続実行対応
 - 既存の.kugutsuディレクトリファイルを確認し、継続実行かを判断
@@ -906,133 +935,9 @@ ${analysis}
   }
 
   /**
-   * Claude Code SDKの応答からタスク分析結果を抽出（フォールバック）
-   */
-  private extractTaskAnalysisResult(_messages: SDKMessage[]): TaskAnalysisResult {
-    // 全ての分析メッセージから結果を抽出
-    let fullAnalysisText = '';
-
-    for (const message of _messages) {
-      if (message && typeof message === 'object' && 'type' in message) {
-        if (message.type === 'assistant' && 'message' in message) {
-          const assistantMessage = message.message as any;
-          if (assistantMessage.content) {
-            for (const content of assistantMessage.content) {
-              if (content.type === 'text') {
-                fullAnalysisText += content.text + '\n';
-              }
-            }
-          }
-        } else if (message.type === 'result') {
-          fullAnalysisText += (message as any).result || '';
-        }
-      }
-    }
-
-    // JSONブロックを抽出（最後のものを優先）
-    const jsonMatches = [...fullAnalysisText.matchAll(/```json\s*([\s\S]*?)\s*```/g)];
-
-    if (jsonMatches.length > 0) {
-      // 最後のJSONブロックを使用
-      const lastJsonMatch = jsonMatches[jsonMatches.length - 1];
-      try {
-        const jsonData = JSON.parse(lastJsonMatch[1]);
-
-        this.info(`📋 JSONタスクリストを検出: ${jsonData.tasks?.length || 0}個のタスク`);
-
-        // 新しいフォーマットと旧フォーマットの両方をサポート（タイトル→IDのマッピングを作成）
-        const titleToIdMap = new Map<string, string>();
-        const tasks: Task[] = (jsonData.tasks || []).map((taskData: any) => {
-          // 詳細な指示情報を含む拡張タスクを作成
-          const description = this.buildTaskDescription(taskData);
-          const taskId = uuidv4();
-          
-          // タイトル→IDのマッピングを保存
-          titleToIdMap.set(taskData.title || 'タスク', taskId);
-
-          return {
-            id: taskId,
-            type: taskData.type || 'feature',
-            title: taskData.title || 'タスク',
-            description: description,
-            priority: taskData.priority || 'medium',
-            status: 'pending',
-            dependencies: taskData.dependencies || [], // 一旦タイトルのまま保存
-            createdAt: new Date(),
-            updatedAt: new Date(),
-            // 要件情報をメタデータとして保存
-            metadata: {
-              skillRequirements: taskData.skillRequirements,
-              functionalRequirements: taskData.functionalRequirements,
-              qualityRequirements: taskData.qualityRequirements,
-              integrationRequirements: taskData.integrationRequirements,
-              acceptanceCriteria: taskData.acceptanceCriteria,
-              constraints: taskData.constraints,
-              successMetrics: taskData.successMetrics
-            }
-          };
-        });
-        
-        // 依存関係をタイトルからIDに変換
-        tasks.forEach(task => {
-          task.dependencies = task.dependencies.map(depTitle => {
-            const depId = titleToIdMap.get(depTitle);
-            if (!depId) {
-              this.warn(`⚠️ 依存タスク "${depTitle}" が見つかりません`);
-              return depTitle; // 見つからない場合はタイトルのまま（後でエラーになる）
-            }
-            return depId;
-          });
-        });
-
-
-        if (tasks.length > 0) {
-          // 新しいフォーマットの分析情報を統合
-          const analysis = jsonData.analysis || {};
-          const riskAssessment = typeof jsonData.riskAssessment === 'object'
-            ? `リスク: ${(jsonData.riskAssessment.risks || []).join(', ')}\n軽減策: ${(jsonData.riskAssessment.mitigations || []).join(', ')}`
-            : jsonData.riskAssessment || 'リスク評価なし';
-
-          return {
-            tasks,
-            summary: jsonData.summary || analysis.userRequestAnalysis || 'プロダクトオーナーAIによる分析結果',
-            riskAssessment: riskAssessment,
-            // 拡張分析情報
-            analysisDetails: {
-              codebaseAssessment: analysis.codebaseAssessment,
-              technicalRequirements: analysis.technicalRequirements,
-              architecturalDecisions: analysis.architecturalDecisions,
-              parallelizationStrategy: jsonData.parallelizationStrategy
-            }
-          };
-        }
-
-      } catch (error) {
-        this.error('❌ JSON解析エラー', { error: error instanceof Error ? error.message : String(error) });
-        this.error('❌ 問題のあるJSON', { json: lastJsonMatch[1] });
-        throw new Error(`タスク分析結果のJSON解析に失敗しました: ${error instanceof Error ? error.message : String(error)}`);
-      }
-    }
-
-    // JSON形式の分析結果が見つからない場合はエラー
-    this.error('❌ JSON形式の分析結果が見つかりませんでした');
-    throw new Error('プロダクトオーナーAIがJSON形式でタスクリストを出力できませんでした。分析結果の形式を確認してください。');
-  }
-
-  /**
-   * タスクの依存関係を解決して実行順序を決定
-   * @deprecated DependencyManagerで管理されるため、このメソッドは使用されません
-   */
-  resolveDependencies(tasks: Task[]): Task[] {
-    // DependencyManagerが依存関係を管理するため、タスクをそのまま返す
-    this.info('🔗 依存関係の解決はDependencyManagerに委譲されます');
-    return tasks;
-  }
-
-  /**
    * 継続実行用のプロンプトを構築
    */
-  private buildContinuationPrompt(userRequest: string, existingDoc: PhaseDocument, sessionId?: string): string {
+  private async buildContinuationPrompt(userRequest: string, existingDoc: PhaseDocument, sessionId?: string): Promise<string> {
     const allPhaseDescriptions = existingDoc.phases.map((phase, idx) =>
       `${idx + 1}. ${phase.phaseName}: ${phase.description}`
     ).join('\n');
@@ -1099,7 +1004,7 @@ ${allPhaseDescriptions}
 実装状況の確認結果に基づいて、現在実行すべきフェーズのタスクを出力してください。
 フェーズ内容を更新した場合は、"phaseManagement"セクションで更新内容も含めて出力してください。
 
-${this.buildAnalysisPrompt(userRequest, existingDoc.projectId, sessionId).split('## 📊 最終成果物要求')[1]}`;
+${(await this.buildAnalysisPrompt(userRequest, existingDoc.projectId, sessionId)).split('## 📊 最終成果物要求')[1]}`;
   }
 
   /**
@@ -1118,51 +1023,6 @@ ${this.buildAnalysisPrompt(userRequest, existingDoc.projectId, sessionId).split(
       }
     } catch (error) {
       // ファイルがまだ存在しないか、フェーズ情報がない
-    }
-
-    return null;
-  }
-
-  /**
-   * メッセージからフェーズ情報を抽出（フォールバック）
-   */
-  private extractPhaseInfo(_messages: SDKMessage[]): any | null {
-    let fullText = '';
-
-    for (const message of _messages) {
-      if (message && typeof message === 'object' && 'type' in message) {
-        if (message.type === 'assistant' && 'message' in message) {
-          const assistantMessage = message.message as any;
-          if (assistantMessage.content) {
-            for (const content of assistantMessage.content) {
-              if (content.type === 'text') {
-                fullText += content.text + '\n';
-              }
-            }
-          }
-        }
-      }
-    }
-
-    // フェーズ管理のJSONブロックを探す - より堅牢な方法
-    const jsonBlocks = [...fullText.matchAll(/```json\s*([\s\S]*?)\s*```/g)];
-
-    for (const jsonBlock of jsonBlocks.reverse()) { // 最後から検索
-      try {
-        const jsonData = JSON.parse(jsonBlock[1]);
-        if (jsonData.phaseManagement && jsonData.phaseManagement.requiresPhases) {
-          this.info('📊 フェーズ管理が必要と判断されました');
-          return jsonData.phaseManagement;
-        }
-      } catch (error) {
-        // このJSONブロックは無効、次を試す
-        continue;
-      }
-    }
-
-    // 代替手段: "phaseManagement"キーワードで検索
-    if (fullText.includes('"phaseManagement"') && fullText.includes('"requiresPhases"')) {
-      this.warn('⚠️ フェーズ情報は存在しますが、JSON解析に失敗しました');
     }
 
     return null;

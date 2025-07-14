@@ -36,14 +36,19 @@ project-root/
 │   ├── shared/       # 共通コード
 │   └── tests/        # テストコード
 ├── config/           # 設定ファイル
+├── locales/          # 多言語化リソース
+│   ├── en.json       # 英語（ベース言語）
+│   ├── ja.json       # 日本語
+│   └── [他の言語]
 └── docs/            # ドキュメント
 \`\`\`
 
 ### 2.3 技術スタックの決定
 #### フロントエンド
-- **フレームワーク**: [React/Vue/Angular等] - [選定理由]
+- **フレームワーク**: [React/Vue/Angular/Flutter等] - [選定理由]
 - **状態管理**: [Redux/Vuex/MobX等] - [選定理由]
 - **スタイリング**: [CSS-in-JS/Tailwind等] - [選定理由]
+- **多言語化**: [React: react-i18next, Flutter: intl package等] - [選定理由と対象言語]
 
 #### バックエンド
 - **言語/フレームワーク**: [Node.js/Python/Go等] - [選定理由]
@@ -249,6 +254,122 @@ const ErrorMessages = {
 - Toast: 成功、エラー、警告、情報
 - Loading: スピナー、スケルトン
 - Table: ソート、フィルタ、ページネーション
+- LanguageSwitch: 言語切り替えコンポーネント
+\`\`\`
+
+### 6.5 多言語化（i18n/l10n）の実装規約
+\`\`\`typescript
+// React プロジェクト（react-i18next）
+import { useTranslation } from 'react-i18next';
+
+const Component = () => {
+  const { t } = useTranslation();
+  
+  return (
+    <div>
+      <h1>{t('common.title')}</h1>
+      <p>{t('user.greeting', { name: 'ユーザー名' })}</p>
+    </div>
+  );
+};
+
+// Flutter プロジェクト（intl package）
+import 'package:flutter/material.dart';
+import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+
+class MyWidget extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    
+    return Column(
+      children: [
+        Text(l10n.commonTitle),
+        Text(l10n.userGreeting('ユーザー名')),
+      ],
+    );
+  }
+}
+\`\`\`
+
+#### 多言語化リソース構造
+\`\`\`json
+// locales/ja.json
+{
+  "common": {
+    "title": "アプリケーション名",
+    "save": "保存",
+    "cancel": "キャンセル",
+    "confirm": "確認",
+    "delete": "削除",
+    "edit": "編集",
+    "loading": "読み込み中...",
+    "error": "エラーが発生しました"
+  },
+  "auth": {
+    "login": "ログイン",
+    "logout": "ログアウト",
+    "signup": "新規登録",
+    "email": "メールアドレス",
+    "password": "パスワード",
+    "forgotPassword": "パスワードを忘れた場合"
+  },
+  "validation": {
+    "required": "{{field}}は必須です",
+    "email": "有効なメールアドレスを入力してください",
+    "minLength": "{{field}}は{{min}}文字以上で入力してください",
+    "maxLength": "{{field}}は{{max}}文字以下で入力してください"
+  }
+}
+
+// locales/en.json
+{
+  "common": {
+    "title": "Application Name",
+    "save": "Save",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "delete": "Delete",
+    "edit": "Edit",
+    "loading": "Loading...",
+    "error": "An error occurred"
+  },
+  "auth": {
+    "login": "Login",
+    "logout": "Logout",
+    "signup": "Sign Up",
+    "email": "Email",
+    "password": "Password",
+    "forgotPassword": "Forgot Password"
+  },
+  "validation": {
+    "required": "{{field}} is required",
+    "email": "Please enter a valid email address",
+    "minLength": "{{field}} must be at least {{min}} characters",
+    "maxLength": "{{field}} must be at most {{max}} characters"
+  }
+}
+\`\`\`
+
+#### 多言語化実装ガイドライン
+- **翻訳キー命名**: 階層構造で管理（例: auth.login, validation.required）
+- **動的テキスト**: 変数展開を使用（例: {{name}}, {{count}}）
+- **複数形対応**: 言語に応じた複数形ルールを実装
+- **日時・数値**: 各言語の表示形式に対応
+- **RTL対応**: 右から左へ書く言語への対応準備
+- **フォールバック**: 翻訳が見つからない場合のデフォルト言語表示
+- **遅延読み込み**: 大きな翻訳ファイルの分割と必要時読み込み
+
+#### 対応言語の選定指針
+- **第1優先**: 日本語（ja）、英語（en）
+- **第2優先**: 中国語（zh）、韓国語（ko）
+- **第3優先**: その他の対象市場の言語
+
+#### 多言語化テスト戦略
+- **翻訳漏れ**: 未翻訳キーの検出
+- **レイアウト崩れ**: 長い翻訳テキストでのUI確認
+- **文字エンコーディング**: 特殊文字・絵文字の正しい表示
+- **言語切り替え**: 動的な言語変更の動作確認
 \`\`\`
 
 ## 7. 実装ガイドライン
@@ -270,6 +391,7 @@ const ErrorMessages = {
 - **ユニットテスト**: ビジネスロジック、ユーティリティ関数
 - **統合テスト**: API エンドポイント、データベース連携
 - **E2Eテスト**: 主要なユーザーフロー
+- **多言語化テスト**: 各言語での表示、翻訳漏れ、レイアウト崩れの確認
 
 ### 8.2 テストデータとモック
 \`\`\`javascript
@@ -517,20 +639,23 @@ function logDataFlow(step: string, data: any, context?: string): void {
 
 ### フェーズ1: 基盤構築
 1. プロジェクト初期設定とディレクトリ構造
-2. 認証・認可システムの実装
-3. データベース接続とマイグレーション設定
-4. 基本的なCRUD APIの実装
+2. 多言語化基盤の設定（i18n初期化、言語リソース構造）
+3. 認証・認可システムの実装
+4. データベース接続とマイグレーション設定
+5. 基本的なCRUD APIの実装
 
 ### フェーズ2: コア機能実装
 1. [主要機能1]の実装
 2. [主要機能2]の実装
 3. フロントエンドとバックエンドの統合
+4. 多言語化対応の実装（翻訳キー追加、言語切り替え機能）
 
 ### フェーズ3: 品質向上と最適化
 1. テストカバレッジの向上
-2. パフォーマンス最適化
-3. セキュリティ強化
-4. ドキュメント整備
+2. 多言語化テストの実施
+3. パフォーマンス最適化
+4. セキュリティ強化
+5. ドキュメント整備
 
 ---
 *作成者: ProductOwnerAI*

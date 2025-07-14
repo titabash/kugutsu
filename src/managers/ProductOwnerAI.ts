@@ -10,6 +10,25 @@ import { createHash } from 'crypto';
 import { designDocTemplate } from '../templates/design-doc-template.js';
 
 /**
+ * 単一技術スタックの情報
+ */
+interface SingleTechStack {
+  language: string;
+  framework?: string;
+  buildTool?: string;
+  configFiles: string[];
+  path: string; // モノレポでのサブディレクトリパス（デフォルト: '.'）
+}
+
+/**
+ * プロジェクト全体の技術スタック情報（複数言語対応）
+ */
+interface TechStackInfo {
+  stacks: SingleTechStack[];
+  isMonorepo: boolean;
+}
+
+/**
  * プロダクトオーナーAIクラス
  * ユーザからの要求を分析し、具体的なタスクに分割する
  */
@@ -47,6 +66,13 @@ export class ProductOwnerAI extends BaseAI {
    */
   private getAnalysisJsonPath(projectId: string): string {
     return path.join(this.getKugutsuDir(), 'projects', projectId, 'analysis.json');
+  }
+
+  /**
+   * 技術スタック情報のファイルパスを取得
+   */
+  private getTechStackPath(): string {
+    return path.join(this.getKugutsuDir(), 'tech-stack.md');
   }
 
   /**
@@ -530,35 +556,303 @@ export class ProductOwnerAI extends BaseAI {
   }
 
   /**
-   * 分析用プロンプトを構築
+   * 技術スタック情報を保存
    */
-  private async buildAnalysisPrompt(userRequest: string, projectId: string, sessionId?: string): Promise<string> {
+  private async saveTechStackInfo(techStackInfo: TechStackInfo): Promise<void> {
+    await this.initializeKugutsuDir();
+    const techStackPath = this.getTechStackPath();
+    
+    const techStackData = {
+      ...techStackInfo,
+      analyzedAt: new Date(),
+      version: '1.0'
+    };
+    
+    await fs.writeFile(techStackPath, JSON.stringify(techStackData, null, 2), 'utf-8');
+    this.success(`✅ 技術スタック情報を保存しました: ${path.relative(this.baseRepoPath, techStackPath)}`);
+  }
+
+  /**
+   * 既存の技術スタック情報を読み込み
+   */
+  private async loadTechStackInfo(): Promise<TechStackInfo | null> {
+    const techStackPath = this.getTechStackPath();
+    try {
+      const content = await fs.readFile(techStackPath, 'utf-8');
+      const techStackData = JSON.parse(content);
+      this.info(`📖 既存の技術スタック情報を読み込みました`);
+      return {
+        stacks: techStackData.stacks || [],
+        isMonorepo: techStackData.isMonorepo || false
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * AIによるプロジェクト変更検出
+   */
+  private async detectProjectChanges(): Promise<boolean> {
+    try {
+      // 既存の技術スタック情報の存在チェック
+      const techStackPath = this.getTechStackPath();
+      try {
+        const existingContent = await fs.readFile(techStackPath, 'utf-8');
+        // 基本的には既存ファイルがあれば変更なしと見なす
+        // より精密な変更検出が必要な場合は、ファイルの更新日時等で判定
+        this.info('📋 既存の技術スタック分析ファイルを確認');
+        return false;
+      } catch {
+        // ファイルが存在しない場合は新規分析が必要
+        this.info('📝 技術スタック分析ファイルが見つからないため新規分析を実行');
+        return true;
+      }
+    } catch (error) {
+      this.warn('変更検出中にエラーが発生しました', { error });
+      return true; // エラー時は安全のため再分析
+    }
+  }
+
+  /**
+   * AIによる技術スタック分析
+   */
+  private async analyzeTechStack(): Promise<void> {
+    const techStackPath = this.getTechStackPath();
+    
+    // 既存ファイルをチェック
+    try {
+      await fs.access(techStackPath);
+      this.info('📋 既存の技術スタック分析ファイルが存在します');
+      
+      // プロジェクト構造の変更を検出
+      const hasChanged = await this.detectProjectChanges();
+      if (!hasChanged) {
+        this.info('📋 プロジェクト構造に変更なし。既存の技術スタック分析を使用します');
+        return;
+      }
+      this.info('🔄 プロジェクト構造の変更を検出しました。技術スタックを再分析します');
+    } catch {
+      this.info('📝 新規技術スタック分析を実行します');
+    }
+
+    this.info('🔍 AIによる技術スタック分析を開始します...');
+    
+    // AIに分析を依頼（直接ファイル保存）
+    await this.analyzeProjectWithAI();
+    
+    this.info('✅ AI分析完了: 技術スタックファイルを保存しました');
+  }
+
+  /**
+   * AIによる技術スタック分析用のディレクトリ情報を収集
+   */
+  private async gatherProjectStructure(): Promise<string> {
+    try {
+      const entries = await fs.readdir(this.baseRepoPath, { withFileTypes: true });
+      const structure: string[] = [];
+      
+      // ルートレベルのファイルとディレクトリを分析
+      const files = entries.filter(e => e.isFile()).map(e => e.name);
+      const dirs = entries.filter(e => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules').map(e => e.name);
+      
+      structure.push('## プロジェクト構造分析');
+      structure.push('### ルートディレクトリのファイル:');
+      structure.push(files.join(', '));
+      structure.push('### サブディレクトリ:');
+      structure.push(dirs.join(', '));
+      
+      // 各サブディレクトリの内容も軽く調査
+      for (const dir of dirs.slice(0, 10)) { // 最大10個まで
+        try {
+          const subPath = path.join(this.baseRepoPath, dir);
+          const subEntries = await fs.readdir(subPath, { withFileTypes: true });
+          const subFiles = subEntries.filter(e => e.isFile()).map(e => e.name);
+          structure.push(`### ${dir}/: ${subFiles.slice(0, 5).join(', ')}${subFiles.length > 5 ? '...' : ''}`);
+        } catch {
+          // サブディレクトリにアクセスできない場合は無視
+        }
+      }
+      
+      return structure.join('\n');
+    } catch (error) {
+      this.warn('プロジェクト構造分析中にエラーが発生しました', { error });
+      return '## プロジェクト構造分析\n分析に失敗しました';
+    }
+  }
+
+  /**
+   * AIに技術スタック分析を依頼
+   */
+  private async analyzeProjectWithAI(): Promise<void> {
+    const projectStructure = await this.gatherProjectStructure();
+    const techStackPath = this.getTechStackPath();
+    
+    const analysisPrompt = `プロジェクト構造を分析して技術スタック情報を特定し、Markdownファイルとして保存してください。
+
+${projectStructure}
+
+以下のタスクを実行してください：
+
+1. プロジェクト構造を分析して技術スタックを特定
+2. 以下の形式でMarkdownファイルを作成し、${techStackPath} に保存
+
+## 技術スタック分析
+
+### プロジェクトタイプ
+- モノレポか否か
+- 主要な技術スタック
+
+### 検出された技術スタック
+各技術スタックについて：
+- 言語
+- フレームワーク（あれば）
+- ビルドツール
+- 設定ファイル
+- パス（モノレポの場合）
+- 確信度
+
+### 判断根拠
+- 分析の根拠を簡潔に説明
+
+重要：
+- ファイル名からパターン推測（package.json→Node.js/TypeScript、pyproject.toml→Python等）
+- 複数言語がある場合は全て特定
+- 分析できない場合でも最低限の情報で回答
+- 必ずWriteツールを使用してファイルを作成してください`;
+
+    for await (const message of query({
+      prompt: analysisPrompt,
+      abortController: new AbortController(),
+      options: {
+        maxTurns: 5,
+        cwd: this.baseRepoPath,
+        allowedTools: ["Read", "Glob", "LS", "Write"],
+      },
+    })) {
+      // メッセージ処理は不要（AIが直接ファイル保存）
+    }
+  }
+
+  /**
+   * 技術スタックMarkdownファイルを読み込み
+   */
+  private async loadTechStackMarkdown(): Promise<string> {
+    const techStackPath = this.getTechStackPath();
+    try {
+      const content = await fs.readFile(techStackPath, 'utf-8');
+      return content;
+    } catch {
+      return '### 技術スタック\n技術スタック分析ファイルが見つかりませんでした。';
+    }
+  }
+
+  /**
+   * 技術スタック情報をフォーマット（複数言語対応）
+   */
+  private formatTechStack(techStackInfo: TechStackInfo): string {
+    if (techStackInfo.stacks.length === 0) {
+      return '- プロジェクト: 技術スタックが検出されませんでした';
+    }
+
+    const parts: string[] = [];
+    
+    if (techStackInfo.isMonorepo) {
+      parts.push('- プロジェクト構成: モノレポ（複数言語）');
+      parts.push('');
+      
+      techStackInfo.stacks.forEach((stack, index) => {
+        parts.push(`### 技術スタック ${index + 1}: ${stack.path}`);
+        parts.push(`- 言語: ${stack.language}`);
+        if (stack.framework) parts.push(`- フレームワーク: ${stack.framework}`);
+        if (stack.buildTool) parts.push(`- ビルドツール: ${stack.buildTool}`);
+        parts.push(`- 設定ファイル: ${stack.configFiles.join(', ')}`);
+        parts.push('');
+      });
+    } else {
+      // 単一技術スタック
+      const stack = techStackInfo.stacks[0];
+      parts.push(`- 言語: ${stack.language}`);
+      if (stack.framework) parts.push(`- フレームワーク: ${stack.framework}`);
+      if (stack.buildTool) parts.push(`- ビルドツール: ${stack.buildTool}`);
+      parts.push(`- 設定ファイル: ${stack.configFiles.join(', ')}`);
+    }
+    
+    return parts.join('\n');
+  }
+
+  /**
+   * コンテキスト適応戦略を構築
+   */
+  private buildContextStrategy(techStackInfo: TechStackInfo): string {
+    if (techStackInfo.isMonorepo) {
+      const languages = techStackInfo.stacks.map(s => s.language).join('、');
+      const configFiles = techStackInfo.stacks.flatMap(s => s.configFiles).join('、');
+      return `- マルチ言語環境（${languages}）での統合性を重視した設計
+- 各技術スタックの特性を活かした最適化
+- モノレポ構成（${configFiles}）に適合した統一的なアーキテクチャ
+- 言語間連携とデータフローの整合性確保`;
+    } else {
+      const stack = techStackInfo.stacks[0];
+      return `- 既存の技術選択（${stack.language}${stack.framework ? ` + ${stack.framework}` : ''}）との整合性を最優先
+- プロジェクトの構成ファイル（${stack.configFiles.join(', ')}）に適合した設計
+- 既存の依存関係を活用した効率的な実装`;
+    }
+  }
+
+  /**
+   * 技術スタックの要約を取得
+   */
+  private getTechStackSummary(techStackInfo: TechStackInfo): string {
+    if (techStackInfo.isMonorepo) {
+      const languages = techStackInfo.stacks.map(s => s.language).join('・');
+      return `マルチ言語環境（${languages}）`;
+    } else {
+      const stack = techStackInfo.stacks[0];
+      return stack.language + (stack.framework ? `・${stack.framework}` : '');
+    }
+  }
+
+  /**
+   * コンテキスト認識プロンプトを構築
+   */
+  private async buildContextAwarePrompt(userRequest: string, projectId: string, sessionId?: string): Promise<string> {
+    // 技術スタック分析
+    await this.analyzeTechStack();
+    
+    // 技術スタック情報をファイルから読み取り
+    const techStackContent = await this.loadTechStackMarkdown();
+    
     return `
-プロダクトオーナーとして、以下のユーザー要求を包括的に分析し、エンジニアチームに対する具体的な実装指示を策定してください：
+プロダクトオーナーとして、以下の情報を踏まえてユーザー要求を分析し、エンジニアチームに対する具体的な実装指示を策定してください：
 
 ## 📝 ユーザー要求
 ${userRequest}
+
+## 🔍 プロジェクトコンテキスト
+${techStackContent}
 
 ## 🔍 分析プロセス
 
 ### 1. ユーザー要求の理解
 - 要求の本質的な目的と期待される成果を理解
 - 潜在的なニーズや制約条件を考慮
-- プロジェクトのコンテキストと優先順位を把握
+- 既存の技術スタックとの適合性を評価
 
 ### 2. 機能要件の整理
 - 要求を具体的な機能要件に変換
-- 機能間の関係性と統合方法を検討
+- 既存のアーキテクチャに適合する統合方法を検討
 - ユーザーにとっての価値と完成状態を定義
 
 ### 3. タスク設計
-- 要求を実現するために必要な作業を洗い出し
+- 現在の技術環境に最適化された実装アプローチを選択
 - 各作業を適切な粒度のタスクに分割
 - タスク間の依存関係を明確化
 
 ## 🎯 タスク分割戦略
 
 ### 基本方針
+- **技術適合性**: プロジェクトの技術スタックに最適化されたタスク設計
 - **機能完結性**: 各タスクが明確な価値を提供し独立して完成可能
 - **要件明確性**: エンジニアが迷わず実装できる明確な機能要件
 - **統合保証**: 分割されたタスクが統合され完全なシステムとして動作
@@ -571,11 +865,12 @@ ${userRequest}
 ### タスクの必須要素
 各タスクに以下を含める：
 - **機能要件**: ユーザーができるようになることの明確な定義
+- **技術要件**: プロジェクト環境での実装方針
 - **品質要件**: パフォーマンス・セキュリティ・使いやすさ基準
 - **統合要件**: 他機能・外部システムとの連携要件
 - **受け入れ基準**: 完成判定の具体的基準
 
-**重要**: 実装手順・技術選択・アーキテクチャはエンジニアが決定します。
+**重要**: 実装手順・詳細な技術選択・アーキテクチャはエンジニアが決定します。プロダクトオーナーは要件定義に専念してください。
 
 ## 📊 フェーズ管理とドキュメント作成
 
@@ -633,10 +928,11 @@ ${designDocTemplate}
 \`\`\`json
 {
   "sessionId": "${sessionId || ''}",
+  "techStack": "技術スタック情報は上記のMarkdownを参照",
   "analysis": {
     "userRequestAnalysis": "ユーザー要求の詳細分析",
     "codebaseAssessment": "現在のコードベースの評価",
-    "technicalRequirements": "技術要件の詳細",
+    "technicalRequirements": "技術要件の詳細（既存技術スタックとの整合性を考慮）",
     "architecturalDecisions": "設計判断と根拠"
   },
   "tasks": [
@@ -716,6 +1012,14 @@ ${designDocTemplate}
 - **循環依存の完全回避**: タスク間で循環参照を絶対に作らない
 - **階層的依存**: 基盤機能 → 応用機能 → 統合の一方向フロー
 - **依存最小化**: 可能な限り独立したタスク設計で並列開発を最大化`;
+  }
+
+  /**
+   * 分析用プロンプトを構築
+   */
+  private async buildAnalysisPrompt(userRequest: string, projectId: string, sessionId?: string): Promise<string> {
+    // コンテキスト認識プロンプトを使用
+    return this.buildContextAwarePrompt(userRequest, projectId, sessionId);
   }
 
   /**

@@ -16,6 +16,86 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 All operations must be completed using only the local git repository. This is a hard requirement that must never be violated.
 
+## AI-First Development Principles
+
+### No Hardcoded Logic Rule
+**CRITICAL**: This project follows strict AI-first development principles. Hardcoded logic is PROHIBITED except for:
+- Basic type definitions and interfaces
+- Simple utility functions with no business logic
+- Constants that never change (e.g., file paths, error messages)
+
+### Required AI-Driven Approach
+Instead of hardcoded decision-making, you MUST:
+
+1. **Use Claude Code SDK for all dynamic decisions**:
+   ```typescript
+   // ❌ PROHIBITED - Hardcoded logic
+   if (fileName === 'package.json') return 'JavaScript';
+   if (fileName === 'go.mod') return 'Go';
+   
+   // ✅ REQUIRED - AI-driven analysis
+   const analysis = await query({
+     prompt: "Analyze this file and determine the programming language...",
+     options: { allowedTools: ["Read", "LS"] }
+   });
+   ```
+
+2. **AI handles all file operations**:
+   - File creation, modification, deletion decisions
+   - Content analysis and pattern recognition
+   - Dynamic configuration and setup
+   - Project structure analysis
+
+3. **AI manages business logic**:
+   - Technology stack detection
+   - Framework identification
+   - Dependency analysis
+   - Change detection
+   - Task prioritization
+
+### Implementation Guidelines
+
+**File Operations**: Let AI decide what files to create/modify/delete:
+```typescript
+// ✅ AI determines file operations
+const fileOperations = await query({
+  prompt: "Based on this project structure, determine what files need to be created...",
+  options: { allowedTools: ["Write", "Read", "LS"] }
+});
+```
+
+**Configuration Management**: AI analyzes and configures:
+```typescript
+// ✅ AI analyzes configuration needs
+const configAnalysis = await query({
+  prompt: "Analyze this project's configuration requirements...",
+  options: { allowedTools: ["Read", "Glob", "Write"] }
+});
+```
+
+**Decision Trees**: Replace if/else logic with AI reasoning:
+```typescript
+// ❌ PROHIBITED
+if (isReactProject) { /* hardcoded React logic */ }
+else if (isVueProject) { /* hardcoded Vue logic */ }
+
+// ✅ REQUIRED
+const frameworkStrategy = await query({
+  prompt: "Determine the appropriate strategy for this framework...",
+  options: { allowedTools: ["Read", "Glob"] }
+});
+```
+
+### Benefits of AI-First Approach
+- **Future-proof**: Automatically handles new technologies and patterns
+- **Adaptive**: Responds to project-specific requirements
+- **Intelligent**: Makes context-aware decisions
+- **Maintainable**: No hardcoded business logic to update
+- **Flexible**: Adapts to changing requirements without code changes
+
+### Violation Detection
+Any hardcoded logic violating these principles should be immediately refactored to use Claude Code SDK with appropriate AI analysis and decision-making.
+
 ## Project Overview
 
 This is an AI-powered parallel development system built with TypeScript and the Claude Code SDK. It enables multiple AI engineers to work simultaneously on different tasks using git worktrees for isolation. The system includes task orchestration, automated code review, and intelligent merge coordination.

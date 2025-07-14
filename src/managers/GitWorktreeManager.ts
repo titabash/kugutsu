@@ -21,6 +21,48 @@ export class GitWorktreeManager {
     if (!fs.existsSync(this.worktreeBasePath)) {
       fs.mkdirSync(this.worktreeBasePath, { recursive: true });
     }
+    
+    // .gitignoreにworktrees/**を追加（存在しない場合のみ）
+    this.ensureWorktreesInGitignore();
+  }
+
+  /**
+   * .gitignoreにworktrees/**エントリーを確保する
+   */
+  private ensureWorktreesInGitignore(): void {
+    const gitignorePath = path.join(this.baseRepoPath, '.gitignore');
+    
+    try {
+      let gitignoreContent = '';
+      let hasWorktreesEntry = false;
+      
+      // .gitignoreファイルが存在する場合は読み込む
+      if (fs.existsSync(gitignorePath)) {
+        gitignoreContent = fs.readFileSync(gitignorePath, 'utf-8');
+        
+        // worktrees/**エントリーが既に存在するかチェック
+        const lines = gitignoreContent.split('\n');
+        hasWorktreesEntry = lines.some(line => 
+          line.trim() === 'worktrees/**' || 
+          line.trim() === 'worktrees/' ||
+          line.trim().startsWith('worktrees/') && line.includes('**')
+        );
+      }
+      
+      // worktreesエントリーが存在しない場合は追加
+      if (!hasWorktreesEntry) {
+        const entryToAdd = gitignoreContent && !gitignoreContent.endsWith('\n') 
+          ? '\nworktrees/**\n' 
+          : 'worktrees/**\n';
+        
+        fs.writeFileSync(gitignorePath, gitignoreContent + entryToAdd, 'utf-8');
+        console.log('✅ .gitignoreにworktrees/**を追加しました');
+      }
+      
+    } catch (error) {
+      console.warn('⚠️ .gitignoreの更新に失敗しました:', error);
+      // .gitignoreの更新に失敗してもプログラムの実行は継続
+    }
   }
 
   /**

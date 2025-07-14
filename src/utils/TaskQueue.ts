@@ -181,7 +181,29 @@ export class TaskQueue<T> extends EventEmitter {
    */
   clear(): void {
     this.items = [];
+    this.processing.clear();
     console.log(`🗑️ キューをクリアしました`);
+  }
+
+  /**
+   * メモリリークを防ぐためのクリーンアップ
+   */
+  cleanup(): void {
+    console.log('🧹 TaskQueue クリーンアップ開始');
+    
+    // 全処理を停止
+    this.stop();
+    
+    // 全イベントリスナーを削除
+    this.removeAllListeners();
+    
+    // 内部状態をクリア
+    this.clear();
+    
+    // プロセッサー参照をクリア
+    this.processor = undefined;
+    
+    console.log('✅ TaskQueue クリーンアップ完了');
   }
 
   /**

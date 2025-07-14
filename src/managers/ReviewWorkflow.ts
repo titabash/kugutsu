@@ -129,7 +129,6 @@ export class ReviewWorkflow {
 
     // エンジニアとTechLeadの関連付けをElectronに通知
     console.log(`[ReviewWorkflow] Associating TechLead ${techLeadId} with Engineer ${engineerResult.engineerId}`);
-    console.log(`[ReviewWorkflow] EngineerResult:`, engineerResult);
     
     electronLogAdapter.associateTechLeadWithEngineer(techLeadId, engineerResult.engineerId);
     

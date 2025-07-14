@@ -189,4 +189,27 @@ export class ReviewQueue {
     this.queue.clear();
     this.reviewHistory.clear();
   }
+
+  /**
+   * メモリリークを防ぐためのクリーンアップ
+   */
+  cleanup(): void {
+    console.log('🧹 ReviewQueue クリーンアップ開始');
+    
+    // キューを停止
+    this.stop();
+    
+    // 内部状態をクリア
+    this.clear();
+    
+    // 依存関係マネージャーの参照をクリア
+    this.dependencyManager = undefined;
+    
+    // TaskQueueのクリーンアップ
+    if (typeof (this.queue as any).cleanup === 'function') {
+      (this.queue as any).cleanup();
+    }
+    
+    console.log('✅ ReviewQueue クリーンアップ完了');
+  }
 }

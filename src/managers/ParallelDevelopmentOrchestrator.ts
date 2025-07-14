@@ -5,9 +5,10 @@ import { ReviewWorkflow } from './ReviewWorkflow.js';
 import { ParallelPipelineManager } from './ParallelPipelineManager.js';
 import { ImprovedParallelLogViewer } from '../utils/ImprovedParallelLogViewer.js';
 import { LogFormatter } from '../utils/LogFormatter.js';
-import { TaskEventEmitter, TaskEvent, TaskFailedPayload, MergeCompletedPayload, ReviewCompletedPayload } from '../utils/TaskEventEmitter.js';
+import { TaskEventEmitter, TaskEvent, TaskFailedPayload, MergeCompletedPayload, ReviewCompletedPayload, ListenerRegistration } from '../utils/TaskEventEmitter.js';
 import { Task, TaskAnalysisResult, EngineerResult, ReviewResult, SystemConfig } from '../types/index.js';
 import { CompletionReporter, CompletionStatus } from '../utils/CompletionReporter.js';
+import { MemoryMonitor } from '../utils/MemoryMonitor.js';
 import * as path from 'path';
 
 /**
@@ -31,6 +32,8 @@ export class ParallelDevelopmentOrchestrator {
   protected reviewResults: Map<string, ReviewResult[]> = new Map();
   protected completionReporter: CompletionReporter | null;
   protected kugutsuDir: string;
+  protected listenerRegistrations: ListenerRegistration[] = []; // イベントリスナー管理
+  protected memoryMonitor: MemoryMonitor;
 
   constructor(config: SystemConfig, useVisualUI: boolean = false) {
     this.config = config;
@@ -48,6 +51,13 @@ export class ParallelDevelopmentOrchestrator {
     this.pipelineManager = new ParallelPipelineManager(this.gitManager, config, null);
     this.eventEmitter = TaskEventEmitter.getInstance();
     
+    // メモリ監視を初期化
+    this.memoryMonitor = MemoryMonitor.getInstance();
+    this.memoryMonitor.setThresholds(
+      300 * 1024 * 1024, // 300MB警告
+      800 * 1024 * 1024  // 800MB危険
+    );
+    
     if (this.useVisualUI) {
       this.logViewer = new ImprovedParallelLogViewer();
     }
@@ -60,8 +70,10 @@ export class ParallelDevelopmentOrchestrator {
    * イベントリスナーの設定
    */
   protected setupEventListeners(): void {
+    console.log('🔧 ParallelDevelopmentOrchestrator イベントリスナー設定開始');
+    
     // マージ完了イベント
-    this.eventEmitter.onMergeCompleted((event: TaskEvent) => {
+    const mergeCompletedRegistration = this.eventEmitter.onMergeCompleted((event: TaskEvent) => {
       const payload = event.payload as MergeCompletedPayload;
       if (payload.success) {
         this.completedTasks.add(payload.task.id);
@@ -71,19 +83,21 @@ export class ParallelDevelopmentOrchestrator {
         this.log('system', 'error', `❌ タスク失敗: ${payload.task.title}`, 'Merge', 'Failure');
       }
     });
+    this.listenerRegistrations.push(mergeCompletedRegistration);
     
     // 全タスク完了イベントはCompletionReporterから直接受信するため、ここでは登録しない
     // setupCompletionReporterListeners()で処理される
 
     // タスク失敗イベント
-    this.eventEmitter.onTaskFailed((event: TaskEvent) => {
+    const taskFailedRegistration = this.eventEmitter.onTaskFailed((event: TaskEvent) => {
       const payload = event.payload as TaskFailedPayload;
       this.failedTasks.set(payload.task.id, payload.error);
       this.log('system', 'error', `❌ タスク失敗: ${payload.task.title} (${payload.phase})`, 'Task', 'Failure');
     });
+    this.listenerRegistrations.push(taskFailedRegistration);
 
     // タスクイベントの統計用
-    this.eventEmitter.onAnyTaskEvent((event: TaskEvent) => {
+    const anyTaskEventRegistration = this.eventEmitter.onAnyTaskEvent((event: TaskEvent) => {
       if (event.type === 'DEVELOPMENT_COMPLETED') {
         const result = event.payload.result as EngineerResult;
         this.taskResults.set(event.taskId, result);
@@ -95,6 +109,9 @@ export class ParallelDevelopmentOrchestrator {
         this.reviewResults.set(event.taskId, history);
       }
     });
+    this.listenerRegistrations.push(anyTaskEventRegistration);
+
+    console.log(`✅ ParallelDevelopmentOrchestrator イベントリスナー設定完了 (${this.listenerRegistrations.length}個)`);
   }
 
   /**
@@ -111,6 +128,10 @@ export class ParallelDevelopmentOrchestrator {
     this.log('system', 'info', `📝 ユーザー要求: ${userRequest}`, 'System', 'System Startup');
 
     try {
+      
+      // メモリ監視を開始
+      this.memoryMonitor.start(20000); // 20秒間隔で監視
+      this.memoryMonitor.showCurrentStatus();
       
       // ログビューアーを開始
       if (this.logViewer) {
@@ -202,6 +223,10 @@ export class ParallelDevelopmentOrchestrator {
         this.logViewer.destroy();
       }
       
+      // メモリ監視を停止
+      this.memoryMonitor.stop();
+      this.memoryMonitor.showCurrentStatus();
+      
       // 完了レポートを表示・生成
       this.completionReporter.displayCompletionSummary(
         analysis,
@@ -230,10 +255,27 @@ export class ParallelDevelopmentOrchestrator {
    * システムクリーンアップ
    */
   async cleanup(cleanupWorktrees: boolean = false): Promise<void> {
-    console.log('🧹 システムクリーンアップ開始');
+    console.log('🧹 ParallelDevelopmentOrchestrator システムクリーンアップ開始');
 
-    // パイプラインマネージャーを停止
-    await this.pipelineManager.stop();
+    // イベントリスナーを全て解除
+    console.log(`🗑️ イベントリスナー解除: ${this.listenerRegistrations.length}個`);
+    for (const registration of this.listenerRegistrations) {
+      try {
+        registration.unregister();
+      } catch (error) {
+        console.warn(`⚠️ リスナー解除エラー [${registration.event}][${registration.id}]:`, error);
+      }
+    }
+    this.listenerRegistrations = [];
+
+    // パイプラインマネージャーをクリーンアップ
+    await this.pipelineManager.cleanup();
+
+    // ログビューアーを停止
+    if (this.logViewer) {
+      this.logViewer.destroy();
+      this.logViewer = undefined;
+    }
 
     // アクティブなタスクをクリア
     this.activeTasks.clear();
@@ -241,13 +283,32 @@ export class ParallelDevelopmentOrchestrator {
     // エンジニアプールをクリア
     this.engineerPool.clear();
 
+    // 結果マップをクリア
+    this.taskResults.clear();
+    this.reviewResults.clear();
+    this.completedTasks.clear();
+    this.failedTasks.clear();
+
     // Worktreeのクリーンアップ（オプション）
     if (cleanupWorktrees) {
       await this.gitManager.cleanupAllTaskWorktrees();
     }
 
+    // CompletionReporterのクリーンアップ
+    if (this.completionReporter && typeof (this.completionReporter as any).cleanup === 'function') {
+      await (this.completionReporter as any).cleanup();
+    }
 
-    console.log('✅ クリーンアップ完了');
+    // メモリ監視を停止
+    this.memoryMonitor.stop();
+
+    // 強制ガベージコレクション
+    if (global.gc) {
+      console.log('🗑️ 強制ガベージコレクション実行');
+      global.gc();
+    }
+
+    console.log('✅ ParallelDevelopmentOrchestrator クリーンアップ完了');
   }
 
   /**

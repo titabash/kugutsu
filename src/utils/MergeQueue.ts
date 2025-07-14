@@ -138,7 +138,7 @@ export class MergeQueue {
         this.eventEmitter.emitMergeCompleted(item.task, true);
         
         // クリーンアップ
-        await this.cleanup(item.task);
+        await this.cleanupTask(item.task);
         
         // タスク完了を記録
         if (this.completionReporter) {
@@ -333,13 +333,13 @@ export class MergeQueue {
   }
 
   /**
-   * マージ後のクリーンアップ
+   * マージ後のタスククリーンアップ
    */
-  private async cleanup(task: Task): Promise<void> {
+  private async cleanupTask(task: Task): Promise<void> {
     if (!task.branchName) return;
 
     try {
-      console.log(`🧹 クリーンアップ開始: ${task.title}`);
+      console.log(`🧹 タスククリーンアップ開始: ${task.title}`);
 
       // コンフリクト解消タスクの場合はブランチを削除しない
       const isConflictResolution = task.isConflictResolution || task.type === 'conflict-resolution';
@@ -351,9 +351,9 @@ export class MergeQueue {
         deleteBranch: !isConflictResolution
       });
 
-      console.log(`✅ クリーンアップ完了`);
+      console.log(`✅ タスククリーンアップ完了`);
     } catch (error) {
-      console.warn(`⚠️ クリーンアップ中にエラー:`, error);
+      console.warn(`⚠️ タスククリーンアップ中にエラー:`, error);
     }
   }
 
@@ -390,5 +390,26 @@ export class MergeQueue {
    */
   clear(): void {
     this.queue = [];
+  }
+
+  /**
+   * メモリリークを防ぐためのクリーンアップ
+   */
+  cleanup(): void {
+    console.log('🧹 MergeQueue クリーンアップ開始');
+    
+    // キューを停止
+    this.stop();
+    
+    // 内部状態をクリア
+    this.clear();
+    
+    // 依存関係マネージャーの参照をクリア
+    this.dependencyManager = undefined;
+    
+    // CompletionReporterの参照をクリア
+    this.completionReporter = undefined;
+    
+    console.log('✅ MergeQueue クリーンアップ完了');
   }
 }

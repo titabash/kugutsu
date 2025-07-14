@@ -5,7 +5,7 @@ import { ReviewWorkflow } from './ReviewWorkflow.js';
 import { TaskQueue } from '../utils/TaskQueue.js';
 import { ReviewQueue } from '../utils/ReviewQueue.js';
 import { MergeQueue } from '../utils/MergeQueue.js';
-import { TaskEventEmitter, TaskEvent, DevelopmentCompletedPayload, ReviewCompletedPayload, MergeReadyPayload, MergeConflictDetectedPayload, TaskCompletedPayload, DependencyResolvedPayload } from '../utils/TaskEventEmitter.js';
+import { TaskEventEmitter, TaskEvent, DevelopmentCompletedPayload, ReviewCompletedPayload, MergeReadyPayload, MergeConflictDetectedPayload, TaskCompletedPayload, DependencyResolvedPayload, ListenerRegistration } from '../utils/TaskEventEmitter.js';
 import { CompletionReporter } from '../utils/CompletionReporter.js';
 import { DependencyManager } from '../utils/DependencyManager.js';
 
@@ -33,6 +33,7 @@ export class ParallelPipelineManager {
   private isRunning = false;
   private dependencyManager: DependencyManager;
   private allTasks = new Map<string, Task>();  // 全タスクを保持
+  private listenerRegistrations: ListenerRegistration[] = []; // イベントリスナー登録を追跡
 
   constructor(gitManager: GitWorktreeManager, config: SystemConfig, completionReporter?: CompletionReporter | null) {
     this.gitManager = gitManager;
@@ -68,8 +69,10 @@ export class ParallelPipelineManager {
    * イベントリスナーの設定
    */
   private setupEventListeners(): void {
+    console.log('🔧 ParallelPipelineManager イベントリスナー設定開始');
+    
     // 開発完了 → レビューキューへ
-    this.eventEmitter.onDevelopmentCompleted(async (event: TaskEvent) => {
+    const developmentCompletedRegistration = this.eventEmitter.onDevelopmentCompleted(async (event: TaskEvent) => {
       const payload = event.payload as DevelopmentCompletedPayload;
       console.log(`\n🎯 開発完了イベント受信: ${payload.task.title}`);
       
@@ -81,9 +84,10 @@ export class ParallelPipelineManager {
         engineer
       );
     });
+    this.listenerRegistrations.push(developmentCompletedRegistration);
 
     // レビュー完了（修正要求） → 開発キューへ戻す
-    this.eventEmitter.onReviewCompleted(async (event: TaskEvent) => {
+    const reviewCompletedRegistration = this.eventEmitter.onReviewCompleted(async (event: TaskEvent) => {
       const payload = event.payload as ReviewCompletedPayload;
       
       if (payload.needsRevision) {
@@ -100,9 +104,10 @@ export class ParallelPipelineManager {
         await this.enqueueDevelopment(revisionTask, engineer);
       }
     });
+    this.listenerRegistrations.push(reviewCompletedRegistration);
 
     // マージ準備完了 → マージキューへ
-    this.eventEmitter.onMergeReady(async (event: TaskEvent) => {
+    const mergeReadyRegistration = this.eventEmitter.onMergeReady(async (event: TaskEvent) => {
       const payload = event.payload as MergeReadyPayload & { engineerId: string };
       console.log(`\n🚀 マージ準備完了イベント受信: ${payload.task.title}`);
       
@@ -113,9 +118,10 @@ export class ParallelPipelineManager {
         payload.engineerId
       );
     });
+    this.listenerRegistrations.push(mergeReadyRegistration);
 
     // マージコンフリクト検出 → 開発キューへ戻す
-    this.eventEmitter.onMergeConflictDetected(async (event: TaskEvent) => {
+    const mergeConflictRegistration = this.eventEmitter.onMergeConflictDetected(async (event: TaskEvent) => {
       const payload = event.payload as MergeConflictDetectedPayload;
       console.log(`\n⚠️ コンフリクト検出イベント受信: ${payload.task.title}`);
       
@@ -141,9 +147,10 @@ export class ParallelPipelineManager {
       // 開発キューに戻す（優先度高）
       await this.enqueueDevelopment(conflictTask, engineer);
     });
+    this.listenerRegistrations.push(mergeConflictRegistration);
 
     // マージ完了イベント（依存関係解決）
-    this.eventEmitter.onMergeCompleted(async (event: TaskEvent) => {
+    const mergeCompletedRegistration = this.eventEmitter.onMergeCompleted(async (event: TaskEvent) => {
       const payload = event.payload as any; // MergeCompletedPayload
       
       if (payload.success) {
@@ -170,18 +177,23 @@ export class ParallelPipelineManager {
         this.eventEmitter.emitTaskCompleted(payload.task, payload.finalResult || {}, payload.engineerId || '');
       }
     });
+    this.listenerRegistrations.push(mergeCompletedRegistration);
 
     // タスク完了イベント（互換性のため残す）
-    this.eventEmitter.onTaskCompleted(async (event: TaskEvent) => {
+    const taskCompletedRegistration = this.eventEmitter.onTaskCompleted(async (event: TaskEvent) => {
       const payload = event.payload as TaskCompletedPayload;
       console.log(`\n📌 タスク完了イベント受信（互換性）: ${payload.task.title}`);
     });
+    this.listenerRegistrations.push(taskCompletedRegistration);
 
     // 依存関係解決イベント
-    this.eventEmitter.onDependencyResolved(async (event: TaskEvent) => {
+    const dependencyResolvedRegistration = this.eventEmitter.onDependencyResolved(async (event: TaskEvent) => {
       const payload = event.payload as DependencyResolvedPayload;
       console.log(`\n🔓 依存関係解決: ${payload.resolvedTaskId}`);
     });
+    this.listenerRegistrations.push(dependencyResolvedRegistration);
+
+    console.log(`✅ ParallelPipelineManager イベントリスナー設定完了 (${this.listenerRegistrations.length}個)`);
   }
 
   /**
@@ -496,12 +508,40 @@ export class ParallelPipelineManager {
    * クリーンアップ
    */
   async cleanup(): Promise<void> {
+    console.log('🧹 ParallelPipelineManager クリーンアップ開始');
+    
     this.stop();
     
     // 処理中のタスクを待つ
     await this.waitForCompletion();
     
+    // イベントリスナーを全て解除
+    console.log(`🗑️ イベントリスナー解除: ${this.listenerRegistrations.length}個`);
+    for (const registration of this.listenerRegistrations) {
+      try {
+        registration.unregister();
+      } catch (error) {
+        console.warn(`⚠️ リスナー解除エラー [${registration.event}][${registration.id}]:`, error);
+      }
+    }
+    this.listenerRegistrations = [];
+    
+    // エンジニアインスタンスを適切に破棄
+    console.log(`🗑️ エンジニアインスタンス解放: ${this.engineers.size}個`);
+    for (const [engineerId, engineer] of this.engineers) {
+      try {
+        // エンジニアの内部リソースをクリア（必要に応じて）
+        if (typeof (engineer as any).cleanup === 'function') {
+          await (engineer as any).cleanup();
+        }
+      } catch (error) {
+        console.warn(`⚠️ エンジニア解放エラー ${engineerId}:`, error);
+      }
+    }
+    this.engineers.clear();
+    
     // 全てのworktreeを削除
+    console.log('🗑️ Worktree削除開始');
     for (const [engineerId] of this.engineers) {
       const taskId = engineerId.replace('engineer-', '');
       try {
@@ -511,11 +551,35 @@ export class ParallelPipelineManager {
       }
     }
     
-    this.developmentQueue.clear();
-    this.reviewQueue.clear();
-    this.mergeQueue.clear();
-    this.engineers.clear();
-    this.eventEmitter.cleanup();
+    // キューをクリーンアップ
+    if (typeof (this.developmentQueue as any).cleanup === 'function') {
+      (this.developmentQueue as any).cleanup();
+    } else {
+      this.developmentQueue.clear();
+    }
+    
+    if (typeof (this.reviewQueue as any).cleanup === 'function') {
+      (this.reviewQueue as any).cleanup();
+    } else {
+      this.reviewQueue.clear();
+    }
+    
+    if (typeof (this.mergeQueue as any).cleanup === 'function') {
+      (this.mergeQueue as any).cleanup();
+    } else {
+      this.mergeQueue.clear();
+    }
+    
+    // 内部状態をクリア
+    this.allTasks.clear();
+    
+    // 強制ガベージコレクション
+    if (global.gc) {
+      console.log('🗑️ 強制ガベージコレクション実行');
+      global.gc();
+    }
+    
+    console.log('✅ ParallelPipelineManager クリーンアップ完了');
   }
 
 

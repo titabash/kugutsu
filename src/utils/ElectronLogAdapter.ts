@@ -334,12 +334,17 @@ export class ElectronLogAdapter {
             } else if (message.includes('🌿') || message.includes('Worktree') || message.includes('worktree')) {
                 engineerId = 'MergeCoordinator';  // worktree関連もマージコーディネーターに含める
                 component = 'GitWorktree';
+            } else if (message.includes('[ReviewWorkflow]')) {
+                // ReviewWorkflowのログはシステムログとして扱う
+                engineerId = 'system';
+                component = 'System';
             } else if (message.includes('[') && message.includes(']')) {
                 const match = message.match(/\[([^\]]+)\]/);
                 if (match) {
                     const possibleComponent = match[1];
-                    if (['System', 'Orchestrator', 'Analysis', 'GitWorktree', 'MergeCoordinator'].includes(possibleComponent)) {
+                    if (['System', 'Orchestrator', 'Analysis', 'GitWorktree', 'MergeCoordinator', 'ReviewWorkflow'].includes(possibleComponent)) {
                         component = possibleComponent;
+                        engineerId = possibleComponent === 'ReviewWorkflow' ? 'system' : engineerId;
                     }
                 }
             }

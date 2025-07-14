@@ -297,7 +297,223 @@ jest.mock('./userService', () => ({
 - **データ同期**: [同期タイミング、方式、整合性保証]
 - **認証連携**: [SSO実装、セッション管理]
 
-## 10. 実装優先順位とフェーズ
+## 10. ログ設計・デバッグ戦略
+
+### 10.1 ログレベルとフォーマット
+\`\`\`typescript
+// ログレベルの定義
+enum LogLevel {
+  ERROR = 0,    // システムエラー、例外
+  WARN = 1,     // 警告、潜在的な問題
+  INFO = 2,     // 重要な情報、業務フロー
+  DEBUG = 3     // デバッグ情報、詳細な実行状況
+}
+
+// 統一ログフォーマット
+interface LogEntry {
+  timestamp: string;       // ISO 8601形式
+  level: LogLevel;
+  component: string;       // どのコンポーネントからのログか
+  message: string;
+  data?: any;             // 構造化データ
+  stack?: string;         // エラー時のスタックトレース
+  requestId?: string;     // リクエスト追跡用ID
+  userId?: string;        // ユーザー識別子
+}
+\`\`\`
+
+### 10.2 ログ実装規約
+\`\`\`typescript
+// ロガーの使用例
+const logger = new Logger('UserService');
+
+// 情報ログ
+logger.info('ユーザー登録処理開始', { userId: 'user123', email: 'user@example.com' });
+
+// 警告ログ
+logger.warn('APIレート制限に近づいています', { 
+  currentRate: 95, 
+  limit: 100,
+  timeWindow: '1分間'
+});
+
+// エラーログ（必ずスタックトレース付き）
+try {
+  await processUser(userData);
+} catch (error) {
+  logger.error('ユーザー処理でエラーが発生', {
+    userId: userData.id,
+    operation: 'processUser',
+    error: error.message,
+    stack: error.stack
+  });
+  throw error;
+}
+
+// デバッグログ
+logger.debug('データベースクエリ実行', {
+  query: 'SELECT * FROM users WHERE status = ?',
+  params: ['active'],
+  executionTime: '45ms'
+});
+\`\`\`
+
+### 10.3 機密情報の保護
+\`\`\`typescript
+// 機密情報のマスキング規則
+const SENSITIVE_FIELDS = ['password', 'token', 'apiKey', 'secret', 'ssn'];
+
+// ログ出力前の自動マスキング
+function sanitizeLogData(data: any): any {
+  if (typeof data !== 'object' || data === null) return data;
+  
+  const sanitized = { ...data };
+  for (const field of SENSITIVE_FIELDS) {
+    if (field in sanitized) {
+      sanitized[field] = '***MASKED***';
+    }
+  }
+  return sanitized;
+}
+
+// 使用例
+logger.info('ユーザー認証成功', sanitizeLogData({
+  userId: 'user123',
+  email: 'user@example.com',
+  password: 'secret123'  // 自動的に***MASKED***になる
+}));
+\`\`\`
+
+### 10.4 エラーハンドリングとスタックトレース
+\`\`\`typescript
+// エラーハンドリングの標準パターン
+class ApplicationError extends Error {
+  constructor(
+    public code: string,
+    message: string,
+    public context?: any
+  ) {
+    super(message);
+    this.name = 'ApplicationError';
+  }
+}
+
+// エラーログ出力の標準実装
+function logError(error: Error, context?: any): void {
+  const errorInfo = {
+    name: error.name,
+    message: error.message,
+    stack: error.stack,
+    context: sanitizeLogData(context),
+    timestamp: new Date().toISOString()
+  };
+
+  if (error instanceof ApplicationError) {
+    logger.error(\`アプリケーションエラー: \${error.code}\`, errorInfo);
+  } else {
+    logger.error('予期しないエラーが発生', errorInfo);
+  }
+}
+
+// 非同期エラーのキャッチ
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('未処理のPromise拒否', {
+    reason: reason,
+    promise: promise,
+    stack: reason instanceof Error ? reason.stack : undefined
+  });
+});
+
+process.on('uncaughtException', (error) => {
+  logger.error('未処理の例外', {
+    error: error.message,
+    stack: error.stack
+  });
+  process.exit(1);
+});
+\`\`\`
+
+### 10.5 パフォーマンス監視ログ
+\`\`\`typescript
+// 実行時間の測定とログ出力
+function measurePerformance(operationName: string) {
+  const startTime = Date.now();
+  
+  return {
+    end: (additionalData?: any) => {
+      const duration = Date.now() - startTime;
+      
+      if (duration > 1000) {
+        logger.warn(\`パフォーマンス警告: \${operationName}\`, {
+          duration: \`\${duration}ms\`,
+          threshold: '1000ms',
+          ...additionalData
+        });
+      } else {
+        logger.debug(\`パフォーマンス計測: \${operationName}\`, {
+          duration: \`\${duration}ms\`,
+          ...additionalData
+        });
+      }
+    }
+  };
+}
+
+// 使用例
+const perf = measurePerformance('データベースクエリ');
+const result = await database.query('SELECT * FROM large_table');
+perf.end({ rowCount: result.length });
+\`\`\`
+
+### 10.6 デバッグ支援ログ
+\`\`\`typescript
+// API リクエスト/レスポンスのログ
+function logApiCall(method: string, url: string, requestData?: any, responseData?: any): void {
+  const requestId = generateRequestId();
+  
+  logger.info(\`API リクエスト開始: \${method} \${url}\`, {
+    requestId,
+    method,
+    url,
+    requestData: sanitizeLogData(requestData)
+  });
+  
+  // レスポンス時
+  logger.info(\`API レスポンス: \${method} \${url}\`, {
+    requestId,
+    method,
+    url,
+    responseData: sanitizeLogData(responseData)
+  });
+}
+
+// データフロー追跡
+function logDataFlow(step: string, data: any, context?: string): void {
+  logger.debug(\`データフロー: \${step}\`, {
+    step,
+    context,
+    dataSnapshot: sanitizeLogData(data),
+    timestamp: new Date().toISOString()
+  });
+}
+\`\`\`
+
+### 10.7 ログ出力方針
+- **開発環境**: コンソール出力（カラーコード付き）
+- **本番環境**: 構造化JSON形式で標準出力
+- **出力形式**: ログレベル、タイムスタンプ、メッセージ、構造化データ
+- **ログ収集**: 標準出力されたログの収集・保存方法はデプロイ環境に依存
+
+### 10.8 AI開発時のデバッグ指針
+- **エラー発生時**: 必ずスタックトレースと実行コンテキストをログ出力
+- **データ変換時**: 入力・出力データの構造をデバッグログで記録
+- **外部API呼び出し**: リクエスト・レスポンスを詳細ログで追跡
+- **状態変化**: 重要な状態変更時にINFOレベルでログ出力
+- **パフォーマンス**: 処理時間が閾値を超えた場合は警告ログ
+
+**重要**: AIが実装時にエラーが発生した場合、ログ情報を元に自動的に問題を特定・修正できるよう、十分な情報をログに含めること。
+
+## 11. 実装優先順位とフェーズ
 
 ### フェーズ1: 基盤構築
 1. プロジェクト初期設定とディレクトリ構造

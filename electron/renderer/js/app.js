@@ -870,59 +870,44 @@ async function loadTasksDirectly() {
         
         let projectDir;
         
-        // 現在のprojectIdがある場合はそれを使用
-        if (state.currentProjectId) {
-            projectDir = path.join(projectsDir, state.currentProjectId);
-            console.log('[Tasks] Using current project ID:', state.currentProjectId);
-            
-            if (!fs.existsSync(projectDir)) {
-                console.warn('[Tasks] Current project directory not found:', projectDir);
-                tasksContainer.innerHTML = `<div class="no-tasks loading">
-                    <div class="loading-spinner"></div>
-                    <p>⏳ 現在のプロジェクトを待機中...</p>
-                    <p style="font-size: 0.8em; margin-top: 10px;">プロジェクトが開始されるのを待っています</p>
-                </div>`;
-                return;
-            }
-        } else {
-            // projectIdがない場合は最新のanalysis.jsonを持つプロジェクトを使用
-            const projectDirs = fs.readdirSync(projectsDir)
-                .map(f => path.join(projectsDir, f))
-                .filter(f => {
-                    try {
-                        // ディレクトリかつanalysis.jsonが存在するもののみ
-                        return fs.statSync(f).isDirectory() && 
-                               fs.existsSync(path.join(f, 'analysis.json'));
-                    } catch (e) {
-                        return false;
-                    }
-                })
-                .sort((a, b) => {
-                    // analysis.jsonの更新時刻で並び替え
-                    try {
-                        const aTime = fs.statSync(path.join(a, 'analysis.json')).mtimeMs;
-                        const bTime = fs.statSync(path.join(b, 'analysis.json')).mtimeMs;
-                        return bTime - aTime;
-                    } catch (e) {
-                        return 0;
-                    }
-                });
-            
-            console.log('[Tasks] Found project directories with analysis.json:', projectDirs.length);
-            
-            if (projectDirs.length === 0) {
-                tasksContainer.innerHTML = `<div class="no-tasks loading">
-                    <div class="loading-spinner"></div>
-                    <p>⏳ タスク分析を待機中...</p>
-                    <p style="font-size: 0.8em; margin-top: 10px;">プロジェクトの分析が完了するのを待っています</p>
-                </div>`;
-                return;
-            }
-            
-            // 最新のanalysis.jsonを持つプロジェクトディレクトリを使用
-            projectDir = projectDirs[0];
-            console.log('[Tasks] Using latest analyzed project directory');
+        // 最新のanalysis.jsonを持つプロジェクトを自動選択
+        const projectDirs = fs.readdirSync(projectsDir)
+            .map(f => path.join(projectsDir, f))
+            .filter(f => {
+                try {
+                    return fs.statSync(f).isDirectory() && 
+                           fs.existsSync(path.join(f, 'analysis.json'));
+                } catch (e) {
+                    return false;
+                }
+            })
+            .sort((a, b) => {
+                // analysis.jsonの更新時刻で並び替え（最新が先頭）
+                try {
+                    const aTime = fs.statSync(path.join(a, 'analysis.json')).mtimeMs;
+                    const bTime = fs.statSync(path.join(b, 'analysis.json')).mtimeMs;
+                    return bTime - aTime;
+                } catch (e) {
+                    return 0;
+                }
+            });
+        
+        console.log('[Tasks] Found project directories with analysis.json:', projectDirs.length);
+        
+        if (projectDirs.length === 0) {
+            console.log('[Tasks] No projects found, showing loading state');
+            tasksContainer.innerHTML = `<div class="no-tasks loading">
+                <div class="loading-spinner"></div>
+                <p>⏳ プロジェクトの分析を待機中...</p>
+                <p style="font-size: 0.8em; margin-top: 10px;">タスク分析が完了するのを待っています</p>
+            </div>`;
+            return;
         }
+        
+        // 最新のプロジェクトを使用
+        projectDir = projectDirs[0];
+        const projectId = path.basename(projectDir);
+        console.log('[Tasks] Using latest project:', projectId, 'at', projectDir);
         const instructionsDir = path.join(projectDir, 'instructions');
         console.log('[Tasks] Using project directory:', projectDir);
         
@@ -940,14 +925,10 @@ async function loadTasksDirectly() {
         const overviewPath = path.join(instructionsDir, 'task-overview.md');
         if (fs.existsSync(overviewPath)) {
             const overviewContent = fs.readFileSync(overviewPath, 'utf-8');
-            const projectId = path.basename(projectDir);
-            const isCurrentProject = state.currentProjectId && projectId === state.currentProjectId;
-            overviewContainer.innerHTML = `<div class="project-info">プロジェクトID: ${projectId}${isCurrentProject ? ' <span style="color: #4caf50;">(現在実行中)</span>' : ''}</div><pre>${overviewContent}</pre>`;
+            overviewContainer.innerHTML = `<div class="project-info">プロジェクトID: ${projectId} <span style="color: #4caf50;">(最新プロジェクト)</span></div><pre>${overviewContent}</pre>`;
             console.log('[Tasks] Loaded overview');
         } else {
-            const projectId = path.basename(projectDir);
-            const isCurrentProject = state.currentProjectId && projectId === state.currentProjectId;
-            overviewContainer.innerHTML = `<div class="project-info">プロジェクトID: ${projectId}${isCurrentProject ? ' <span style="color: #4caf50;">(現在実行中)</span>' : ''}</div><p>No overview found</p>`;
+            overviewContainer.innerHTML = `<div class="project-info">プロジェクトID: ${projectId} <span style="color: #4caf50;">(最新プロジェクト)</span></div><p>No overview found</p>`;
         }
         
         // 現在のプロジェクトのタスクIDとセッションIDを取得するためanalysis.jsonを読み込む

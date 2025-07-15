@@ -394,21 +394,72 @@ export class GitWorktreeManager {
   /**
    * 全てのタスクworktreeをクリーンアップ
    */
-  async cleanupAllTaskWorktrees(): Promise<void> {
+  async cleanupAllTaskWorktrees(options: { deleteBranches?: boolean } = {}): Promise<void> {
     try {
       const worktrees = await this.listWorktrees();
       
       for (const worktree of worktrees) {
         if (worktree.branch && worktree.branch.startsWith('feature/task-')) {
           const taskId = worktree.branch.replace('feature/task-', '');
-          await this.removeWorktree(taskId);
+          await this.cleanupCompletedTask(taskId, { deleteBranch: options.deleteBranches });
         }
+      }
+
+      // 追加: worktreeが存在しないがブランチのみ残っているfeature/task-*ブランチを削除
+      if (options.deleteBranches) {
+        await this.cleanupOrphanedTaskBranches();
       }
 
       console.log('🧹 全タスクworktreeのクリーンアップ完了');
 
     } catch (error) {
       console.error('❌ 全クリーンアップエラー:', error);
+    }
+  }
+
+  /**
+   * 孤立したタスクブランチ（worktreeが存在しないfeature/task-*ブランチ）を削除
+   */
+  private async cleanupOrphanedTaskBranches(): Promise<void> {
+    try {
+      // 全てのローカルブランチを取得
+      const output = execSync('git branch', {
+        cwd: this.baseRepoPath,
+        encoding: 'utf-8',
+        stdio: 'pipe'
+      });
+
+      const branches = output.split('\n')
+        .map(line => line.trim().replace(/^\*\s*/, '')) // 現在のブランチの*を削除
+        .filter(branch => branch.startsWith('feature/task-'))
+        .filter(branch => branch !== ''); // 空行を除外
+
+      // 現在のworktreeリストを取得
+      const worktrees = await this.listWorktrees();
+      const worktreeBranches = new Set(
+        worktrees
+          .filter(wt => wt.branch && wt.branch.startsWith('feature/task-'))
+          .map(wt => wt.branch!)
+      );
+
+      // worktreeが存在しないブランチを削除
+      for (const branch of branches) {
+        if (!worktreeBranches.has(branch)) {
+          try {
+            console.log(`🗑️ 孤立したタスクブランチを削除: ${branch}`);
+            execSync(`git branch -D ${branch}`, {
+              cwd: this.baseRepoPath,
+              stdio: 'pipe'
+            });
+            console.log(`✅ ブランチ削除完了: ${branch}`);
+          } catch (branchError) {
+            console.warn(`⚠️ ブランチ削除中にエラー: ${branch}`, branchError);
+          }
+        }
+      }
+
+    } catch (error) {
+      console.warn('⚠️ 孤立ブランチの削除中にエラー:', error);
     }
   }
 

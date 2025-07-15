@@ -291,7 +291,7 @@ export class ParallelDevelopmentOrchestrator {
 
     // Worktreeのクリーンアップ（オプション）
     if (cleanupWorktrees) {
-      await this.gitManager.cleanupAllTaskWorktrees();
+      await this.gitManager.cleanupAllTaskWorktrees({ deleteBranches: true });
     }
 
     // CompletionReporterのクリーンアップ

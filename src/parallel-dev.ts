@@ -37,7 +37,7 @@ class ParallelDevelopmentCLI {
   --max-turns <num>         タスクあたりの最大ターン数 (デフォルト: 50)
   --base-branch <branch>    ベースブランチ (デフォルト: 現在のブランチ)
   --use-remote              リモートリポジトリを使用 (デフォルト: ローカルのみ)
-  --cleanup                 実行後にWorktreeをクリーンアップ
+  --keep-worktrees          実行後にWorktreeとブランチを保持 (デフォルト: 自動削除)
   --visual-ui               ターミナル分割表示を使用
   --electron                Electron UIを使用（デフォルト）
   --no-electron             Electron UIを無効化してCLIモードで実行
@@ -48,9 +48,9 @@ class ParallelDevelopmentCLI {
 例:
   kugutsu "ユーザー認証機能を実装してください" --electron
   kugutsu "バグ修正: ログイン時のエラーハンドリング" --max-engineers 2 --no-electron
-  kugutsu "新しいAPI endpointを3つ追加" --cleanup
-  kugutsu "機能改善" --use-remote --cleanup --visual-ui
-  kugutsu "デバッグ作業" --devtools
+  kugutsu "新しいAPI endpointを3つ追加" --keep-worktrees
+  kugutsu "機能改善" --use-remote --visual-ui
+  kugutsu "デバッグ作業" --devtools --keep-worktrees
 `);
   }
 
@@ -87,7 +87,7 @@ class ParallelDevelopmentCLI {
   private static parseArgs(args: string[]): {
     userRequest?: string;
     config: SystemConfig;
-    cleanup: boolean;
+    keepWorktrees: boolean;
     showHelp: boolean;
     visualUI: boolean;
     electronUI: boolean;
@@ -101,7 +101,7 @@ class ParallelDevelopmentCLI {
       useRemote: false // デフォルトはローカルのみ
     };
 
-    let cleanup = false;
+    let keepWorktrees = false; // デフォルトは自動削除
     let showHelp = false;
     let visualUI = false;
     let electronUI = true; // デフォルトでElectron UIを有効化
@@ -117,8 +117,8 @@ class ParallelDevelopmentCLI {
         const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
         console.log(`@titabash/kugutsu version: ${packageJson.version}`);
         process.exit(0);
-      } else if (arg === '--cleanup') {
-        cleanup = true;
+      } else if (arg === '--keep-worktrees') {
+        keepWorktrees = true;
       } else if (arg === '--visual-ui') {
         visualUI = true;
         electronUI = false; // visual-uiが指定された場合はElectronを無効化
@@ -144,7 +144,7 @@ class ParallelDevelopmentCLI {
       }
     }
 
-    return { userRequest, config, cleanup, showHelp, visualUI, electronUI };
+    return { userRequest, config, keepWorktrees, showHelp, visualUI, electronUI };
   }
 
   /**
@@ -232,7 +232,7 @@ class ParallelDevelopmentCLI {
    */
   public static async main(): Promise<void> {
     const args = process.argv.slice(2);
-    const { userRequest, config, cleanup, showHelp, visualUI, electronUI } = this.parseArgs(args);
+    const { userRequest, config, keepWorktrees, showHelp, visualUI, electronUI } = this.parseArgs(args);
 
     // ヘルプ表示
     if (showHelp || args.length === 0) {
@@ -334,7 +334,7 @@ class ParallelDevelopmentCLI {
     console.log(`🔄 最大ターン数: ${config.maxTurnsPerTask}`);
     console.log(`🌱 ベースブランチ: ${config.baseBranch}`);
     console.log(`📡 リモート使用: ${config.useRemote ? 'はい' : 'いいえ'}`);
-    console.log(`🧹 実行後クリーンアップ: ${cleanup ? 'はい' : 'いいえ'}`);
+    console.log(`🧹 実行後クリーンアップ: ${keepWorktrees ? 'いいえ' : 'はい'}`);
     console.log(`🖥️  UIモード: ${electronUI ? 'Electron' : (visualUI ? 'Terminal分割' : '標準')}`);
 
     try {
@@ -418,12 +418,14 @@ class ParallelDevelopmentCLI {
       }
 
       // クリーンアップ
-      if (cleanup) {
-        await orchestrator.cleanup(true);
-      } else {
+      if (keepWorktrees) {
         await orchestrator.cleanup(false);
-        console.log('\n💡 Worktreeは保持されています。手動で削除する場合:');
+        console.log('\n💡 Worktreeとブランチは保持されています。手動で削除する場合:');
         console.log(`   git worktree remove <worktree-path>`);
+        console.log(`   git branch -D <branch-name>`);
+      } else {
+        await orchestrator.cleanup(true);
+        console.log('\n🧹 Worktreeとブランチを自動削除しました');
       }
 
       console.log('\n🎉 AI並列開発完了！');

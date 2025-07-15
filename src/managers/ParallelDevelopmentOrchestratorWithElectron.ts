@@ -234,8 +234,8 @@ export class ParallelDevelopmentOrchestratorWithElectron extends ParallelDevelop
   /**
    * クリーンアップ処理
    */
-  public async cleanup(): Promise<void> {
-    await super.cleanup();
+  public async cleanup(cleanupWorktrees: boolean = false): Promise<void> {
+    await super.cleanup(cleanupWorktrees);
   }
   
   /**

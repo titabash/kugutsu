@@ -1,8 +1,9 @@
 // Electronのrequireを使用してモジュールを読み込む
-const { Terminal } = require('@xterm/xterm');
-const { FitAddon } = require('@xterm/addon-fit');
-const { SearchAddon } = require('@xterm/addon-search');
-const { WebLinksAddon } = require('@xterm/addon-web-links');
+// Note: Electronのrendererプロセスでは、nodeIntegrationが有効な場合はwindow.requireを使用
+const { Terminal } = window.require('@xterm/xterm');
+const { FitAddon } = window.require('@xterm/addon-fit');
+const { SearchAddon } = window.require('@xterm/addon-search');
+const { WebLinksAddon } = window.require('@xterm/addon-web-links');
 
 // カラーテーマ定義
 const themes = {

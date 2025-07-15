@@ -1,8 +1,8 @@
 // ES Module対応のタスク管理モジュール
 // Electronのnodeintegrationが有効なので、requireを使用
-const { readFileSync, readdirSync, existsSync, statSync } = require('fs');
-const { join } = require('path');
-const { tmpdir } = require('os');
+import { readFileSync, readdirSync, existsSync, statSync } from 'fs';
+import { join } from 'path';
+import { tmpdir } from 'os';
 
 // グローバル状態
 let currentTasks = [];
@@ -461,8 +461,8 @@ function onTasksTabActivated() {
     loadTaskData();
 }
 
-// CommonJS形式でエクスポート
-module.exports = {
+// ESM形式でエクスポート
+export {
     loadTaskData,
     showTaskDetail,
     hideTaskDetail,

@@ -123,7 +123,13 @@ async function main() {
 }
 
 // スクリプトが直接実行された場合のみmain関数を呼び出し
-if (require.main === module) {
+// ESMでは import.meta.url を使用
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+if (process.argv[1] === __filename || process.argv[1] === __filename.replace('.ts', '.js')) {
   main().catch((error) => {
     console.error('❌ 予期しないエラー:', error);
     process.exit(1);

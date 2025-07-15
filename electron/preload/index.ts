@@ -1,7 +1,7 @@
 // Preloadスクリプトの最初にログを出力
 console.log('[Preload] Starting preload script execution...');
 
-const { contextBridge, ipcRenderer } = require('electron');
+import { contextBridge, ipcRenderer } from 'electron';
 
 // Type definition for IpcRendererEvent
 interface IpcRendererEvent {
@@ -92,5 +92,5 @@ try {
   console.error('[Preload] Error setting up electronAPI:', error);
 }
 
-// CommonJSとしてexport
-module.exports = { electronAPI };
+// ESMとしてexport
+export { electronAPI };

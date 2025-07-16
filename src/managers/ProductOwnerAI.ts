@@ -830,6 +830,7 @@ ${projectStructure}
 ${userRequest}
 
 ## 🔍 プロジェクトコンテキスト
+プロジェクトID: ${projectId}
 ${techStackContent}
 
 ## 🔍 分析プロセス
@@ -877,21 +878,23 @@ ${techStackContent}
 ### 🗂️ 必須ドキュメント作成
 分析完了後、以下のファイルを.kugutsuディレクトリに作成してください：
 
-1. **フェーズドキュメント**: .kugutsu/phase-{プロジェクトID}.json
+1. **フェーズドキュメント**: .kugutsu/phase-${projectId}.json
    - プロジェクトの全体構成とフェーズ情報
    - 現在のフェーズ状況と進捗管理
    - 次回実行時の継続に必要な情報
 
-2. **要件仕様書**: .kugutsu/requirements-{プロジェクトID}.md
+2. **要件仕様書**: .kugutsu/requirements-${projectId}.md
    - 各フェーズの機能要件と品質要件の詳細
    - ビジネスルールと制約条件
    - 次回実行時に要件を理解するための重要な情報
 
-3. **Design Docs（新規アプリ・システム開発時のみ）**: .kugutsu/design-doc-{プロジェクトID}.md
+3. **Design Docs（新規アプリ・システム開発時のみ）**: .kugutsu/design-doc-${projectId}.md
    - システム全体の設計ドキュメント
    - アーキテクチャ概要と設計判断の根拠
    - システムの技術仕様と統合方針
    - **重要**: 新規アプリ・システム開発と判断した場合は必ず作成してください
+
+**重要**: すべてのファイルパスでプロジェクトIDは「${projectId}」を使用してください。
 
 ### 📝 新規アプリ・システム開発の判断基準
 以下のいずれかに該当する場合は「新規アプリ・システム開発」と判断し、Design Docsを作成してください：
@@ -930,7 +933,12 @@ ${designDocTemplate}
 
 保存先ファイル: ${this.getAnalysisJsonPath(projectId)}
 
+**重要**: プロジェクトIDは必ず「${projectId}」を使用してください。独自にプロジェクトIDを決定してはいけません。
+
 重要: Writeツールを使用して、上記のファイルパスに以下の形式のJSONを保存してください：
+
+作業前に、プロジェクトディレクトリ .kugutsu/projects/${projectId} を作成し、すべてのファイルをこのディレクトリに保存してください。
+他のプロジェクトIDやディレクトリ名は絶対に使用しないでください。
 
 \`\`\`json
 {

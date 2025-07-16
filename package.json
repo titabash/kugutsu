@@ -17,7 +17,7 @@
     "version": "echo \"@titabash/kugutsu version: $(node -p \"require('./package.json').version\")\""
   },
   "dependencies": {
-    "@anthropic-ai/claude-code": "latest",
+    "@anthropic-ai/claude-code": "^1.0.53",
     "@xterm/addon-canvas": "^0.7.0",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-search": "^0.15.0",

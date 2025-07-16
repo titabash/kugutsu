@@ -19,7 +19,7 @@ export class TechLeadAI extends BaseAI {
     this.techLeadId = techLeadId;
     this.config = {
       systemPrompt: this.getDefaultSystemPrompt(),
-      maxTurns: 15,
+      maxTurns: 100,
       allowedTools: ["Read", "Bash", "Grep", "Glob", "LS", "WebSearch", "WebFetch", "TodoRead"],
       ...config
     };

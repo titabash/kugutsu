@@ -24,7 +24,7 @@ export class EngineerAI extends BaseAI {
     this.engineerId = engineerId;
     this.config = {
       systemPrompt: this.getDefaultSystemPrompt(),
-      maxTurns: 20,
+      maxTurns: 100,
       allowedTools: ["Agent", "TodoWrite", "TodoRead", "Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep", "LS", "WebSearch", "WebFetch"],
       ...config
     };

@@ -41,7 +41,7 @@ export class ProductOwnerAI extends BaseAI {
     this.baseRepoPath = baseRepoPath;
     this.config = {
       systemPrompt: this.getDefaultSystemPrompt(),
-      maxTurns: 10,
+      maxTurns: 100,
       allowedTools: ["Read", "Glob", "Grep", "LS", "Write", "WebSearch", "WebFetch", "TodoWrite", "TodoRead"],
       ...config
     };
@@ -558,6 +558,7 @@ export class ProductOwnerAI extends BaseAI {
   /**
    * 技術スタック情報を保存
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private async saveTechStackInfo(techStackInfo: TechStackInfo): Promise<void> {
     await this.initializeKugutsuDir();
     const techStackPath = this.getTechStackPath();
@@ -575,6 +576,7 @@ export class ProductOwnerAI extends BaseAI {
   /**
    * 既存の技術スタック情報を読み込み
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private async loadTechStackInfo(): Promise<TechStackInfo | null> {
     const techStackPath = this.getTechStackPath();
     try {
@@ -601,7 +603,10 @@ export class ProductOwnerAI extends BaseAI {
         const existingContent = await fs.readFile(techStackPath, 'utf-8');
         // 基本的には既存ファイルがあれば変更なしと見なす
         // より精密な変更検出が必要な場合は、ファイルの更新日時等で判定
-        this.info('📋 既存の技術スタック分析ファイルを確認');
+        this.info('📋 既存の技術スタック分析ファイルを確認', {
+          contentLength: existingContent.length,
+          lastModified: new Date().toISOString()
+        });
         return false;
       } catch {
         // ファイルが存在しない場合は新規分析が必要
@@ -730,7 +735,8 @@ ${projectStructure}
         allowedTools: ["Read", "Glob", "LS", "Write"],
       },
     })) {
-      // メッセージ処理は不要（AIが直接ファイル保存）
+      // メッセージ処理
+      this.displayMessageActivity(message as any);
     }
   }
 
@@ -750,6 +756,7 @@ ${projectStructure}
   /**
    * 技術スタック情報をフォーマット（複数言語対応）
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private formatTechStack(techStackInfo: TechStackInfo): string {
     if (techStackInfo.stacks.length === 0) {
       return '- プロジェクト: 技術スタックが検出されませんでした';
@@ -784,6 +791,7 @@ ${projectStructure}
   /**
    * コンテキスト適応戦略を構築
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private buildContextStrategy(techStackInfo: TechStackInfo): string {
     if (techStackInfo.isMonorepo) {
       const languages = techStackInfo.stacks.map(s => s.language).join('、');
@@ -803,6 +811,7 @@ ${projectStructure}
   /**
    * 技術スタックの要約を取得
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private getTechStackSummary(techStackInfo: TechStackInfo): string {
     if (techStackInfo.isMonorepo) {
       const languages = techStackInfo.stacks.map(s => s.language).join('・');
@@ -1165,7 +1174,7 @@ ${analysis}
   /**
    * 保存されたJSONファイルからタスク分析結果を抽出
    */
-  private async extractTaskAnalysisResultFromFile(projectId: string): Promise<TaskAnalysisResult> {
+  private async extractTaskAnalysisResultFromFile(projectId: string, maxRetries: number = 2): Promise<TaskAnalysisResult> {
     const analysisPath = this.getAnalysisJsonPath(projectId);
 
     try {
@@ -1262,7 +1271,89 @@ ${analysis}
         this.error('❌ プロジェクトディレクトリが存在しません', { projectDir });
       }
 
+      // Fallback: AIに再度ファイル作成を指示
+      if (maxRetries > 0) {
+        this.warn(`⚠️ analysis.jsonファイルが見つかりません。AI に再度作成を指示します... (残り再試行: ${maxRetries})`);
+        
+        try {
+          await this.fallbackCreateAnalysisJson(projectId);
+          
+          // 再帰的に再試行
+          return await this.extractTaskAnalysisResultFromFile(projectId, maxRetries - 1);
+        } catch (fallbackError) {
+          this.error('❌ Fallback作成も失敗しました', { fallbackError });
+        }
+      }
+
       throw new Error(`タスク分析結果ファイルが作成されませんでした: ${analysisPath}`);
+    }
+  }
+
+  /**
+   * Fallback: AIに analysis.json ファイルの作成を再度指示
+   */
+  private async fallbackCreateAnalysisJson(projectId: string): Promise<void> {
+    this.info('🔄 Fallback: analysis.jsonファイルの作成を再実行します');
+    
+    const prompt = `
+🚨 **緊急**: analysis.jsonファイルが作成されていません。システムエラーを回避するため、今すぐ作成してください。
+
+## 作業指示
+プロジェクトID: ${projectId}
+保存先: ${this.getAnalysisJsonPath(projectId)}
+
+## 作業手順
+1. 以前の分析結果を基に、analysis.jsonファイルを作成してください
+2. プロジェクトディレクトリが存在しない場合は作成してください  
+3. 以下の最小限の構造でファイルを作成してください
+
+必須JSON構造:
+\`\`\`json
+{
+  "sessionId": "",
+  "analysis": {
+    "userRequestAnalysis": "前回の分析結果のまとめ",
+    "codebaseAssessment": "コードベース評価",
+    "technicalRequirements": "技術要件",
+    "architecturalDecisions": "設計判断"
+  },
+  "tasks": [
+    {
+      "id": "task-1",
+      "title": "基本タスク",
+      "description": "タスクの説明",
+      "type": "feature",
+      "priority": "medium",
+      "skillRequirements": [],
+      "functionalRequirements": { "userStories": [], "useCases": [], "businessRules": [] },
+      "qualityRequirements": { "usability": [], "security": [] },
+      "integrationRequirements": { "externalSystems": [], "internalModules": [], "dataFlow": [] },
+      "dependencies": [],
+      "acceptanceCriteria": [],
+      "constraints": [],
+      "successMetrics": []
+    }
+  ],
+  "summary": "プロジェクト概要",
+  "riskAssessment": { "risks": [], "mitigations": [] },
+  "parallelizationStrategy": "並列化戦略"
+}
+\`\`\`
+
+🚨 **重要**: Writeツールを使って、必ず上記のファイルパスに保存してください。
+`;
+
+    for await (const message of query({
+      prompt,
+      abortController: new AbortController(),
+      options: {
+        maxTurns: 3,
+        cwd: this.baseRepoPath,
+        allowedTools: ["Write", "Bash"],
+      },
+    })) {
+      // メッセージ処理（ログ出力など）
+      this.displayMessageActivity(message as any);
     }
   }
 

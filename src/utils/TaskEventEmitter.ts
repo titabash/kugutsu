@@ -104,6 +104,7 @@ export class TaskEventEmitter extends EventEmitter {
   private listenerRegistry = new Map<string, Map<string, (...args: any[]) => void>>();
   private activeListeners = new Set<(...args: any[]) => void>();
   private maxListenersWarningShown = false;
+  private memoryMonitoringInterval?: NodeJS.Timeout;
 
   private constructor() {
     super();
@@ -408,7 +409,7 @@ export class TaskEventEmitter extends EventEmitter {
    * メモリ使用量監視開始
    */
   private startMemoryMonitoring(): void {
-    setInterval(() => {
+    this.memoryMonitoringInterval = setInterval(() => {
       const listenerCount = this.listenerCount();
       const memUsage = process.memoryUsage();
       
@@ -476,6 +477,12 @@ export class TaskEventEmitter extends EventEmitter {
    */
   cleanup(): void {
     console.log('🧹 TaskEventEmitter クリーンアップ開始');
+    
+    // メモリ監視インターバルをクリア
+    if (this.memoryMonitoringInterval) {
+      clearInterval(this.memoryMonitoringInterval);
+      this.memoryMonitoringInterval = undefined;
+    }
     
     // 全リスナーを安全に解除
     for (const [eventName] of this.listenerRegistry) {

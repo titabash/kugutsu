@@ -112,8 +112,12 @@ export class ParallelLogViewer {
 
   public destroy(): void {
     this.isActive = false;
-    this.screen.destroy();
-    process.exit(0);
+    try {
+      this.screen.destroy();
+    } catch (error) {
+      console.warn('⚠️ Log Viewer screen破棄エラー:', error);
+    }
+    // process.exit(0)を削除 - 呼び出し元で適切に終了処理を行う
   }
 
   public addEngineer(engineerId: string, title: string): void {

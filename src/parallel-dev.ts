@@ -344,19 +344,37 @@ class ParallelDevelopmentCLI {
         : new ParallelDevelopmentOrchestrator(config, visualUI);
 
       // シグナルハンドラーを設定（Ctrl+Cなどで適切にクリーンアップ）
+      let isCleaningUp = false;
       const cleanup_handler = async () => {
+        if (isCleaningUp) {
+          console.log('\n🛑 既にクリーンアップ中です...');
+          return;
+        }
+        isCleaningUp = true;
+        
         console.log('\n🛑 システム停止中...');
         
-        // Electronプロセスを終了
-        if (electronUI) {
-          electronLogAdapter.stop();
+        try {
+          // Electronプロセスを終了
+          if (electronUI) {
+            electronLogAdapter.stop();
+          }
+          
+          orchestrator.stopLogViewer();
+          await Promise.race([
+            orchestrator.cleanup(true),
+            new Promise(resolve => setTimeout(resolve, 30000)) // 30秒でタイムアウト（SIGINTクリーンアップのみ）
+          ]);
+        } catch (error) {
+          console.error('🚨 クリーンアップエラー:', error);
         }
         
-        orchestrator.stopLogViewer();
-        await orchestrator.cleanup(true);
         process.exit(0);
       };
 
+      // 既存のSIGINTハンドラーを削除してから新しいハンドラーを設定
+      process.removeAllListeners('SIGINT');
+      process.removeAllListeners('SIGTERM');
       process.on('SIGINT', cleanup_handler);
       process.on('SIGTERM', cleanup_handler);
 

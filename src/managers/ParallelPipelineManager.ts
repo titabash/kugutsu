@@ -448,11 +448,14 @@ export class ParallelPipelineManager {
       const depStats = this.dependencyManager.getStatusSummary();
       if (depStats.waiting > 0 || depStats.ready > 0 || depStats.running > 0) {
         console.log(`⏳ 依存関係の完了を待機中...`);
+        
+        // 通常の処理フローではタイムアウトなしで待機（AI開発作業を妨げない）
         while (true) {
           const currentStats = this.dependencyManager.getStatusSummary();
           if (currentStats.waiting === 0 && currentStats.ready === 0 && currentStats.running === 0) {
             break;
           }
+          
           await new Promise(resolve => setTimeout(resolve, 1000));
         }
       }
@@ -512,8 +515,15 @@ export class ParallelPipelineManager {
     
     this.stop();
     
-    // 処理中のタスクを待つ
-    await this.waitForCompletion();
+    // 処理中のタスクを待つ（タイムアウト付き）
+    try {
+      await Promise.race([
+        this.waitForCompletion(),
+        new Promise(resolve => setTimeout(resolve, 60000)) // 1分でタイムアウト（クリーンアップのみ）
+      ]);
+    } catch (error) {
+      console.warn('⚠️ cleanup中のwaitForCompletion処理でエラー:', error);
+    }
     
     // イベントリスナーを全て解除
     console.log(`🗑️ イベントリスナー解除: ${this.listenerRegistrations.length}個`);

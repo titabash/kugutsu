@@ -307,8 +307,8 @@ export class MergeQueue {
         stdio: 'pipe'
       });
 
-      // フィーチャーブランチをマージ
-      execSync(`git merge --no-ff ${task.branchName}`, {
+      // 個別のコミット履歴を保持するため通常のマージを使用（--no-ffを削除）
+      execSync(`git merge ${task.branchName}`, {
         cwd: this.config.baseRepoPath,
         stdio: 'pipe'
       });

@@ -129,7 +129,7 @@ export class ElectronLogAdapter {
             });
 
             this.electronProcess.stdout?.on('data', (data) => {
-                console.log(`[Electron]: ${data.toString().trim()}`);
+                console.log(`[Electron]: ${data.toString()}`);
             });
 
             this.electronProcess.stderr?.on('data', (data) => {

@@ -237,35 +237,27 @@ export class MergeCoordinator {
       throw new Error(`Worktreeパスが設定されていません: ${task.id}`);
     }
 
+    console.log(`🔀 [Merge Coordinator] マージ実行開始: "${task.branchName}" → "${this.config.baseBranch}"`);
+    console.log(`📋 [Merge Coordinator] タスク: ${task.title} (ID: ${task.id})`);
+
+    // Step 1: worktree側でbaseBranchをマージしてコンフリクトチェック
+    console.log(`📥 [Merge Coordinator] Worktree側で "${this.config.baseBranch}" をマージしてコンフリクトをチェック中...`);
+    
     try {
-      console.log(`🔀 [Merge Coordinator] マージ実行: "${task.branchName}" → "${this.config.baseBranch}"`);
-      console.log(`📋 [Merge Coordinator] タスク: ${task.title} (ID: ${task.id})`);
-
-      // Step 1: worktree側でmainブランチをマージしてコンフリクトチェック
-      console.log(`📥 [Merge Coordinator] Worktree側で "${this.config.baseBranch}" をマージしてコンフリクトをチェック中...`);
-      
-      execSync(`git merge ${this.config.baseBranch}`, {
+      const worktreeMergeOutput = execSync(`git merge ${this.config.baseBranch}`, {
         cwd: worktreePath,
-        stdio: 'pipe'
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe']
       });
 
-      // Step 2: worktree側でマージが成功したら、mainブランチに切り替えてフィーチャーブランチをマージ
-      console.log(`📤 [Merge Coordinator] "${this.config.baseBranch}" ブランチに "${task.branchName}" をマージ中...`);
+      console.log(`✅ [Merge Coordinator] Worktree側でのマージ完了`);
+      if (worktreeMergeOutput) {
+        console.log(`📄 [Merge Coordinator] Worktreeマージ詳細:\n${worktreeMergeOutput}`);
+      }
+
+    } catch (worktreeError) {
+      console.error(`❌ [Merge Coordinator] Worktree側でマージエラー: ${worktreeError}`);
       
-      execSync(`git checkout ${this.config.baseBranch}`, {
-        cwd: this.config.baseRepoPath,
-        stdio: 'pipe'
-      });
-
-      // 個別のコミット履歴を保持するため通常のマージを使用（--no-ffを削除）
-      execSync(`git merge ${task.branchName}`, {
-        cwd: this.config.baseRepoPath,
-        stdio: 'pipe'
-      });
-
-      return true;
-
-    } catch (error) {
       // worktree側でのマージでコンフリクトが発生した場合
       const conflictDetected = await this.detectMergeConflictInWorktree(worktreePath);
       
@@ -279,23 +271,127 @@ export class MergeCoordinator {
             cwd: worktreePath,
             stdio: 'pipe'
           });
+          console.log(`🔄 [Merge Coordinator] Worktree側のマージを中止しました`);
         } catch (abortError) {
-          // 中止エラーは無視
-        }
-        
-        // main側でもマージが失敗している可能性があるので中止
-        try {
-          execSync(`git merge --abort`, {
-            cwd: this.config.baseRepoPath,
-            stdio: 'pipe'
-          });
-        } catch (abortError) {
-          // 中止エラーは無視
+          console.warn(`⚠️ [Merge Coordinator] Worktreeマージ中止失敗: ${abortError}`);
         }
         
         return false;
       }
     }
+
+    // Step 2: baseRepoPathでbaseBranchにチェックアウト
+    console.log(`📤 [Merge Coordinator] "${this.config.baseBranch}" ブランチに切り替え中...`);
+    
+    try {
+      const checkoutOutput = execSync(`git checkout ${this.config.baseBranch}`, {
+        cwd: this.config.baseRepoPath,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
+
+      console.log(`✅ [Merge Coordinator] ベースブランチに切り替え完了`);
+      if (checkoutOutput) {
+        console.log(`📄 [Merge Coordinator] チェックアウト詳細:\n${checkoutOutput}`);
+      }
+
+    } catch (checkoutError) {
+      console.error(`❌ [Merge Coordinator] ベースブランチへの切り替えエラー: ${checkoutError}`);
+      return false;
+    }
+
+    // Step 3: baseRepoPathでtask.branchNameをマージ
+    console.log(`🔗 [Merge Coordinator] "${task.branchName}" を "${this.config.baseBranch}" にマージ中...`);
+    
+    try {
+      const mergeOutput = execSync(`git merge ${task.branchName}`, {
+        cwd: this.config.baseRepoPath,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
+
+      console.log(`✅ [Merge Coordinator] マージ完了`);
+      if (mergeOutput) {
+        console.log(`📄 [Merge Coordinator] マージ詳細:\n${mergeOutput}`);
+      }
+
+    } catch (mergeError) {
+      console.error(`❌ [Merge Coordinator] マージエラー: ${mergeError}`);
+      
+      // マージが失敗している可能性があるので中止
+      try {
+        execSync(`git merge --abort`, {
+          cwd: this.config.baseRepoPath,
+          stdio: 'pipe'
+        });
+        console.log(`🔄 [Merge Coordinator] ベースブランチのマージを中止しました`);
+      } catch (abortError) {
+        console.warn(`⚠️ [Merge Coordinator] ベースブランチマージ中止失敗: ${abortError}`);
+      }
+      
+      return false;
+    }
+
+    // Step 4: マージ後の状態確認
+    console.log(`🔍 [Merge Coordinator] マージ後の状態確認中...`);
+    
+    try {
+      const statusOutput = execSync('git status --porcelain', {
+        cwd: this.config.baseRepoPath,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
+
+      if (statusOutput.trim() === '') {
+        console.log(`✅ [Merge Coordinator] マージ後の状態確認完了: クリーンな状態`);
+      } else {
+        console.warn(`⚠️ [Merge Coordinator] マージ後に未処理の変更が検出されました:`);
+        console.warn(statusOutput);
+        return false;
+      }
+
+    } catch (statusError) {
+      console.error(`❌ [Merge Coordinator] マージ後の状態確認エラー: ${statusError}`);
+      return false;
+    }
+
+    // Step 5: 最新のコミット情報を表示
+    try {
+      const latestCommit = execSync('git log --oneline -1', {
+        cwd: this.config.baseRepoPath,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
+      
+      console.log(`📝 [Merge Coordinator] 最新コミット:\n${latestCommit}`);
+
+    } catch (commitError) {
+      console.warn(`⚠️ [Merge Coordinator] 最新コミット情報の取得に失敗: ${commitError}`);
+    }
+
+    // Step 6: 変更されたファイルの確認
+    try {
+      const changedFiles = execSync(`git diff --name-only HEAD~1 HEAD`, {
+        cwd: this.config.baseRepoPath,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
+      
+      if (changedFiles && changedFiles.trim()) {
+        console.log(`📁 [Merge Coordinator] 変更されたファイル:`);
+        changedFiles.trim().split('\n').forEach(file => {
+          console.log(`   - ${file}`);
+        });
+      } else {
+        console.log(`📁 [Merge Coordinator] 変更されたファイル: なし`);
+      }
+
+    } catch (diffError) {
+      console.warn(`⚠️ [Merge Coordinator] 変更ファイル情報の取得に失敗: ${diffError}`);
+    }
+
+    console.log(`🎉 [Merge Coordinator] マージ処理完了: "${task.branchName}" → "${this.config.baseBranch}"`);
+    return true;
   }
 
   /**

@@ -50,14 +50,19 @@ export class DependencyManager {
 
     // 依存関係の逆引き（dependents）を構築
     for (const [taskId, node] of this.taskGraph) {
+      // 存在しない依存関係を除去
+      const validDependencies = new Set<string>();
       for (const depId of node.dependencies) {
         const depNode = this.taskGraph.get(depId);
         if (depNode) {
           depNode.dependents.add(taskId);
+          validDependencies.add(depId);
         } else {
           console.warn(`Warning: Task ${taskId} depends on non-existent task ${depId}`);
         }
       }
+      // 存在しない依存関係を除去
+      node.dependencies = validDependencies;
     }
 
     // 初期状態を設定
@@ -219,14 +224,20 @@ export class DependencyManager {
     const path: string[] = [];
 
     const dfs = (taskId: string): boolean => {
+      // 存在しないタスクはスキップ
+      const node = this.taskGraph.get(taskId);
+      if (!node) return false;
+
       visited.add(taskId);
       recursionStack.add(taskId);
       path.push(taskId);
 
-      const node = this.taskGraph.get(taskId);
-      if (!node) return false;
-
       for (const depId of node.dependencies) {
+        // 存在しない依存関係はスキップ
+        if (!this.taskGraph.has(depId)) {
+          continue;
+        }
+
         if (!visited.has(depId)) {
           if (dfs(depId)) {
             return true;

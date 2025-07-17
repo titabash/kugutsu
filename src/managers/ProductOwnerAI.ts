@@ -1518,12 +1518,12 @@ ${analysis}
         task.dependencies = task.dependencies.map(depTitle => {
           const depId = titleToIdMap.get(depTitle);
           if (!depId) {
-            this.warn(`⚠️ 依存タスク "${depTitle}" が見つかりません`);
-            return depTitle; // 見つからない場合はタイトルのまま（後でエラーになる）
+            this.warn(`⚠️ 依存タスク "${depTitle}" が見つかりません - 依存関係から除外します`);
+            return null; // 見つからない場合はnullを返す
           }
           this.info(`  - "${depTitle}" → ${depId}`);
           return depId;
-        });
+        }).filter(depId => depId !== null) as string[]; // nullを除去
 
         this.info(`  - 変換後の依存関係: ${task.dependencies.join(', ') || 'なし'}`);
       });

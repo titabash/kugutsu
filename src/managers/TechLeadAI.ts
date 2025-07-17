@@ -411,7 +411,6 @@ export class TechLeadAI extends BaseAI {
 - **タスクID**: ${task.id}
 - **タイトル**: ${task.title}
 - **作業ディレクトリ**: ${task.worktreePath}
-- **実装時間**: ${engineerResult.duration}ms
 - **変更ファイル数**: ${engineerResult.filesChanged.length}個
 - **実装結果**: ${engineerResult.success ? '成功' : '失敗'}
 

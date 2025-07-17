@@ -897,10 +897,21 @@ ${techStackContent}
    - ビジネスルールと制約条件
    - 次回実行時に要件を理解するための重要な情報
 
-3. **Design Docs（新規アプリ・システム開発時のみ）**: .kugutsu/design-doc-${projectId}.md
+3. **Design Docs（新規アプリ・システム開発時のみ）**: 技術スタック別管理
    - システム全体の設計ドキュメント
    - アーキテクチャ概要と設計判断の根拠
    - システムの技術仕様と統合方針
+   - **ファイル選択**: 技術スタック分析結果に基づき動的にファイル名を決定
+     - 技術スタック分析により主要技術を特定 (例: react-typescript, vue-node, python-django等)
+     - ファイル名: .kugutsu/design-doc-{主要技術スタック}.md
+     - フォールバック: 特定できない場合は .kugutsu/design-doc-common.md
+   - **作成前チェック**: 対象ファイルの存在をReadツールで確認
+   - **既存ファイル処理**: 存在する場合は以下の手順を実行
+     1. Readツールで既存Design Docsの全内容を読み込む
+     2. 既存の設計方針、アーキテクチャ、技術仕様を理解・把握
+     3. 新しいユーザー要求との整合性を分析
+     4. 必要に応じて既存内容に追加・修正を実施
+   - **新規作成**: 存在しない場合は技術スタック用テンプレートで作成
    - **重要**: 新規アプリ・システム開発と判断した場合は必ず作成してください
 
 **重要**: すべてのファイルパスでプロジェクトIDは「${projectId}」を使用してください。
@@ -925,16 +936,41 @@ ${designDocTemplate}
 **重要**: 各セクションにはAIエンジニアが実装に必要な具体的な情報を記載してください。特に、画面設計（サイトマップ）、API設計、命名規則、共通コンポーネントなどは、チーム全体の規律を保つために詳細に定義することが重要です。
 
 **ページ分割について**: Design Docsの内容が大きくなる場合（5000行を超える場合など）は、適切にページを分割して複数のファイルに分けて作成してください。例えば：
-- design-doc-{プロジェクトID}.md (メインドキュメント)
-- design-doc-{プロジェクトID}-api.md (API仕様詳細)
-- design-doc-{プロジェクトID}-ui.md (UI/UX設計詳細)
-- design-doc-{プロジェクトID}-database.md (データベース設計詳細)
+- design-doc-{検出された技術スタック}.md (メインドキュメント)
+- design-doc-{検出された技術スタック}-api.md (API仕様詳細)
+- design-doc-{検出された技術スタック}-ui.md (UI/UX設計詳細)
+- design-doc-{検出された技術スタック}-database.md (データベース設計詳細)
 など、論理的に分割して管理しやすい構成にしてください。
 
 ### 📋 継続実行対応
 - 既存の.kugutsuディレクトリファイルを確認し、継続実行かを判断
 - 継続実行の場合は実装状況を分析し、適切なフェーズから開始
 - 新規の場合は最初のフェーズから開始
+
+### 📄 Design Docs管理方針
+- **動的検出**: 技術スタック分析により主要技術を自動検出（制限なし）
+  - フロントエンド + バックエンド組み合わせ (例: react-node, vue-python, svelte-go等)
+  - 単一技術 (例: react, django, laravel, rails等)
+  - モバイル技術 (例: react-native, flutter, ionic等)
+  - その他の技術組み合わせも自動対応
+- **ファイル名生成**: 検出結果に基づき design-doc-{主要技術}.md を動的生成
+  - 技術名は小文字、ハイフン区切りで正規化 (例: ReactTypeScript → react-typescript)
+  - 複数技術の場合は主要なもの2つまでを組み合わせ
+  - 特定不可の場合は design-doc-common.md をフォールバック使用
+- **存在確認**: 作業開始前に対象design-docファイルの存在をReadツールで確認
+- **内容参照**: 既存ファイルがある場合は必ずReadツールで全内容を読み込み
+- **内容理解**: 既存設計方針、アーキテクチャ、技術的決定事項を完全に把握
+- **継続性確保**: 既存の設計思想との一貫性を保ちながら新しい要件に対応
+- **新規作成**: 存在しない場合のみ新規作成（検出技術に最適化されたテンプレート）
+- **既存更新**: 存在する場合は以下の方針で更新
+  - 既存内容を完全に理解した上で作業
+  - 新しい要求事項を既存設計に統合
+  - 矛盾する場合は既存設計との整合性を考慮して調整
+  - 必要な部分のみ追加・修正（全面書き換えは避ける）
+  - 既存の良い設計は保持し、改善が必要な部分のみ更新
+- **効率化**: 毎回フルで再作成せず、必要に応じた差分更新で処理時間を短縮
+- **再利用促進**: 同一技術構成のプロジェクト間でdesign-docを共有・改善
+- **拡張性**: 新しい技術スタックに対しても自動対応
 
 ## 📊 最終成果物要求
 
@@ -952,8 +988,9 @@ ${designDocTemplate}
 🚨 **最重要**: 分析が完了したら、**必ず最後にanalysis.jsonファイルを作成してください**。
 
 1. 作業前に、プロジェクトディレクトリ .kugutsu/projects/${projectId} を作成
-2. フェーズドキュメントや要件書などの他のファイルを作成 
-3. **最後に必ず analysis.json ファイルを作成** (これが最重要)
+2. Design Docsは .kugutsu/ 直下に技術スタック別で作成 (技術スタック分析により動的にファイル名決定)
+3. フェーズドキュメントや要件書はプロジェクトディレクトリ内に作成
+4. **最後に必ず analysis.json ファイルを作成** (これが最重要)
 
 Writeツールを使用して、上記のファイルパス（${this.getAnalysisJsonPath(projectId)}）に以下の形式のJSONを保存してください：
 
@@ -979,7 +1016,6 @@ Writeツールを使用して、上記のファイルパス（${this.getAnalysis
       "description": "実装すべき機能の詳細説明",
       "type": "feature|bugfix|documentation|test|refactoring",
       "priority": "high|medium|low",
-      "skillRequirements": ["必要なスキルレベル"],
       "functionalRequirements": {
         "userStories": ["ユーザーストーリー: ユーザーが何をできるようになるか"],
         "useCases": ["具体的な使用シナリオ"],
@@ -997,7 +1033,6 @@ Writeツールを使用して、上記のファイルパス（${this.getAnalysis
       "dependencies": ["依存するタスクのタイトル（循環依存を避ける）"],
       "acceptanceCriteria": ["具体的な受け入れ基準（What、Whyを明確に）"],
       "constraints": ["技術的制約、法規制、予算制約等"],
-      "successMetrics": ["成功を測定するための具体的な指標"]
     }
   ],
   "summary": "プロジェクト全体の概要と実装戦略",
@@ -1136,11 +1171,6 @@ Writeツールを使用して、上記のファイルパス（${this.getAnalysis
       });
     }
 
-    // スキル要件がある場合は追加
-    if (taskData.skillRequirements) {
-      description += '\n\n## 👨‍💻 必要スキル';
-      description += `\n- ${taskData.skillRequirements.join(', ')}`;
-    }
 
 
     return description;
@@ -1206,13 +1236,11 @@ ${analysis}
           createdAt: new Date(),
           updatedAt: new Date(),
           metadata: {
-            skillRequirements: taskData.skillRequirements,
             functionalRequirements: taskData.functionalRequirements,
             qualityRequirements: taskData.qualityRequirements,
             integrationRequirements: taskData.integrationRequirements,
             acceptanceCriteria: taskData.acceptanceCriteria,
-            constraints: taskData.constraints,
-            successMetrics: taskData.successMetrics
+            constraints: taskData.constraints
           }
         };
       });
@@ -1324,14 +1352,12 @@ ${analysis}
       "description": "タスクの説明",
       "type": "feature",
       "priority": "medium",
-      "skillRequirements": [],
       "functionalRequirements": { "userStories": [], "useCases": [], "businessRules": [] },
       "qualityRequirements": { "usability": [], "security": [] },
       "integrationRequirements": { "externalSystems": [], "internalModules": [], "dataFlow": [] },
       "dependencies": [],
       "acceptanceCriteria": [],
-      "constraints": [],
-      "successMetrics": []
+      "constraints": []
     }
   ],
   "summary": "プロジェクト概要",

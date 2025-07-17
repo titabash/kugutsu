@@ -58,7 +58,14 @@ export class ProductOwnerAI extends BaseAI {
    * フェーズドキュメントのファイルパスを取得
    */
   private getPhaseDocumentPath(projectId: string): string {
-    return path.join(this.getKugutsuDir(), `phase-${projectId}.json`);
+    return path.join(this.getKugutsuDir(), 'projects', projectId, `phase-${projectId}.json`);
+  }
+
+  /**
+   * 要件仕様書のファイルパスを取得
+   */
+  private getRequirementsPath(projectId: string): string {
+    return path.join(this.getKugutsuDir(), 'projects', projectId, `requirements-${projectId}.md`);
   }
 
   /**
@@ -66,6 +73,14 @@ export class ProductOwnerAI extends BaseAI {
    */
   private getAnalysisJsonPath(projectId: string): string {
     return path.join(this.getKugutsuDir(), 'projects', projectId, 'analysis.json');
+  }
+
+  /**
+   * プロジェクトディレクトリを確実に作成
+   */
+  private async ensureProjectDirectory(projectId: string): Promise<void> {
+    const projectDir = path.join(this.getKugutsuDir(), 'projects', projectId);
+    await fs.mkdir(projectDir, { recursive: true });
   }
 
   /**
@@ -910,12 +925,12 @@ ${techStackContent}
 ### 🗂️ 必須ドキュメント作成
 分析完了後、以下のファイルを.kugutsuディレクトリに作成してください：
 
-1. **フェーズドキュメント**: .kugutsu/phase-${projectId}.json
+1. **フェーズドキュメント**: .kugutsu/projects/${projectId}/phase-${projectId}.json
    - プロジェクトの全体構成とフェーズ情報
    - 現在のフェーズ状況と進捗管理
    - 次回実行時の継続に必要な情報
 
-2. **要件仕様書**: .kugutsu/requirements-${projectId}.md
+2. **要件仕様書**: .kugutsu/projects/${projectId}/requirements-${projectId}.md
    - 各フェーズの機能要件と品質要件の詳細
    - ビジネスルールと制約条件
    - 次回実行時に要件を理解するための重要な情報
@@ -1010,9 +1025,9 @@ ${designDocTemplate}
 
 🚨 **最重要**: 分析が完了したら、**必ず最後にanalysis.jsonファイルを作成してください**。
 
-1. 作業前に、プロジェクトディレクトリ .kugutsu/projects/${projectId} を作成
+1. 作業前に、プロジェクトディレクトリ .kugutsu/projects/${projectId} を作成 (既に作成済み)
 2. Design Docsは .kugutsu/ 直下に技術スタック別で作成 (技術スタック分析により動的にファイル名決定)
-3. フェーズドキュメントや要件書はプロジェクトディレクトリ内に作成
+3. フェーズドキュメント、要件書、analysis.jsonはプロジェクトディレクトリ内に作成
 4. **最後に必ず analysis.json ファイルを作成** (これが最重要)
 
 Writeツールを使用して、上記のファイルパス（${this.getAnalysisJsonPath(projectId)}）に以下の形式のJSONを保存してください：

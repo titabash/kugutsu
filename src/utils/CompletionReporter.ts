@@ -1,7 +1,7 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { EventEmitter } from 'events';
-import { Task, TaskAnalysisResult, EngineerResult, ReviewResult } from '../types/index.js';
+import { TaskAnalysisResult, EngineerResult, ReviewResult } from '../types/index.js';
 
 export interface TaskItem {
   id: string;
@@ -20,9 +20,9 @@ export class CompletionReporter extends EventEmitter {
   private filePath: string;
   private tasks: Map<string, TaskItem> = new Map();
 
-  constructor(private tmpDir: string, private projectId: string) {
+  constructor(private kugutsuDir: string, private projectId: string) {
     super();
-    this.filePath = path.join(tmpDir, `${projectId}-tasks.md`);
+    this.filePath = path.join(kugutsuDir, 'projects', projectId, `${projectId}-tasks.md`);
   }
 
   async initialize(taskTitles: string[]): Promise<void> {
@@ -92,6 +92,11 @@ export class CompletionReporter extends EventEmitter {
 
   private async writeTaskFile(): Promise<void> {
     const content = this.generateMarkdown();
+    
+    // プロジェクトIDディレクトリが存在しない場合は作成
+    const dir = path.dirname(this.filePath);
+    await fs.mkdir(dir, { recursive: true });
+    
     await fs.writeFile(this.filePath, content, 'utf-8');
   }
 

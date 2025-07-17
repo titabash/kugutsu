@@ -562,13 +562,13 @@ export class ProductOwnerAI extends BaseAI {
   private async saveTechStackInfo(techStackInfo: TechStackInfo): Promise<void> {
     await this.initializeKugutsuDir();
     const techStackPath = this.getTechStackPath();
-    
+
     const techStackData = {
       ...techStackInfo,
       analyzedAt: new Date(),
       version: '1.0'
     };
-    
+
     await fs.writeFile(techStackPath, JSON.stringify(techStackData, null, 2), 'utf-8');
     this.success(`✅ 技術スタック情報を保存しました: ${path.relative(this.baseRepoPath, techStackPath)}`);
   }
@@ -624,12 +624,12 @@ export class ProductOwnerAI extends BaseAI {
    */
   private async analyzeTechStack(): Promise<void> {
     const techStackPath = this.getTechStackPath();
-    
+
     // 既存ファイルをチェック
     try {
       await fs.access(techStackPath);
       this.info('📋 既存の技術スタック分析ファイルが存在します');
-      
+
       // プロジェクト構造の変更を検出
       const hasChanged = await this.detectProjectChanges();
       if (!hasChanged) {
@@ -642,10 +642,10 @@ export class ProductOwnerAI extends BaseAI {
     }
 
     this.info('🔍 AIによる技術スタック分析を開始します...');
-    
+
     // AIに分析を依頼（直接ファイル保存）
     await this.analyzeProjectWithAI();
-    
+
     this.info('✅ AI分析完了: 技術スタックファイルを保存しました');
   }
 
@@ -656,17 +656,17 @@ export class ProductOwnerAI extends BaseAI {
     try {
       const entries = await fs.readdir(this.baseRepoPath, { withFileTypes: true });
       const structure: string[] = [];
-      
+
       // ルートレベルのファイルとディレクトリを分析
       const files = entries.filter(e => e.isFile()).map(e => e.name);
       const dirs = entries.filter(e => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules').map(e => e.name);
-      
+
       structure.push('## プロジェクト構造分析');
       structure.push('### ルートディレクトリのファイル:');
       structure.push(files.join(', '));
       structure.push('### サブディレクトリ:');
       structure.push(dirs.join(', '));
-      
+
       // 各サブディレクトリの内容も軽く調査
       for (const dir of dirs.slice(0, 10)) { // 最大10個まで
         try {
@@ -678,7 +678,7 @@ export class ProductOwnerAI extends BaseAI {
           // サブディレクトリにアクセスできない場合は無視
         }
       }
-      
+
       return structure.join('\n');
     } catch (error) {
       this.warn('プロジェクト構造分析中にエラーが発生しました', { error });
@@ -692,7 +692,7 @@ export class ProductOwnerAI extends BaseAI {
   private async analyzeProjectWithAI(): Promise<void> {
     const projectStructure = await this.gatherProjectStructure();
     const techStackPath = this.getTechStackPath();
-    
+
     const analysisPrompt = `プロジェクト構造を分析して技術スタック情報を特定し、Markdownファイルとして保存してください。
 
 ${projectStructure}
@@ -721,16 +721,18 @@ ${projectStructure}
 - 分析の根拠を簡潔に説明
 
 重要：
-- ファイル名からパターン推測（package.json→Node.js/TypeScript、pyproject.toml→Python等）
-- 複数言語がある場合は全て特定
-- 分析できない場合でも最低限の情報で回答
-- 必ずWriteツールを使用してファイルを作成してください`;
+- 実際のファイルとディレクトリ構造を詳細に分析
+- 見つかった設定ファイルの内容も読み取って正確に判定
+- 複数の技術スタックがある場合は全て特定
+- 推測ではなく実際のファイル内容に基づいて分析
+- 必ずWriteツールを使用してファイルを作成
+- ファイル作成が完了するまで続行してください`;
 
     for await (const message of query({
       prompt: analysisPrompt,
       abortController: new AbortController(),
       options: {
-        maxTurns: 5,
+        maxTurns: 50,
         cwd: this.baseRepoPath,
         allowedTools: ["Read", "Glob", "LS", "Write"],
       },
@@ -738,7 +740,28 @@ ${projectStructure}
       // メッセージ処理
       this.displayMessageActivity(message as any);
     }
+
+    // ファイル作成確認
+    await this.verifyTechStackFileCreation(techStackPath);
   }
+
+  /**
+   * 技術スタックファイルの作成確認
+   */
+  private async verifyTechStackFileCreation(techStackPath: string): Promise<void> {
+    try {
+      await fs.access(techStackPath);
+      const content = await fs.readFile(techStackPath, 'utf-8');
+      if (content.trim().length === 0) {
+        throw new Error('ファイルは作成されましたが内容が空です');
+      }
+      this.success(`✅ 技術スタックファイルが正常に作成されました: ${path.relative(this.baseRepoPath, techStackPath)}`);
+    } catch (error) {
+      this.warn(`⚠️ 技術スタックファイルの作成に失敗しました: ${error}`);
+      throw error;
+    }
+  }
+
 
   /**
    * 技術スタックMarkdownファイルを読み込み
@@ -763,11 +786,11 @@ ${projectStructure}
     }
 
     const parts: string[] = [];
-    
+
     if (techStackInfo.isMonorepo) {
       parts.push('- プロジェクト構成: モノレポ（複数言語）');
       parts.push('');
-      
+
       techStackInfo.stacks.forEach((stack, index) => {
         parts.push(`### 技術スタック ${index + 1}: ${stack.path}`);
         parts.push(`- 言語: ${stack.language}`);
@@ -784,7 +807,7 @@ ${projectStructure}
       if (stack.buildTool) parts.push(`- ビルドツール: ${stack.buildTool}`);
       parts.push(`- 設定ファイル: ${stack.configFiles.join(', ')}`);
     }
-    
+
     return parts.join('\n');
   }
 
@@ -828,10 +851,10 @@ ${projectStructure}
   private async buildContextAwarePrompt(userRequest: string, projectId: string, sessionId?: string): Promise<string> {
     // 技術スタック分析
     await this.analyzeTechStack();
-    
+
     // 技術スタック情報をファイルから読み取り
     const techStackContent = await this.loadTechStackMarkdown();
-    
+
     return `
 プロダクトオーナーとして、以下の情報を踏まえてユーザー要求を分析し、エンジニアチームに対する具体的な実装指示を策定してください：
 
@@ -1221,7 +1244,7 @@ ${analysis}
       const tasks: Task[] = (jsonData.tasks || []).map((taskData: any) => {
         const description = this.buildTaskDescription(taskData);
         const taskId = uuidv4();
-        
+
         // タイトル→IDのマッピングを保存
         titleToIdMap.set(taskData.title || 'タスク', taskId);
 
@@ -1244,12 +1267,12 @@ ${analysis}
           }
         };
       });
-      
+
       // 依存関係をタイトルからIDに変換
       tasks.forEach(task => {
         this.info(`🔗 タスク依存関係処理: ${task.title}`);
         this.info(`  - 元の依存関係: ${task.dependencies.join(', ') || 'なし'}`);
-        
+
         task.dependencies = task.dependencies.map(depTitle => {
           const depId = titleToIdMap.get(depTitle);
           if (!depId) {
@@ -1259,7 +1282,7 @@ ${analysis}
           this.info(`  - "${depTitle}" → ${depId}`);
           return depId;
         });
-        
+
         this.info(`  - 変換後の依存関係: ${task.dependencies.join(', ') || 'なし'}`);
       });
 
@@ -1302,10 +1325,10 @@ ${analysis}
       // Fallback: AIに再度ファイル作成を指示
       if (maxRetries > 0) {
         this.warn(`⚠️ analysis.jsonファイルが見つかりません。AI に再度作成を指示します... (残り再試行: ${maxRetries})`);
-        
+
         try {
           await this.fallbackCreateAnalysisJson(projectId);
-          
+
           // 再帰的に再試行
           return await this.extractTaskAnalysisResultFromFile(projectId, maxRetries - 1);
         } catch (fallbackError) {
@@ -1322,7 +1345,7 @@ ${analysis}
    */
   private async fallbackCreateAnalysisJson(projectId: string): Promise<void> {
     this.info('🔄 Fallback: analysis.jsonファイルの作成を再実行します');
-    
+
     const prompt = `
 🚨 **緊急**: analysis.jsonファイルが作成されていません。システムエラーを回避するため、今すぐ作成してください。
 
@@ -1332,7 +1355,7 @@ ${analysis}
 
 ## 作業手順
 1. 以前の分析結果を基に、analysis.jsonファイルを作成してください
-2. プロジェクトディレクトリが存在しない場合は作成してください  
+2. プロジェクトディレクトリが存在しない場合は作成してください
 3. 以下の最小限の構造でファイルを作成してください
 
 必須JSON構造:

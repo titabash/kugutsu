@@ -1,4 +1,4 @@
-export type ComponentType = 'ProductOwner' | 'TechLead' | 'Engineer' | 'MergeCoordinator' | 'System';
+export type ComponentType = 'ProductOwner' | 'TechLead' | 'Engineer' | 'MergeCoordinator' | 'System' | 'TechStackAnalyzer' | 'RequirementsAnalyzer' | 'TaskGenerator';
 export type LogLevel = 'info' | 'error' | 'warn' | 'debug' | 'success';
 
 export interface LogContext {

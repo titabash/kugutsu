@@ -96,6 +96,132 @@ const frameworkStrategy = await query({
 ### Violation Detection
 Any hardcoded logic violating these principles should be immediately refactored to use Claude Code SDK with appropriate AI analysis and decision-making.
 
+## CRITICAL: Documentation-First Implementation Policy
+
+**ABSOLUTE REQUIREMENT**: You MUST verify implementation details against official documentation BEFORE writing any code. Speculation-based implementation is STRICTLY PROHIBITED.
+
+### Mandatory Documentation Verification Process
+
+**BEFORE implementing ANY feature, API, or integration, you MUST:**
+
+1. **Use WebSearch** to find the latest official documentation
+   ```
+   WebSearch: "[Package Name] official documentation 2025"
+   WebSearch: "[API Name] latest specification TypeScript"
+   ```
+
+2. **Use WebFetch** to read official documentation pages
+   ```
+   WebFetch: https://docs.[official-site].com/[specific-page]
+   ```
+
+3. **Verify version compatibility** and latest API specifications
+   - Check package versions in npm/GitHub
+   - Confirm TypeScript type definitions
+   - Validate function signatures and parameters
+
+4. **Document your findings** before implementation
+   - Note which official docs were consulted
+   - Record API version numbers
+   - List any breaking changes or deprecations
+
+### Implementation Workflow
+
+```
+Step 1: Receive implementation request
+    ↓
+Step 2: 🚫 STOP - DO NOT write code yet
+    ↓
+Step 3: ✅ Search for official documentation (WebSearch)
+    ↓
+Step 4: ✅ Read documentation thoroughly (WebFetch)
+    ↓
+Step 5: ✅ Verify current best practices and examples
+    ↓
+Step 6: ✅ Check for known issues or gotchas
+    ↓
+Step 7: ✅ NOW you can implement based on verified information
+```
+
+### Examples of Required Documentation Checks
+
+#### ❌ PROHIBITED (Speculation-Based)
+```typescript
+// Writing code based on assumptions
+import { query } from '@anthropic-ai/claude-agent-sdk';
+
+// Guessing the API structure
+const result = await query(prompt, { options: {...} });
+```
+
+#### ✅ REQUIRED (Documentation-Verified)
+```typescript
+// FIRST: Use WebSearch and WebFetch to verify the API
+// WebSearch: "Claude Agent SDK TypeScript query function 2025"
+// WebFetch: https://docs.claude.com/en/api/agent-sdk/typescript
+
+// THEN: Implement based on verified documentation
+import { query } from '@anthropic-ai/claude-agent-sdk';
+
+// Confirmed API structure from official docs
+const result = await query({
+  prompt: "...",
+  options: {
+    model: "claude-sonnet-4-5-20250929", // Verified model ID
+    maxTurns: 30,
+    permissionMode: 'acceptEdits' // Verified option
+  }
+});
+```
+
+### Required Documentation Sources
+
+**For this project, you MUST consult:**
+
+1. **Claude Agent SDK**
+   - Official Docs: https://docs.claude.com/en/api/agent-sdk/overview
+   - TypeScript API: https://docs.claude.com/en/api/agent-sdk/typescript
+   - GitHub: https://github.com/anthropics/claude-agent-sdk-typescript
+
+2. **OpenAI Codex SDK**
+   - Official Docs: https://developers.openai.com/codex/sdk/
+   - API Reference: https://platform.openai.com/docs/codex
+
+3. **LangGraphJS**
+   - Official Docs: https://langchain-ai.github.io/langgraphjs/
+   - Multi-Agent Concepts: https://langchain-ai.github.io/langgraphjs/concepts/multi_agent/
+   - API Reference: https://langchain-ai.github.io/langgraphjs/reference/
+
+4. **TypeScript/Node.js**
+   - Official TypeScript Docs
+   - Node.js API Documentation
+
+### Verification Checklist
+
+Before finalizing any implementation:
+
+- [ ] Official documentation consulted via WebSearch/WebFetch
+- [ ] API signatures verified against latest version
+- [ ] TypeScript types confirmed
+- [ ] Example code from official docs reviewed
+- [ ] Known limitations/issues checked
+- [ ] Breaking changes from previous versions noted
+- [ ] Best practices followed per official guidelines
+
+### Consequences of Violation
+
+**If you implement without documentation verification:**
+- ❌ Code will likely be incorrect or outdated
+- ❌ Integration will fail at runtime
+- ❌ Technical debt will accumulate
+- ❌ User trust will be damaged
+
+### Golden Rule
+
+> **"When in doubt, CHECK THE DOCS. When not in doubt, CHECK THE DOCS ANYWAY."**
+
+**NO EXCEPTIONS. NO GUESSING. DOCUMENTATION FIRST, ALWAYS.**
+
 ## Project Overview
 
 This is an AI-powered parallel development system built with TypeScript and the Claude Code SDK. It enables multiple AI engineers to work simultaneously on different tasks using git worktrees for isolation. The system includes task orchestration, automated code review, and intelligent merge coordination.

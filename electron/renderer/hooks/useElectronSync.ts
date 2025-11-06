@@ -9,7 +9,7 @@ import type { Task, LogEntry } from '../types'
  * the app store accordingly, providing real-time UI updates
  */
 export function useElectronSync() {
-  const { addLog, addLogs, setTasks, setMetadata } = useAppStore()
+  const { addLog, addLogs, setTasks, setMetadata, updateTasks } = useAppStore()
 
   useEffect(() => {
     if (!window.electronAPI) {
@@ -19,142 +19,177 @@ export function useElectronSync() {
 
     console.log('[useElectronSync] Setting up Electron IPC listeners')
 
-    // Log data listener
-    const handleLogData = (data: {
-      engineerId: string
-      level: string
-      message: string
-      component: string
-      timestamp: Date
-    }) => {
-      const log: LogEntry = {
-        id: `${Date.now()}-${Math.random()}`,
-        timestamp: new Date(data.timestamp),
-        level: data.level as LogEntry['level'],
-        source: data.component || data.engineerId,
-        message: data.message,
-      }
+    // ==========================================
+    // NEW: Graph Events Batch Handler (LangGraph)
+    // ==========================================
 
-      addLog(log)
-    }
+    const handleGraphEventsBatch = (events: any[]) => {
+      if (!events || events.length === 0) return
 
-    // Structured log data listener
-    const handleStructuredLogData = (data: {
-      level: string
-      source: string
-      message: string
-      timestamp: Date
-      data?: Record<string, unknown>
-    }) => {
-      const log: LogEntry = {
-        id: `${Date.now()}-${Math.random()}`,
-        timestamp: new Date(data.timestamp),
-        level: data.level as LogEntry['level'],
-        source: data.source,
-        message: data.message,
-        data: data.data,
-      }
+      console.log(`[useElectronSync] Received ${events.length} graph events`)
 
-      addLog(log)
-    }
+      events.forEach((event) => {
+        switch (event.type) {
+          case 'state-init':
+            // Initial state - set all data
+            if (event.data.tasks) {
+              setTasks(event.data.tasks)
+            }
+            if (event.data.logs) {
+              addLogs(event.data.logs)
+            }
+            if (event.data.metadata) {
+              setMetadata({
+                phase: event.data.metadata.phase,
+                totalTasks: event.data.metadata.totalTasks,
+                tasksCompleted: event.data.metadata.tasksCompleted,
+                tasksFailed: event.data.metadata.tasksFailed,
+                hasErrors: event.data.metadata.hasErrors,
+                startedAt: event.data.metadata.startedAt
+                  ? new Date(event.data.metadata.startedAt)
+                  : undefined,
+              })
+            }
+            break
 
-    // Task status update listener
-    const handleTaskStatusUpdate = (data: { completed: number; total: number }) => {
-      setMetadata({
-        tasksCompleted: data.completed,
-        totalTasks: data.total,
+          case 'node-started':
+            // Node execution started
+            addLog({
+              id: `${Date.now()}-${Math.random()}`,
+              timestamp: new Date(event.timestamp),
+              level: 'info',
+              source: event.data.nodeId || 'System',
+              message: `🚀 ノード開始: ${event.data.nodeId}`,
+            })
+            break
+
+          case 'node-completed':
+            // Node execution completed
+            addLog({
+              id: `${Date.now()}-${Math.random()}`,
+              timestamp: new Date(event.timestamp),
+              level: 'success',
+              source: event.data.nodeId || 'System',
+              message: `✅ ノード完了: ${event.data.nodeId}`,
+            })
+            break
+
+          case 'tasks-batch':
+            // Batch task updates
+            if (Array.isArray(event.data)) {
+              updateTasks(event.data)
+            }
+            break
+
+          case 'logs-batch':
+            // Batch log additions
+            if (Array.isArray(event.data)) {
+              const logs: LogEntry[] = event.data.map((log: any) => ({
+                id: `${log.timestamp}-${Math.random()}`,
+                timestamp: new Date(log.timestamp),
+                level: log.level,
+                source: log.source,
+                message: log.message,
+                data: log.data,
+              }))
+              addLogs(logs)
+            }
+            break
+
+          case 'phase-change':
+            // Phase change
+            setMetadata({ phase: event.data.to })
+            addLog({
+              id: `${Date.now()}-${Math.random()}`,
+              timestamp: new Date(event.timestamp),
+              level: 'info',
+              source: 'System',
+              message: `🔄 フェーズ変更: ${event.data.from} → ${event.data.to}`,
+            })
+            break
+
+          case 'error':
+            // Error occurred
+            setMetadata({ hasErrors: true })
+            const errorMessages = Array.isArray(event.data) ? event.data : [event.data]
+            errorMessages.forEach((err: string) => {
+              addLog({
+                id: `${Date.now()}-${Math.random()}`,
+                timestamp: new Date(event.timestamp),
+                level: 'error',
+                source: 'System',
+                message: `❌ エラー: ${err}`,
+              })
+            })
+            break
+
+          case 'complete':
+            // Workflow completed
+            setMetadata({
+              phase: 'complete',
+              completedAt: new Date(event.timestamp),
+              isRunning: false,
+              totalTasks: event.data.totalTasks,
+              tasksCompleted: event.data.tasksCompleted,
+              tasksFailed: event.data.tasksFailed,
+            })
+            addLog({
+              id: `${Date.now()}-${Math.random()}`,
+              timestamp: new Date(event.timestamp),
+              level: 'success',
+              source: 'System',
+              message: `🎉 ワークフロー完了! (成功: ${event.data.tasksCompleted}, 失敗: ${event.data.tasksFailed})`,
+            })
+            break
+
+          default:
+            console.warn(`[useElectronSync] Unknown event type: ${event.type}`)
+        }
       })
     }
 
-    // Task update listener
-    const handleTaskUpdate = (tasks: unknown[]) => {
-      // Convert to Task[] with proper types
-      const typedTasks = tasks.map((task: any) => ({
-        id: task.id || '',
-        title: task.title || '',
-        description: task.description || '',
-        priority: task.priority || 0,
-        dependencies: task.dependencies || [],
-        status: task.status || 'pending',
-        assignedEngineer: task.assignedEngineer,
-        worktreePath: task.worktreePath,
-        branchName: task.branchName,
-        sessionId: task.sessionId,
-        isConflictResolution: task.isConflictResolution,
-        createdAt: task.createdAt ? new Date(task.createdAt) : undefined,
-        updatedAt: task.updatedAt ? new Date(task.updatedAt) : undefined,
-        error: task.error,
-        tags: task.tags,
-      })) as Task[]
-
-      setTasks(typedTasks)
+    // Register Graph Events Batch listener
+    let cleanupGraphEventsBatch: (() => void) | undefined
+    if (window.electronAPI.onGraphEventsBatch) {
+      cleanupGraphEventsBatch = window.electronAPI.onGraphEventsBatch(handleGraphEventsBatch)
+      console.log('[useElectronSync] Graph events batch listener registered')
+    } else {
+      console.warn('[useElectronSync] onGraphEventsBatch not available')
     }
 
-    // All tasks completed listener
-    const handleAllTasksCompleted = (data: unknown) => {
-      setMetadata({
-        isRunning: false,
-        completedAt: new Date(),
-      })
-
-      addLog({
-        id: `${Date.now()}-${Math.random()}`,
-        timestamp: new Date(),
-        level: 'success',
-        source: 'System',
-        message: '🎉 すべてのタスクが完了しました！',
-      })
+    // Initial state fetch (if available)
+    if (window.electronAPI.getGraphState) {
+      window.electronAPI
+        .getGraphState()
+        .then((state) => {
+          if (state) {
+            console.log('[useElectronSync] Initial graph state loaded')
+            // Process as state-init event
+            handleGraphEventsBatch([
+              {
+                type: 'state-init',
+                data: state,
+                timestamp: Date.now(),
+                priority: 'high',
+              },
+            ])
+          }
+        })
+        .catch((error) => {
+          console.error('[useElectronSync] Failed to fetch initial graph state:', error)
+        })
     }
-
-    // Connection status listener
-    const handleConnectionStatus = (connected: boolean) => {
-      addLog({
-        id: `${Date.now()}-${Math.random()}`,
-        timestamp: new Date(),
-        level: connected ? 'success' : 'warn',
-        source: 'System',
-        message: connected ? '接続しました' : '切断されました',
-      })
-    }
-
-    // Layout update listener
-    const handleLayoutUpdate = (engineerCount: number) => {
-      setMetadata({
-        activeEngineers: engineerCount,
-      })
-    }
-
-    // Register listeners
-    window.electronAPI.onLogData(handleLogData)
-    window.electronAPI.onStructuredLogData(handleStructuredLogData)
-    window.electronAPI.onTaskStatusUpdate(handleTaskStatusUpdate)
-    window.electronAPI.onTaskUpdate(handleTaskUpdate)
-    window.electronAPI.onAllTasksCompleted(handleAllTasksCompleted)
-    window.electronAPI.onConnectionStatus(handleConnectionStatus)
-    window.electronAPI.onLayoutUpdate(handleLayoutUpdate)
-
-    // Initial data fetch
-    window.electronAPI
-      .getTasks()
-      .then((tasks) => {
-        handleTaskUpdate(tasks)
-      })
-      .catch((error) => {
-        console.error('[useElectronSync] Failed to fetch initial tasks:', error)
-      })
 
     // Cleanup function
     return () => {
       console.log('[useElectronSync] Cleaning up Electron IPC listeners')
-      window.electronAPI.removeAllListeners('log-data')
-      window.electronAPI.removeAllListeners('structured-log-data')
-      window.electronAPI.removeAllListeners('task-status-update')
-      window.electronAPI.removeAllListeners('tasks-updated')
-      window.electronAPI.removeAllListeners('all-tasks-completed')
-      window.electronAPI.removeAllListeners('connection-status')
-      window.electronAPI.removeAllListeners('layout-update')
+
+      // Cleanup graph events batch listener
+      if (cleanupGraphEventsBatch) {
+        cleanupGraphEventsBatch()
+      }
     }
-  }, [addLog, addLogs, setTasks, setMetadata])
+  }, [addLog, addLogs, setTasks, setMetadata, updateTasks])
 }
 
 /**

@@ -12,17 +12,17 @@
 - 🔵 **完了** (Completed)
 - 🔴 **ブロック** (Blocked)
 
-## 進捗サマリー (最終更新: 2025-01-06)
+## 進捗サマリー (最終更新: 2025-11-07)
 
 - **Phase 1 (基盤構築)**: 11/11 完了 (100%) ✨
 - **Phase 2 (コア機能)**: 16/16 完了 (100%) ✨
-- **Phase 3 (UI統合)**: 0/6 完了 (0%)
+- **Phase 3 (UI統合)**: 6/6 完了 (100%) ✨
 - **Phase 4 (テスト)**: 8/8 完了 (100%) ✨
-- **Phase 5 (完了準備)**: 0/10 完了 (0%)
-- **Phase 6 (スクラム開発)**: 15/20 完了 (75%, 63h/70h) 🔥
+- **Phase 5 (完了準備)**: 5/10 完了 (50%, 部分完了)
+- **Phase 6 (スクラム開発)**: 20/20 完了 (100%) ✨
 - **Phase 7 (スプリント駆動開発)**: 20/20 完了 (100%) ✨
-- **Phase 8 (CLI/Electron分離)**: 13/13 完了 (100%) ✨ **NEW**
-- **全体**: 83/104 完了 (79.8%, 225.75h/257.33h)
+- **Phase 8 (CLI/Electron分離)**: 13/13 完了 (100%) ✨
+- **全体**: 99/104 完了 (95.2%, 251.58h/257.33h)
 
 ## ⚠️ 見積もりバッファについて
 
@@ -313,51 +313,81 @@
 
 **優先度**: 高
 
-- 🟢 **Task 3.1.1**: GraphStreamAdapter実装
-  - ファイル: `src/electron/GraphStreamAdapter.ts`
-  - 内容: LangGraphのストリーム → Electron IPC
+- 🔵 **Task 3.1.1**: StateStreamManager実装（GraphStreamAdapterの代替）
+  - ファイル: `src/electron/StateStreamManager.ts`
+  - 内容: LangGraphのストリーム → Electron IPC with optimization
   - 見積: 3時間
   - 担当: -
   - 依存: Task 2.2.4
+  - **ステータス**: 完了
+  - **実装内容**:
+    - バッファリング（50ms間隔）、スロットリング（最大20 events/sec）
+    - 差分検出（前回のstateと比較し、変更のみ送信）
+    - 優先度制御（エラーはhigh priority）
+    - 8種類のイベントタイプ: state-init, node-started, node-completed, task-update, tasks-batch, logs-batch, phase-change, error, complete
 
-- 🟢 **Task 3.1.2**: State変更リスナー
-  - ファイル: `src/electron/StateChangeListener.ts`
+- 🔵 **Task 3.1.2**: State変更リスナー
+  - ファイル: `src/electron/StateStreamManager.ts`（統合済み）
   - 内容: State更新をElectron UIに通知
   - 見積: 2時間
   - 担当: -
   - 依存: Task 3.1.1
+  - **ステータス**: 完了
+  - **実装内容**: StateStreamManager.processStateUpdate()メソッドで実装
 
-- 🟢 **Task 3.1.3**: ログ表示システム統合
-  - ファイル: 既存の`src/utils/ElectronLogAdapter.ts`を調整
+- 🔵 **Task 3.1.3**: ログ表示システム統合
+  - ファイル: `src/electron/StateStreamManager.ts`, `electron/renderer/hooks/useElectronSync.ts`
   - 内容: LangGraph State.logsとの統合
   - 見積: 2時間
   - 担当: -
   - 依存: Task 3.1.2
+  - **ステータス**: 完了
+  - **実装内容**:
+    - StateStreamManager: state.logsの変更を検出し、logs-batchイベントとして送信
+    - useElectronSync: logs-batchイベントを受信し、addLogs()でストアに追加
 
-- 🟢 **Task 3.1.4**: Electron UI更新
+- 🔵 **Task 3.1.4**: Electron UI更新
   - ファイル: `electron/renderer/`配下
   - 内容: 新しいState構造に対応したUI更新
   - 見積: 4時間
   - 担当: -
   - 依存: Task 3.1.3
+  - **ステータス**: 完了
+  - **実装内容**:
+    - useElectronSync.ts: handleGraphEventsBatch()で8種類のイベント処理
+    - appStore.ts: updateTasks()メソッド追加（バッチタスク更新）
+    - electron.d.ts: GraphEventインターフェース、onGraphEventsBatch API定義
+    - レガシーコード削除（GraphStreamAdapter, 古いIPCハンドラー）
 
 ### 3.2 CLIインターフェース
 
 **優先度**: 中
 
-- 🟢 **Task 3.2.1**: parallel-dev CLIエントリーポイント更新
-  - ファイル: `src/parallel-dev.ts`
-  - 内容: LangGraphを使用した新しいフロー
+- 🔵 **Task 3.2.1**: parallel-dev CLIエントリーポイント更新
+  - ファイル: `src/parallel-dev-cli.ts`（Phase 8で実装）
+  - 内容: Electron非依存のCLI実行環境
   - 見積: 2時間
   - 担当: -
   - 依存: Task 2.2.4
+  - **ステータス**: 完了（Phase 8で実装）
+  - **実装内容**:
+    - ParallelDevelopmentOrchestratorのみ使用
+    - Electron依存を完全削除
+    - オプショナルなImprovedParallelLogViewer統合
+    - package.json bin: kugutsu → parallel-dev-cli.js
 
-- 🟢 **Task 3.2.2**: parallel-dev-electron エントリーポイント更新
-  - ファイル: `src/parallel-dev-electron.ts`
+- 🔵 **Task 3.2.2**: parallel-dev-electron エントリーポイント更新
+  - ファイル: `src/electron/ParallelDevOrchestrator.ts`
   - 内容: Electron統合版のエントリーポイント
   - 見積: 2時間
   - 担当: -
   - 依存: Task 3.1.4
+  - **ステータス**: 完了
+  - **実装内容**:
+    - StateStreamManagerとの統合
+    - WorkflowType型追加（parallel/sprint/scrum）
+    - execute()関数でStateStreamManager.processStateUpdate()呼び出し
+    - エラーハンドリングでcurrentState tracking
 
 ---
 
@@ -454,83 +484,107 @@
 
 **優先度**: 中
 
-- 🟢 **Task 5.1.1**: README更新
+- 🔵 **Task 5.1.1**: README更新
   - ファイル: `README.md`
   - 内容: 新しいアーキテクチャの説明、使用方法
   - 見積: 2時間
   - 担当: -
   - 依存: Task 4.2.1
+  - **ステータス**: 完了（Phase 6/8で更新済み）
+  - **実装内容**: CLI/Electronモード、スクラム開発ワークフロー、UIコンポーネント説明
 
-- 🟢 **Task 5.1.2**: CLAUDE.md更新
+- 🔵 **Task 5.1.2**: CLAUDE.md更新
   - ファイル: `CLAUDE.md`
   - 内容: LangGraphJS統合のガイドライン
   - 見積: 1時間
   - 担当: -
   - 依存: Task 5.1.1
+  - **ステータス**: 完了（Phase 8で更新済み）
+  - **実装内容**: AI-First開発原則、Documentation-First実装ポリシー、プロジェクト構造
 
-- 🟢 **Task 5.1.3**: APIドキュメント生成
+- ⚪ **Task 5.1.3**: APIドキュメント生成（スキップ）
   - ツール: TypeDoc
   - 内容: 全インターフェース・クラスのドキュメント
   - 見積: 2時間
   - 担当: -
   - 依存: Task 4.2.1
+  - **ステータス**: スキップ（オプショナル、TypeDoc未セットアップ）
 
-- 🟢 **Task 5.1.4**: 移行ガイド作成
+- 🔵 **Task 5.1.4**: 移行ガイド作成
   - ファイル: `docs/MIGRATION_GUIDE.md`
   - 内容: v1からv2への移行手順
   - 見積: 2時間
   - 担当: -
   - 依存: Task 5.1.1
+  - **ステータス**: 完了
+  - **実装内容**:
+    - v1 → v2 アーキテクチャ変更説明
+    - Breaking changes詳細
+    - 新機能ガイド（Sprint-Driven、Scrum Workflow、Electron App）
+    - Migration checklist
+    - Troubleshooting
 
 ### 5.2 既存コード削除
 
 **優先度**: 低
 
-- 🟢 **Task 5.2.1**: 旧AIマネージャー削除
+- ⚪ **Task 5.2.1**: 旧AIマネージャー削除（スキップ）
   - ファイル: `src/managers/BaseAI.ts`, `EngineerAI.ts`, `TechLeadAI.ts`, `ProductOwnerAI.ts`等
   - 内容: 使用されていないことを確認後削除
   - 見積: 1時間
   - 担当: -
   - 依存: Task 4.2.1
+  - **ステータス**: スキップ（CLI版で使用中、削除不可）
 
-- 🟢 **Task 5.2.2**: 旧イベントシステム削除
+- ⚪ **Task 5.2.2**: 旧イベントシステム削除（スキップ）
   - ファイル: `src/utils/TaskEventEmitter.ts`, キュー関連ファイル
   - 内容: 使用されていないことを確認後削除
   - 見積: 1時間
   - 担当: -
   - 依存: Task 4.2.1
+  - **ステータス**: スキップ（CLI版で使用中、削除不可）
 
-- 🟢 **Task 5.2.3**: 旧オーケストレーター削除
+- ⚪ **Task 5.2.3**: 旧オーケストレーター削除（スキップ）
   - ファイル: `src/managers/ParallelDevelopmentOrchestrator.ts`等
   - 内容: 使用されていないことを確認後削除
   - 見積: 30分
   - 担当: -
   - 依存: Task 5.2.1, 5.2.2
+  - **ステータス**: スキップ（parallel-dev-cli.tsで使用中、削除不可）
 
 ### 5.3 リリース準備
 
 **優先度**: 中
 
-- 🟢 **Task 5.3.1**: バージョン更新
+- ⚪ **Task 5.3.1**: バージョン更新（保留）
   - ファイル: `package.json`
   - 内容: v2.0.0へ更新
   - 見積: 5分
   - 担当: -
   - 依存: Task 5.2.3
+  - **ステータス**: 保留（ユーザー判断）
+  - **備考**: 現在v0.0.28、v2.0.0への更新はリリース判断後に実施
 
-- 🟢 **Task 5.3.2**: CHANGELOG作成
+- 🔵 **Task 5.3.2**: CHANGELOG作成
   - ファイル: `CHANGELOG.md`
   - 内容: v2.0.0の変更内容まとめ
   - 見積: 1時間
   - 担当: -
   - 依存: Task 5.3.1
+  - **ステータス**: 完了
+  - **実装内容**:
+    - Phase 1-8全ての変更内容を詳細に記載
+    - Added, Changed, Deprecated, Fixed, Security, Performance, Testing, Documentation, Breaking Changes
+    - Keep a Changelog形式
+    - Semantic Versioning準拠
 
-- 🟢 **Task 5.3.3**: リリースノート作成
+- ⚪ **Task 5.3.3**: リリースノート作成（スキップ）
   - 場所: GitHub Release
   - 内容: 主要な変更点、ブレイキングチェンジ
   - 見積: 1時間
   - 担当: -
   - 依存: Task 5.3.2
+  - **ステータス**: スキップ（GitHubリリースはユーザー実施）
 
 ---
 
@@ -685,34 +739,62 @@
 
 **優先度**: 高
 
-- 🟢 **Task 6.3.1**: StoryMappingViewer実装
-  - ファイル: `src/electron/renderer/components/StoryMappingViewer.tsx`
+- 🔵 **Task 6.3.1**: StoryMappingViewer実装
+  - ファイル: `electron/renderer/components/StoryMappingViewer.tsx`
   - 内容: ストーリーマッピング表示コンポーネント
   - 見積: 5時間
   - 担当: -
   - 依存: Task 6.2.3
-  - 参考: COMPONENT_SPECIFICATION.md
+  - **ステータス**: 完了
+  - **実装内容**:
+    - ペルソナ表示（名前、役割、ゴール、ペインポイント）
+    - Epicアコーディオン表示
+    - ユーザーストーリー詳細（As a / I want to / So that形式）
+    - 受入基準リスト表示
+    - shadcn/ui (Card, Badge, Accordion) 使用
 
-- 🟢 **Task 6.3.2**: DependencyGraphViewer実装
-  - ファイル: `src/electron/renderer/components/DependencyGraphViewer.tsx`
+- 🔵 **Task 6.3.2**: DependencyGraphViewer実装
+  - ファイル: `electron/renderer/components/DependencyGraphViewer.tsx`
   - 内容: @xyflow/react による依存関係グラフ可視化
   - 見積: 6時間
   - 担当: -
   - 依存: Task 6.2.3
+  - **ステータス**: 完了
+  - **実装内容**:
+    - ReactFlow統合
+    - カスタムノードコンポーネント（ステータス別色分け）
+    - クリティカルパス強調表示
+    - 並列グループ表示
+    - Controls, Background, MiniMap追加
+    - ノードクリックハンドラー
 
-- 🟢 **Task 6.3.3**: DesignDocsViewer実装
-  - ファイル: `src/electron/renderer/components/DesignDocsViewer.tsx`
+- 🔵 **Task 6.3.3**: DesignDocsViewer実装
+  - ファイル: `electron/renderer/components/DesignDocsViewer.tsx`
   - 内容: 設計書表示（Tabs、Markdown レンダリング）
   - 見積: 4時間
   - 担当: -
   - 依存: Task 6.2.3
+  - **ステータス**: 完了
+  - **実装内容**:
+    - Tabs UI（Overview, UI/UX, Database, API, Raw JSON）
+    - MarkdownSection コンポーネント
+    - JsonViewer コンポーネント
+    - ScrollArea for long content
+    - lucide-react アイコン統合
 
-- 🟢 **Task 6.3.4**: TaskCard拡張
-  - ファイル: `src/electron/renderer/components/TaskCard.tsx`
+- 🔵 **Task 6.3.4**: TaskCard拡張
+  - ファイル: `electron/renderer/components/TaskCard.tsx`
   - 内容: 依存関係表示、タグ表示機能追加
   - 見積: 2時間
   - 担当: -
   - 依存: Task 6.2.3
+  - **ステータス**: 完了
+  - **実装内容**:
+    - 依存関係バッジ（GitBranchアイコン + 数）
+    - タグ表示（最大3つ、それ以上は+N表示）
+    - 優先度バッジ（色分け）
+    - コンフリクト解決バッジ
+    - Tooltip統合
 
 ### 6.4 Graph統合
 
@@ -815,19 +897,32 @@
 
 **優先度**: 低
 
-- 🟢 **Task 6.6.1**: README更新
+- 🔵 **Task 6.6.1**: README更新
   - ファイル: `README.md`
   - 内容: スクラム開発機能の使い方を追加
   - 見積: 1時間
   - 担当: -
   - 依存: Task 6.5.3
+  - **ステータス**: 完了
+  - **実装内容**:
+    - スクラム開発ワークフローセクション追加（v2.1+）
+    - Story Mapping & Design Phase説明
+    - Electron UI Viewers詳細説明
+    - Workflow Integration例（bash）
+    - 4つのステップ: Story Mapping → Design Phase → Design Review → Sprint Planning & Execution
 
-- 🟢 **Task 6.6.2**: サンプルプロジェクト作成
+- 🔵 **Task 6.6.2**: サンプルプロジェクト作成
   - ファイル: `examples/scrum-workflow/`
   - 内容: スクラム開発の実行例
   - 見積: 2時間
   - 担当: -
   - 依存: Task 6.6.1
+  - **ステータス**: 完了
+  - **実装内容**:
+    - README.md: サンプルの使い方、データ構造説明
+    - story-mapping-example.json: ペルソナ、エピック、ユーザーストーリー
+    - design-docs-example.json: 全体設計、UI/UX、DB、API仕様
+    - dependency-graph-example.json: タスク依存関係グラフ
 
 ---
 
@@ -1072,12 +1167,13 @@
 |-------|---------|------|-------|-------|---------|---------|-------|
 | Phase 1 | 11 | 11 | 0 | 0 | 18.75h | ~18.75h | 🔥 最高 |
 | Phase 2 | 16 | 16 | 0 | 0 | 44h | ~44h | 🔥 最高/高 |
-| Phase 3 | 6 | 0 | 0 | 6 | 17h | 0h | 高/中 |
+| Phase 3 | 6 | 6 | 0 | 0 | 17h | ~17h | 高/中 |
 | Phase 4 | 8 | 8 | 0 | 0 | 24h | ~24h | 高/中/低 |
-| Phase 5 | 10 | 0 | 0 | 10 | 11.58h | 0h | 中/低 |
-| Phase 6 | 20 | 5 | 0 | 15 | 70h | ~19h | 🔥 最高/高/中/低 |
+| Phase 5 | 10 | 5 | 0 | 5 | 11.58h | ~5.75h | 中/低 |
+| Phase 6 | 20 | 20 | 0 | 0 | 70h | ~70h | 🔥 最高/高/中/低 |
 | Phase 7 | 20 | 20 | 0 | 0 | 56h | ~56h | 🔥 最高/高/中 |
-| **合計** | **91** | **58** | **0** | **33** | **241.33h** | **~161.75h** | - |
+| Phase 8 | 13 | 13 | 0 | 0 | 16h | ~16h | 🔥 最高 |
+| **合計** | **104** | **99** | **0** | **5** | **257.33h** | **~251.5h** | - |
 
 ### 優先度別
 
@@ -1088,8 +1184,8 @@
 
 ### 完了率
 
-- **全体**: 63.7% (58/91 タスク)
-- **見積時間ベース**: ~67.0% (~161.75h/241.33h)
+- **全体**: 95.2% (99/104 タスク)
+- **見積時間ベース**: ~97.7% (~251.5h/257.33h)
 
 ---
 

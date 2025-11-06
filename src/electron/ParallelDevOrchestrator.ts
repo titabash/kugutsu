@@ -9,7 +9,7 @@ import type { BrowserWindow } from 'electron';
 import { compileParallelDevGraph, compileSprintDrivenGraph, compileScrumDevGraph } from '../graph/ParallelDevGraph.js';
 import { createInitialState, type ParallelDevStateType } from '../graph/state.js';
 import type { ParallelDevConfig } from '../graph/types.js';
-import { graphStreamAdapter } from './GraphStreamAdapter.js';
+import { StateStreamManager } from './StateStreamManager.js';
 
 /**
  * Workflow type
@@ -57,15 +57,28 @@ export interface OrchestratorConfig {
  */
 export class ParallelDevOrchestrator {
   private window: BrowserWindow | null = null;
+  private stateStreamManager: StateStreamManager | null = null;
 
-  constructor() {}
+  constructor() {
+    // Initialize StateStreamManager
+    this.stateStreamManager = new StateStreamManager({
+      bufferInterval: 50,
+      maxEventsPerSecond: 20,
+      maxBufferSize: 100,
+      maxLogBuffer: 1000,
+    });
+  }
 
   /**
    * Set the Electron window
    */
   setWindow(window: BrowserWindow | null): void {
     this.window = window;
-    graphStreamAdapter.setWindow(window);
+
+    // Set window for StateStreamManager
+    if (this.stateStreamManager) {
+      this.stateStreamManager.setWindow(window);
+    }
   }
 
   /**
@@ -93,9 +106,13 @@ export class ParallelDevOrchestrator {
     console.log(`📝 ユーザー要求: ${userRequest}`);
     console.log(`🔄 ワークフロー: ${workflowNames[workflowType]}`);
 
+    // Track current state for error handling
+    let currentState: ParallelDevStateType | null = null;
+
     try {
       // Create initial state
       const initialState = createInitialState(userRequest, config);
+      currentState = initialState;
 
       // Compile graph based on workflow type
       console.log('📊 LangGraphワークフローをコンパイル中...');
@@ -104,8 +121,10 @@ export class ParallelDevOrchestrator {
         workflowType === 'sprint' ? compileSprintDrivenGraph() :
         compileParallelDevGraph();
 
-      // Stream initial state
-      await graphStreamAdapter.processStateUpdate(initialState);
+      // Stream initial state to UI via StateStreamManager
+      if (this.stateStreamManager) {
+        await this.stateStreamManager.processStateUpdate(initialState);
+      }
 
       // Execute graph with streaming
       console.log('▶️ ワークフロー実行開始');
@@ -153,8 +172,13 @@ export class ParallelDevOrchestrator {
               : finalState.metadata,
           };
 
-          // Stream state update to UI
-          await graphStreamAdapter.processStateUpdate(finalState);
+          // Update currentState for error handling
+          currentState = finalState;
+
+          // Stream state update to UI via StateStreamManager
+          if (this.stateStreamManager) {
+            await this.stateStreamManager.processStateUpdate(finalState);
+          }
 
           console.log(`✅ ノード完了: ${nodeName}`);
         }
@@ -162,23 +186,35 @@ export class ParallelDevOrchestrator {
 
       console.log('🎉 ワークフロー実行完了');
 
-      // Send completion event
-      const summary = {
-        totalTasks: finalState.tasks.length,
-        completed: finalState.completedTasks.length,
-        failed: finalState.failedTasks.length,
-        duration: finalState.metadata.completedAt
-          ? new Date(finalState.metadata.completedAt).getTime() -
-            new Date(finalState.metadata.startedAt!).getTime()
-          : 0,
+      // Send completion event via StateStreamManager
+      const completionState: ParallelDevStateType = {
+        ...finalState,
+        metadata: {
+          ...finalState.metadata,
+          phase: 'complete',
+          completedAt: new Date(),
+        },
       };
 
-      graphStreamAdapter.sendCompletion(summary);
+      if (this.stateStreamManager) {
+        await this.stateStreamManager.processStateUpdate(completionState);
+      }
 
-      return finalState;
+      return completionState;
     } catch (error) {
       console.error('❌ Orchestrator エラー:', error);
-      graphStreamAdapter.sendError(error instanceof Error ? error.message : String(error));
+      // Send error via StateStreamManager
+      if (this.stateStreamManager && currentState) {
+        const errorState: ParallelDevStateType = {
+          ...currentState,
+          metadata: {
+            ...currentState.metadata,
+            hasErrors: true,
+            errors: [error instanceof Error ? error.message : String(error)],
+          },
+        };
+        await this.stateStreamManager.processStateUpdate(errorState);
+      }
       throw error;
     }
   }
@@ -205,6 +241,16 @@ export class ParallelDevOrchestrator {
     const mergeMap = new Map(existing.map((m) => [m.taskId, m]));
     updates.forEach((m) => mergeMap.set(m.taskId, m));
     return Array.from(mergeMap.values());
+  }
+
+  /**
+   * Cleanup and destroy StateStreamManager
+   */
+  destroy(): void {
+    if (this.stateStreamManager) {
+      this.stateStreamManager.destroy();
+      this.stateStreamManager = null;
+    }
   }
 }
 

@@ -3,6 +3,8 @@ import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { existsSync, statSync } from 'fs';
+import { StateStreamManager } from '../../src/electron/StateStreamManager.js';
+import type { ParallelDevStateType } from '../../src/graph/state.js';
 
 // ESM用の__dirname代替
 const __filename = fileURLToPath(import.meta.url);
@@ -10,6 +12,8 @@ const __dirname = dirname(__filename);
 
 let mainWindow: BrowserWindow | null = null;
 let currentProjectPath: string | null = null;
+let stateStreamManager: StateStreamManager | null = null;
+let currentGraphState: ParallelDevStateType | null = null;
 
 // コマンドライン引数をチェック
 const shouldOpenDevTools = process.argv.includes('--devtools');
@@ -84,7 +88,22 @@ function createWindow() {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
+    // Cleanup StateStreamManager
+    if (stateStreamManager) {
+      stateStreamManager.destroy();
+      stateStreamManager = null;
+    }
   });
+
+  // Initialize StateStreamManager
+  stateStreamManager = new StateStreamManager({
+    bufferInterval: 50,
+    maxEventsPerSecond: 20,
+    maxBufferSize: 100,
+    maxLogBuffer: 1000,
+  });
+  stateStreamManager.setWindow(mainWindow);
+  console.log('[Electron Main] StateStreamManager initialized');
 
   // メニューバーを作成
   createMenu();
@@ -362,6 +381,100 @@ ipcMain.handle('open-project-dialog', async (event) => {
   return currentProjectPath;
 });
 
+// ==========================================
+// LangGraph IPC Handlers
+// ==========================================
+
+/**
+ * Pause execution (LangGraph workflow)
+ */
+ipcMain.handle('pause-execution', async (event) => {
+  try {
+    // Request pause to parent process
+    if (process.send) {
+      process.send({ type: 'pause-execution' });
+      return { success: true };
+    }
+    return { success: false, message: 'No parent process available' };
+  } catch (error) {
+    console.error('[Electron Main] Failed to pause execution:', error);
+    return { success: false, message: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+/**
+ * Resume execution (LangGraph workflow)
+ */
+ipcMain.handle('resume-execution', async (event) => {
+  try {
+    // Request resume to parent process
+    if (process.send) {
+      process.send({ type: 'resume-execution' });
+      return { success: true };
+    }
+    return { success: false, message: 'No parent process available' };
+  } catch (error) {
+    console.error('[Electron Main] Failed to resume execution:', error);
+    return { success: false, message: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+/**
+ * Cancel execution (LangGraph workflow)
+ */
+ipcMain.handle('cancel-execution', async (event) => {
+  try {
+    // Request cancellation to parent process
+    if (process.send) {
+      process.send({ type: 'cancel-execution' });
+      return { success: true, message: 'Execution cancelled' };
+    }
+    return { success: false, message: 'No parent process available' };
+  } catch (error) {
+    console.error('[Electron Main] Failed to cancel execution:', error);
+    return { success: false, message: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+/**
+ * Get current graph state
+ */
+ipcMain.handle('get-graph-state', async (event) => {
+  try {
+    return currentGraphState;
+  } catch (error) {
+    console.error('[Electron Main] Failed to get graph state:', error);
+    throw error;
+  }
+});
+
+/**
+ * Get task details by ID
+ */
+ipcMain.handle('get-task-details', async (event, taskId: string) => {
+  try {
+    if (!currentGraphState) {
+      return null;
+    }
+    const task = currentGraphState.tasks.find((t) => t.id === taskId);
+    return task || null;
+  } catch (error) {
+    console.error('[Electron Main] Failed to get task details:', error);
+    return null;
+  }
+});
+
+/**
+ * Log error from renderer
+ */
+ipcMain.handle('log-error', async (event, { message, details }: { message: string; details?: any }) => {
+  console.error('[Renderer Error]', message, details);
+});
+
+// ==========================================
+// End of LangGraph IPC Handlers
+// ==========================================
+
 // 親プロセスからのメッセージを処理（並列開発システムとの通信）
 if (process.send) {
   console.log('[Electron Main] IPC communication enabled');
@@ -371,13 +484,23 @@ if (process.send) {
     if (!message || !message.type) return;
 
     switch (message.type) {
+      case 'graph-state-update':
+        // LangGraph state update (new architecture)
+        if (stateStreamManager && message.data) {
+          currentGraphState = message.data;
+          stateStreamManager.processStateUpdate(message.data).catch((error) => {
+            console.error('[Electron Main] Failed to process state update:', error);
+          });
+        }
+        break;
+
       case 'log':
         // console.log('[Electron Main] Sending log to renderer:', message.data);
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('log-data', message.data);
         }
         break;
-      
+
       case 'structured-log':
         // 構造化されたログメッセージを処理
         // console.log('[Electron Main] Sending structured log to renderer:', message.data);

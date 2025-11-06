@@ -33,6 +33,7 @@ interface AppState {
   // Actions - Tasks
   setTasks: (tasks: Task[]) => void
   updateTask: (taskId: string, updates: Partial<Task>) => void
+  updateTasks: (taskUpdates: Task[]) => void
   addTask: (task: Task) => void
 
   // Actions - Logs
@@ -116,6 +117,29 @@ export const useAppStore = create<AppState>()(
 
         const updatedTask = { ...task, ...updates, updatedAt: new Date() }
         const tasks = get().tasks.map((t) => (t.id === taskId ? updatedTask : t))
+
+        get().setTasks(tasks)
+      },
+
+      updateTasks: (taskUpdates) => {
+        // Create a map of updates by task ID
+        const updatesMap = new Map(taskUpdates.map((task) => [task.id, task]))
+
+        // Merge updates with existing tasks
+        const tasks = get().tasks.map((task) => {
+          const update = updatesMap.get(task.id)
+          if (update) {
+            return { ...task, ...update, updatedAt: new Date() }
+          }
+          return task
+        })
+
+        // Add new tasks that don't exist yet
+        taskUpdates.forEach((update) => {
+          if (!get().tasksById.has(update.id)) {
+            tasks.push({ ...update, createdAt: new Date() })
+          }
+        })
 
         get().setTasks(tasks)
       },

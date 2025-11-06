@@ -6,6 +6,59 @@ import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
 console.log('[Preload] Electron modules loaded successfully');
 
 const electronAPI = {
+  // ==========================================
+  // LangGraph IPC API (New Architecture)
+  // ==========================================
+
+  /**
+   * Listen for batched graph events
+   */
+  onGraphEventsBatch: (callback: (events: any[]) => void) => {
+    const listener = (_event: IpcRendererEvent, events: any[]) => {
+      callback(events);
+    };
+    ipcRenderer.on('graph-events-batch', listener);
+    // Return cleanup function
+    return () => {
+      ipcRenderer.removeListener('graph-events-batch', listener);
+    };
+  },
+
+  /**
+   * Pause execution
+   */
+  pauseExecution: () => ipcRenderer.invoke('pause-execution'),
+
+  /**
+   * Resume execution
+   */
+  resumeExecution: () => ipcRenderer.invoke('resume-execution'),
+
+  /**
+   * Cancel execution
+   */
+  cancelExecution: () => ipcRenderer.invoke('cancel-execution'),
+
+  /**
+   * Get current graph state
+   */
+  getGraphState: () => ipcRenderer.invoke('get-graph-state'),
+
+  /**
+   * Get task details by ID
+   */
+  getTaskDetails: (taskId: string) => ipcRenderer.invoke('get-task-details', taskId),
+
+  /**
+   * Log error from renderer
+   */
+  logError: (message: string, details?: any) =>
+    ipcRenderer.invoke('log-error', { message, details }),
+
+  // ==========================================
+  // Legacy API (Backward Compatibility)
+  // ==========================================
+
   // ログ関連
   sendLog: (data: any) => ipcRenderer.invoke('log-message', data),
   onLogData: (callback: (data: any) => void) => {

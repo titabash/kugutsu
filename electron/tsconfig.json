@@ -5,7 +5,6 @@
     "moduleResolution": "node",
     "lib": ["ES2022", "DOM"],
     "outDir": "./",
-    "rootDir": "./",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -20,6 +19,6 @@
       "@/*": ["./renderer/*"]
     }
   },
-  "include": ["**/*.ts"],
+  "include": ["**/*.ts", "../src/graph/**/*.ts", "../src/types/**/*.ts", "../src/managers/**/*.ts", "../src/utils/**/*.ts"],
   "exclude": ["node_modules", "preload/**/*.ts", "vite.config.ts", "renderer/**/*.ts", "renderer/**/*.tsx"]
 }

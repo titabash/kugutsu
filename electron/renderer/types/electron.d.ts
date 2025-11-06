@@ -3,61 +3,68 @@
  */
 
 export interface ElectronAPI {
-  // Log related
-  sendLog: (data: unknown) => Promise<void>
-  onLogData: (callback: (data: LogData) => void) => void
-  onStructuredLogData: (callback: (data: StructuredLogData) => void) => void
+  // ==========================================
+  // LangGraph API (New Architecture)
+  // ==========================================
 
-  // Layout related
-  updateLayout: (engineerCount: number) => Promise<{ success: boolean; engineerCount: number }>
-  onLayoutUpdate: (callback: (engineerCount: number) => void) => void
+  /**
+   * Listen for batched graph events from StateStreamManager
+   * @returns Cleanup function to remove listener
+   */
+  onGraphEventsBatch?: (callback: (events: GraphEvent[]) => void) => () => void
 
-  // Task status related
-  onTaskStatusUpdate: (callback: (data: { completed: number; total: number }) => void) => void
-  onAllTasksCompleted: (callback: (data: unknown) => void) => void
+  /**
+   * Get current LangGraph state
+   */
+  getGraphState?: () => Promise<unknown>
 
-  // Terminal
-  onClearTerminal: (callback: (terminalId: string) => void) => void
+  /**
+   * Get task details by ID
+   */
+  getTaskDetails?: (taskId: string) => Promise<unknown>
 
-  // Connection status
-  onConnectionStatus: (callback: (connected: boolean) => void) => void
+  /**
+   * Log error from renderer
+   */
+  logError?: (message: string, details?: unknown) => Promise<void>
 
-  // TechLead and Engineer association
-  onAssociateTechLeadEngineer: (
-    callback: (data: { techLeadId: string; engineerId: string }) => void
-  ) => void
+  // ==========================================
+  // Project Management
+  // ==========================================
 
-  // Event listener management
-  removeAllListeners: (channel: string) => void
+  /**
+   * Get working directory
+   */
+  getWorkingDirectory?: () => Promise<string>
 
-  // Task management
-  getTasks: () => Promise<unknown[]>
-  getTaskOverview: () => Promise<string>
-  getTaskInstruction: (taskId: string) => Promise<string>
-  getWorkingDirectory: () => Promise<string>
-  onTaskUpdate: (callback: (tasks: unknown[]) => void) => void
-  onTaskOverviewUpdate: (callback: (overview: string) => void) => void
+  /**
+   * Get current project path (for Electron app)
+   */
+  getCurrentProjectPath?: () => Promise<string | null>
 
-  // Control
-  pauseExecution?: () => Promise<{ success: boolean }>
-  resumeExecution?: () => Promise<{ success: boolean }>
-  cancelExecution?: () => Promise<{ success: boolean }>
+  /**
+   * Open project dialog (for Electron app)
+   */
+  openProjectDialog?: () => Promise<string | null>
 }
 
-export interface LogData {
-  engineerId: string
-  level: string
-  message: string
-  component: string
-  timestamp: Date
-}
-
-export interface StructuredLogData {
-  level: string
-  source: string
-  message: string
-  timestamp: Date
-  data?: Record<string, unknown>
+/**
+ * Graph Event from StateStreamManager
+ */
+export interface GraphEvent {
+  type:
+    | 'state-init'
+    | 'node-started'
+    | 'node-completed'
+    | 'task-update'
+    | 'tasks-batch'
+    | 'logs-batch'
+    | 'phase-change'
+    | 'error'
+    | 'complete'
+  data: unknown
+  timestamp: number
+  priority: 'high' | 'normal' | 'low'
 }
 
 declare global {

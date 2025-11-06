@@ -89,7 +89,7 @@ export async function reviewStoryMappingNode(
 
   console.log(`📊 Epic数: ${storyMapping.epics.length}`);
   const totalStories = storyMapping.epics.reduce(
-    (sum, epic) => sum + epic.stories.length,
+    (sum: number, epic: any) => sum + epic.stories.length,
     0
   );
   console.log(`📝 ストーリー数: ${totalStories}`);

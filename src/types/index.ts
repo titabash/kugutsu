@@ -181,3 +181,55 @@ export interface DependencyFailureStrategy {
   maxRetries?: number;
   retryDelay?: number;
 }
+
+// ========================================
+// スプリント駆動開発の型定義
+// ========================================
+
+/**
+ * グローバルタスク（複数プロジェクト対応）
+ *
+ * 既存のTaskを拡張し、プロジェクト識別子と動的優先度を追加
+ */
+export interface GlobalTask extends Task {
+  projectId: string;              // プロジェクト識別子（uuid）
+  requestTimestamp: Date;         // リクエスト受付時刻
+  dynamicPriority: number;        // 動的優先度（0-1000）
+  sprint?: string;                // 所属スプリントID
+  storyId?: string;               // 関連するユーザーストーリーID
+}
+
+/**
+ * プロジェクトメタ情報
+ */
+export interface ProjectMetadata {
+  projectId: string;              // プロジェクト識別子
+  userRequest: string;            // 元のユーザーリクエスト
+  requestTimestamp: Date;         // リクエスト受付時刻
+  totalTasks: number;             // 総タスク数
+  completedTasks: number;         // 完了タスク数
+  needsStoryMapping: boolean;     // ストーリーマッピングが必要か
+  storyMappingPath?: string;      // ストーリーマッピングのファイルパス
+  designDocsPath?: string;        // 設計書のファイルパス
+}
+
+/**
+ * スプリント情報
+ */
+export interface Sprint {
+  id: string;                     // sprint-{uuid}
+  name: string;                   // "Sprint 1: 認証機能実装"
+  goal: string;                   // スプリントゴール
+  taskIds: string[];              // 含まれるタスクID
+  status: 'planning' | 'active' | 'review' | 'completed';
+  startedAt?: Date;               // 開始日時
+  completedAt?: Date;             // 完了日時
+  deployable: boolean;            // デプロイ可能かどうか
+  metadata: {
+    estimatedHours: number;       // 見積もり時間
+    actualHours?: number;         // 実績時間
+    blockers: string[];           // ブロッカー情報
+    completedTasksCount: number;  // 完了タスク数
+    failedTasksCount: number;     // 失敗タスク数
+  };
+}

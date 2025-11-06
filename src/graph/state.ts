@@ -13,6 +13,9 @@ import type {
   WorktreeInfo,
   LogEntry,
   ParallelDevConfig,
+  GlobalTask,
+  ProjectMetadata,
+  Sprint,
 } from './types.js';
 
 /**
@@ -189,6 +192,101 @@ export const ParallelDevState = Annotation.Root({
       return { ...state, ...update };
     },
     default: () => ({}),
+  }),
+
+  /**
+   * Sprint-driven development fields
+   */
+
+  /**
+   * Global tasks (multi-project support)
+   *
+   * Reducer: Merge tasks by ID, replacing existing tasks with updates
+   */
+  globalTasks: Annotation<GlobalTask[]>({
+    reducer: (state: GlobalTask[], update: GlobalTask[]) => {
+      const taskMap = new Map(state.map((t) => [t.id, t]));
+      update.forEach((t) => taskMap.set(t.id, t));
+      return Array.from(taskMap.values());
+    },
+    default: () => [],
+  }),
+
+  /**
+   * Project metadata (multi-project support)
+   *
+   * Reducer: Merge projects by project ID
+   */
+  projects: Annotation<Map<string, ProjectMetadata>>({
+    reducer: (
+      state: Map<string, ProjectMetadata>,
+      update: Map<string, ProjectMetadata>
+    ) => {
+      return new Map([...state, ...update]);
+    },
+    default: () => new Map<string, ProjectMetadata>(),
+  }),
+
+  /**
+   * Sprint information
+   *
+   * Reducer: Merge sprints by ID, replacing existing sprints with updates
+   */
+  sprints: Annotation<Sprint[]>({
+    reducer: (state: Sprint[], update: Sprint[]) => {
+      const sprintMap = new Map(state.map((s) => [s.id, s]));
+      update.forEach((s) => sprintMap.set(s.id, s));
+      return Array.from(sprintMap.values());
+    },
+    default: () => [],
+  }),
+
+  /**
+   * Active sprint
+   *
+   * Reducer: Replace (default)
+   */
+  activeSprint: Annotation<Sprint | null>({
+    default: () => null,
+  }),
+
+  /**
+   * Completed sprint IDs
+   *
+   * Reducer: Append new sprint IDs
+   */
+  completedSprintIds: Annotation<string[]>({
+    reducer: (state: string[], update: string[]) => {
+      return state.concat(update);
+    },
+    default: () => [],
+  }),
+
+  /**
+   * Current user request (for multi-project tracking)
+   *
+   * Reducer: Replace (default)
+   */
+  currentUserRequest: Annotation<string | null>({
+    default: () => null,
+  }),
+
+  /**
+   * Continuation mode flag
+   *
+   * Reducer: Replace (default)
+   */
+  continuationMode: Annotation<boolean>({
+    default: () => false,
+  }),
+
+  /**
+   * Current project ID
+   *
+   * Reducer: Replace (default)
+   */
+  currentProjectId: Annotation<string | null>({
+    default: () => null,
   }),
 });
 

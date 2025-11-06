@@ -10,50 +10,152 @@ AI-powered parallel development system that orchestrates multiple AI engineers t
 - Git 2.7+
 - Claude Code (authenticated via Anthropic Console or API Key)
 
+## Two Usage Modes
+
+Kugutsu can be used in two completely independent modes:
+
+### 1. CLI Mode (Terminal-based)
+Command-line interface for terminal-based development without any GUI.
+
+### 2. Electron Desktop App
+Standalone desktop application similar to VSCode/Cursor for visual project management.
+
 ## Quick Start
+
+### CLI Mode
 
 ```bash
 # 1. Set up Claude Code (if not already done)
 # Follow: https://docs.anthropic.com/en/docs/claude-code/quickstart
 
-# 2. Install kugutsu
+# 2. Install kugutsu globally
 npm install -g @titabash/kugutsu
 
 # 3. Navigate to your project
 cd your-project
 
-# 4. Run kugutsu
+# 4. Run kugutsu CLI
 kugutsu "Add user authentication"
 ```
 
-## Installation
+### Electron Desktop App
 
 ```bash
-# 1. Install the package
-npm install -g @titabash/kugutsu
+# 1. Download the app for your platform
+# - macOS: Kugutsu-{version}-arm64.dmg or Kugutsu-{version}-x64.dmg
+# - Windows: Kugutsu-{version}-x64.exe
+# - Linux: Kugutsu-{version}-x64.AppImage
+
+# 2. Install and launch the app
+
+# 3. File > Open Project to select your Git repository
+
+# 4. Use the UI to configure and run AI development tasks
 ```
 
-## Usage
+Or build from source:
 
 ```bash
-# Basic usage
+# Clone the repository
+git clone https://github.com/titabash/kugutsu.git
+cd kugutsu
+
+# Install dependencies
+npm install
+cd electron && npm install && cd ..
+
+# Build and run Electron app
+npm run build:all
+npm run electron
+```
+
+## CLI Usage
+
+```bash
+# Basic usage (CLI only - no Electron)
 kugutsu "Your development request"
 
 # Examples
 kugutsu "Add error handling to all API endpoints"
 kugutsu "Fix TypeScript errors" --max-engineers 2
-kugutsu "Refactor user service" --cleanup
+kugutsu "Refactor user service" --keep-worktrees
+kugutsu "Performance improvements" --visual-ui
 ```
 
-## Options
+## CLI Options
 
 ```bash
---max-engineers <num>     # Maximum concurrent engineers (default: 3)
---max-turns <num>        # Maximum turns per task (default: 20)
---cleanup               # Clean up worktrees after completion
---no-electron          # Disable Electron UI
---visual-ui            # Use terminal visual UI
+--max-engineers <num>     # Maximum concurrent engineers (default: 10, range: 1-100)
+--max-turns <num>        # Maximum turns per task (default: 50, range: 5-50)
+--keep-worktrees        # Keep worktrees after completion (default: auto-delete)
+--visual-ui            # Use terminal split-pane UI (blessed-based)
+--base-repo <path>     # Base repository path (default: current directory)
+--worktree-base <path> # Worktree base path (default: ./worktrees)
+--base-branch <branch> # Base branch (default: current branch)
+--help, -h            # Show help message
+--version, -v         # Show version information
 ```
+
+## Electron Desktop App Features
+
+The Electron desktop application provides a visual interface for managing AI development projects:
+
+### 🖥️ Application Interface
+
+- **Welcome Screen**: Initial screen with project selection
+- **Menu Bar**:
+  - File > Open Project (⌘O / Ctrl+O)
+  - File > Close Project (⌘W / Ctrl+W)
+  - Edit, View, Help menus
+- **Toolbar**: Shows current project path and "Open Project" button
+- **Main UI**: Task kanban board, dependency graph, and log viewer
+
+### 📂 Project Management
+
+1. **Open Project**
+   - Click "File > Open Project" or use the toolbar button
+   - Select a Git repository directory
+   - App validates that it's a valid Git repository
+   - Cannot open worktrees or submodules (main repository only)
+
+2. **Project Context**
+   - Once opened, the project remains active until closed
+   - All development tasks apply to the selected project
+   - Similar to how VSCode/Cursor manages workspace
+
+3. **Close Project**
+   - "File > Close Project" returns to welcome screen
+   - Clears current project context
+
+### 🎨 UI Components
+
+All existing UI components work within the Electron app:
+
+- **Task Kanban Board**: Visual task status tracking
+- **Dependency Graph Viewer**: Shows task dependencies and critical paths
+- **Log Viewer**: Real-time log streaming
+- **Story Mapping Viewer**: Displays Scrum artifacts
+- **Design Docs Viewer**: Shows design documents
+
+### 🚀 Building Distribution Packages
+
+```bash
+# Install electron-builder (first time only)
+npm install --save-dev electron-builder
+
+# Build for current platform
+npm run dist
+
+# Build for specific platforms
+npm run dist:mac      # macOS (.dmg)
+npm run dist:win      # Windows (.exe)
+npm run dist:linux    # Linux (.AppImage, .deb)
+
+# Test build without creating installer
+npm run pack
+```
+
+Distribution files will be created in `dist-electron/` directory.
 
 ## Features
 
@@ -361,11 +463,72 @@ kugutsu "Start fresh with your requirements"
 rm -rf .kugutsu/projects/<project-id>
 ```
 
+### Electron Desktop App Issues
+
+**Q: Electron app won't start**
+```bash
+# Ensure all dependencies are built:
+npm run build:all
+
+# Check if Electron is properly installed:
+cd electron && npm list electron
+
+# Rebuild if necessary:
+cd electron && npm install && cd ..
+npm run build:all
+```
+
+**Q: Cannot open project in Electron app**
+```bash
+# Ensure the directory is a valid Git repository:
+cd /path/to/project
+ls .git  # Should exist and be a directory, not a file
+
+# If .git is a file, you're in a worktree or submodule
+# Navigate to the main repository instead
+```
+
+**Q: Electron UI not updating**
+```bash
+# Check IPC communication in DevTools:
+# 1. Open the app
+# 2. View > Toggle Developer Tools
+# 3. Check Console for IPC errors
+
+# Rebuild renderer if needed:
+cd electron && npm run build:renderer
+```
+
+**Q: Building distribution package fails**
+```bash
+# Install electron-builder:
+npm install --save-dev electron-builder
+
+# Ensure all code is built first:
+npm run build:all
+
+# Try building without installer first:
+npm run pack
+
+# Check electron-builder logs for specific errors
+```
+
+**Q: Installed app doesn't work on macOS**
+```bash
+# macOS may block unsigned apps
+# Right-click the app > Open > Open
+
+# Or allow in System Preferences:
+# System Preferences > Security & Privacy > General
+# Click "Open Anyway" for Kugutsu
+```
+
 ### Getting Help
 
-- Report issues: https://github.com/anthropics/kugutsu/issues
+- Report issues: https://github.com/titabash/kugutsu/issues
 - Documentation: See `docs/` directory for detailed workflows
-- Logs: Check terminal output or Electron UI for detailed error messages
+- Logs: Check terminal output or Electron UI (View > Toggle Developer Tools) for detailed error messages
+- For Electron app issues, include platform (macOS/Windows/Linux) and version
 
 ## License
 

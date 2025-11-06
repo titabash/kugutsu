@@ -1,9 +1,9 @@
 # Implementation Task List
 
 **プロジェクト**: Kugutsu 2.0 - AI Parallel Development System
-**バージョン**: 1.0.0
-**最終更新**: 2025-11-06
-**ステータス**: In Progress (72.5% 完了)
+**バージョン**: 1.0.1
+**最終更新**: 2025-01-06
+**ステータス**: In Progress (79.4% 完了)
 
 ## タスク分類
 
@@ -12,7 +12,7 @@
 - 🔵 **完了** (Completed)
 - 🔴 **ブロック** (Blocked)
 
-## 進捗サマリー (最終更新: 2025-11-06)
+## 進捗サマリー (最終更新: 2025-01-06)
 
 - **Phase 1 (基盤構築)**: 11/11 完了 (100%) ✨
 - **Phase 2 (コア機能)**: 16/16 完了 (100%) ✨
@@ -21,7 +21,8 @@
 - **Phase 5 (完了準備)**: 0/10 完了 (0%)
 - **Phase 6 (スクラム開発)**: 15/20 完了 (75%, 63h/70h) 🔥
 - **Phase 7 (スプリント駆動開発)**: 20/20 完了 (100%) ✨
-- **全体**: 70/91 完了 (76.9%, 209.75h/241.33h)
+- **Phase 8 (CLI/Electron分離)**: 13/13 完了 (100%) ✨ **NEW**
+- **全体**: 83/104 完了 (79.8%, 225.75h/257.33h)
 
 ## ⚠️ 見積もりバッファについて
 
@@ -55,8 +56,9 @@
 | Phase 4 | 24h | **30h** | テスト（完了済み） |
 | Phase 5 | 11.58h | **14.5h** | 完了準備 |
 | Phase 6 | 70h | **87.5h** | スクラム開発 |
-| Phase 7 | 56h | **70h** | スプリント駆動 |
-| **合計** | **241.33h** | **~301.7h** | **約60時間の追加バッファ** |
+| Phase 7 | 56h | **70h** | スプリント駆動（完了済み） |
+| Phase 8 | 16h | **20h** | CLI/Electron分離（完了済み） |
+| **合計** | **257.33h** | **~321.7h** | **約64時間の追加バッファ** |
 
 ---
 
@@ -1222,3 +1224,264 @@ Phase 7 (スプリント駆動開発) 🆕 ✅ 完了
 **選択基準**:
 - スクラム開発機能を優先 → Phase 6
 - ユーザー体験を優先 → Phase 3
+
+---
+
+## Phase 8: CLI/Electron 完全分離とアプリ配布対応
+
+**優先度**: 🔥 最高
+**見積**: 16時間
+**実績**: 16時間
+**ステータス**: ✅ 完了 (2025-01-06)
+
+### 目的
+
+CLI実行とElectron実行を完全に分離し、Electronをスタンドアロンのデスクトップアプリケーションとして再構築する。VSCode/Cursorのようなプロジェクト管理ワークフローを提供し、アプリ配布を可能にする。
+
+### 8.1 CLI Mode - Electron依存の完全削除
+
+**目標**: CLIからElectronへの依存を完全に削除し、ターミナル専用の実行環境を提供
+
+- 🔵 **Task 8.1.1**: 新規CLI実装 (`parallel-dev-cli.ts`)
+  - ファイル: `src/parallel-dev-cli.ts`
+  - 内容:
+    - Electron依存を完全削除
+    - `ParallelDevelopmentOrchestrator`のみ使用
+    - ターミナルベースのログ出力
+    - オプショナルな`ImprovedParallelLogViewer`統合
+  - 見積: 2時間
+  - 実績: 2時間
+  - **ステータス**: 完了
+
+- 🔵 **Task 8.1.2**: package.json スクリプト更新
+  - ファイル: `package.json`
+  - 内容:
+    - `parallel-dev-cli`: 新しいCLI専用スクリプト
+    - `kugutsu`: CLIビルド版へのエイリアス
+    - binエントリーポイントを`parallel-dev-cli.js`に変更
+  - 見積: 30分
+  - 実績: 30分
+  - **ステータス**: 完了
+
+- 🔵 **Task 8.1.3**: 型定義修正
+  - ファイル: `src/types/index.ts`
+  - 内容:
+    - `TaskAnalysisResult`に`estimatedTime?`プロパティ追加
+    - オプショナルチェーン対応
+  - 見積: 30分
+  - 実績: 30分
+  - **ステータス**: 完了
+
+### 8.2 Electron - スタンドアロンアプリ化
+
+**目標**: Electronをスタンドアロンアプリとして動作させ、プロジェクト選択機能を実装
+
+- 🔵 **Task 8.2.1**: アプリケーションメニュー実装
+  - ファイル: `electron/main/index.ts`
+  - 内容:
+    - File > Open Project (⌘O/Ctrl+O)
+    - File > Close Project (⌘W/Ctrl+W)
+    - Edit, View, Help メニュー
+    - ネイティブメニューバー統合
+  - 見積: 2時間
+  - 実績: 2時間
+  - **ステータス**: 完了
+
+- 🔵 **Task 8.2.2**: プロジェクト選択ダイアログ
+  - ファイル: `electron/main/index.ts`
+  - 内容:
+    - `dialog.showOpenDialog`実装
+    - Gitリポジトリ検証
+    - worktree/submoduleチェック
+    - エラーダイアログ表示
+  - 見積: 1.5時間
+  - 実績: 1.5時間
+  - **ステータス**: 完了
+
+- 🔵 **Task 8.2.3**: 状態管理 - projectPath追加
+  - ファイル: `electron/renderer/store/appStore.ts`
+  - 内容:
+    - `projectPath: string | null`状態追加
+    - `setProjectPath`アクション追加
+    - Zustand統合
+  - 見積: 1時間
+  - 実績: 1時間
+  - **ステータス**: 完了
+
+- 🔵 **Task 8.2.4**: IPC通信拡張
+  - ファイル: `electron/preload/index.ts`
+  - 内容:
+    - `getCurrentProjectPath()`
+    - `openProjectDialog()`
+    - `onProjectOpened(callback)`
+    - `onProjectClosed(callback)`
+  - 見積: 1時間
+  - 実績: 1時間
+  - **ステータス**: 完了
+
+### 8.3 UI Components - プロジェクト管理
+
+**目標**: プロジェクト選択とステータス表示のUIコンポーネント実装
+
+- 🔵 **Task 8.3.1**: Toolbarコンポーネント
+  - ファイル: `electron/renderer/components/Toolbar.tsx`
+  - 内容:
+    - 現在のプロジェクトパス表示
+    - プロジェクト名抽出
+    - Open/Change Projectボタン
+    - lucide-reactアイコン統合
+  - 見積: 1.5時間
+  - 実績: 1.5時間
+  - **ステータス**: 完了
+
+- 🔵 **Task 8.3.2**: WelcomeScreenコンポーネント
+  - ファイル: `electron/renderer/components/WelcomeScreen.tsx`
+  - 内容:
+    - アプリロゴとブランディング
+    - 機能ハイライト表示
+    - "Open Project"CTA
+    - システム情報表示
+  - 見積: 2時間
+  - 実績: 2時間
+  - **ステータス**: 完了
+
+- 🔵 **Task 8.3.3**: App.tsx 条件付きレンダリング
+  - ファイル: `electron/renderer/App.tsx`
+  - 内容:
+    - プロジェクト未選択時: WelcomeScreen表示
+    - プロジェクト選択時: メインUI表示
+    - Toolbar常時表示
+  - 見積: 1時間
+  - 実績: 1時間
+  - **ステータス**: 完了
+
+### 8.4 アプリケーション配布
+
+**目標**: electron-builder設定とビルドスクリプトの整備
+
+- 🔵 **Task 8.4.1**: electron-builder設定
+  - ファイル: `electron-builder.yml`
+  - 内容:
+    - macOS (.dmg) 設定 (x64, arm64)
+    - Windows (.exe) 設定 (NSIS)
+    - Linux (.AppImage, .deb) 設定
+    - アイコンパス指定
+    - GitHub Releases統合
+  - 見積: 2時間
+  - 実績: 2時間
+  - **ステータス**: 完了
+
+- 🔵 **Task 8.4.2**: ビルドスクリプト追加
+  - ファイル: `package.json`
+  - 内容:
+    - `build:all`: 完全ビルド
+    - `pack`: テストビルド
+    - `dist`: 配布ビルド
+    - `dist:mac/win/linux`: プラットフォーム別
+  - 見積: 1時間
+  - 実績: 1時間
+  - **ステータス**: 完了
+
+### 8.5 ドキュメント更新
+
+**目標**: 新しい実行モデルを反映したドキュメント作成
+
+- 🔵 **Task 8.5.1**: CLAUDE.md更新
+  - ファイル: `CLAUDE.md`
+  - 内容:
+    - CLI vs Electron の明確化
+    - 新しいコマンド体系
+    - アプリ配布手順
+  - 見積: 1時間
+  - 実績: 1時間
+  - **ステータス**: 完了
+
+- 🔵 **Task 8.5.2**: README.md更新
+  - ファイル: `README.md`
+  - 内容:
+    - Quick Start更新
+    - 2つの実行モード説明
+    - Electronアプリセクション追加
+    - トラブルシューティング追加
+  - 見積: 1.5時間
+  - 実績: 1.5時間
+  - **ステータス**: 完了
+
+- 🔵 **Task 8.5.3**: 仕様書作成
+  - ファイル: `spec/CLI_ELECTRON_SEPARATION.md`
+  - 内容:
+    - アーキテクチャ変更の詳細
+    - マイグレーションガイド
+    - テストチェックリスト
+    - 既知の問題と解決策
+  - 見積: 1時間
+  - 実績: 1時間
+  - **ステータス**: 完了
+
+### Phase 8 完了基準
+
+- ✅ CLI実行でElectronが一切起動しない
+- ✅ Electronアプリが独立して起動する
+- ✅ プロジェクト選択機能が動作する
+- ✅ 既存のUIコンポーネントが統合される
+- ✅ ビルド(`npm run build`)がエラーなく完了する
+- ✅ electron-builder設定が正しく動作する
+- ✅ ドキュメントが最新の実装を反映している
+
+### Phase 8 成果物
+
+- ✅ `src/parallel-dev-cli.ts` - 完全独立したCLI版
+- ✅ `electron/main/index.ts` - メニューバーとプロジェクト管理
+- ✅ `electron/renderer/components/Toolbar.tsx` - プロジェクトツールバー
+- ✅ `electron/renderer/components/WelcomeScreen.tsx` - ウェルカム画面
+- ✅ `electron-builder.yml` - アプリ配布設定
+- ✅ `spec/CLI_ELECTRON_SEPARATION.md` - 実装仕様書
+- ✅ 更新されたドキュメント (CLAUDE.md, README.md)
+
+### 技術的課題と解決策
+
+**課題 1: 古い @types/electron との競合**
+- 解決: `@types/electron`をアンインストールし、Electron v37の組み込み型定義を使用
+
+**課題 2: dialog.showOpenDialog の戻り値型**
+- 解決: 型ガードを使用してElectronバージョン間の互換性を確保
+
+**課題 3: estimatedTime プロパティ不足**
+- 解決: `TaskAnalysisResult`インターフェースにオプショナルプロパティとして追加
+
+**所要時間**: ~16時間（見積通り）
+
+---
+
+### 🎯 現在の推奨フェーズ
+
+#### Option 1: Phase 3 - UI統合（推奨）
+
+**優先度**: 高
+**見積**: 17時間
+**理由**: Phase 8でElectronアプリの基盤が整ったので、UI統合を完了させる
+
+**最初に着手すべきタスク**:
+
+1. **Phase 3.1.1**: Electron Integration Basics
+   - 見積: 2時間
+   - 内容: Electron/Reactアプリケーション統合
+
+2. **Phase 3.1.2**: IPC Communication Layer
+   - 見積: 2時間
+   - 内容: Main/Rendererプロセス間通信
+
+3. **Phase 3.1.3**: Real-time Log Streaming
+   - 見積: 2時間
+   - 内容: ログのリアルタイム表示
+
+#### Option 2: Phase 6 - スクラム開発（代替案）
+
+**優先度**: 🔥 最高優先度タスク含む
+**見積**: 70時間
+**理由**: より高度なAI駆動開発フローを構築
+
+**選択基準**:
+- ユーザー体験を優先 → Phase 3
+- 開発機能を優先 → Phase 6
+

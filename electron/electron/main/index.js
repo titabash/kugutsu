@@ -21,7 +21,7 @@ if (cwdIndex !== -1 && process.argv[cwdIndex + 1]) {
     console.log('[Electron Main] Original working directory:', originalCwd);
 }
 function createWindow() {
-    const preloadPath = path.join(__dirname, '../preload/index.js');
+    const preloadPath = path.join(__dirname, '../preload/index.cjs');
     console.log('[Electron Main] Preload script path:', preloadPath);
     console.log('[Electron Main] Preload script exists:', existsSync(preloadPath));
     mainWindow = new BrowserWindow({
@@ -47,13 +47,18 @@ function createWindow() {
         console.error('[Electron Main] Renderer file not found! Run `npm run build:renderer` first.');
         mainWindow.loadURL('data:text/html,<h1>Error: Renderer not built. Run `npm run build:renderer`</h1>');
     }
-    // --devtoolsオプションが指定されている場合はDevToolsを開く
-    if (shouldOpenDevTools) {
-        mainWindow.webContents.openDevTools();
-    }
+    // レンダラープロセスのエラーをキャッチ
+    mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+        console.log(`[Renderer Console] [${level}] ${message} (${sourceId}:${line})`);
+    });
     // レンダラープロセスの準備が完了したらログを確認
     mainWindow.webContents.once('did-finish-load', () => {
         console.log('[Electron Main] Renderer loaded successfully');
+        // 開発環境では常にDevToolsを開く（デバッグのため）
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.openDevTools();
+            console.log('[Electron Main] DevTools opened');
+        }
         // 親プロセスに準備完了を通知
         if (process.send) {
             process.send({ type: 'ready' });

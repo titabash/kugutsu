@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "electron .",
-    "build": "tsc && tsc -p tsconfig.preload.json && npm run build:renderer",
+    "build": "tsc && tsc -p tsconfig.preload.json && mv preload/index.js preload/index.cjs && npm run build:renderer",
     "build:renderer": "vite build",
     "dev:renderer": "vite"
   },

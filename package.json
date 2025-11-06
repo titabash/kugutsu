@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc && npm run build:electron",
-    "build:electron": "cd electron && tsc",
+    "build:electron": "cd electron && tsc && tsc -p tsconfig.preload.json && mv preload/index.js preload/index.cjs",
     "build:renderer": "cd electron && npm run build:renderer",
     "build:all": "npm run build && npm run build:renderer",
     "start": "node dist/index.js",

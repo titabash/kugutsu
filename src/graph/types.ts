@@ -4,6 +4,9 @@
  * Core types used in the parallel development workflow
  */
 
+// Re-export sprint-driven development types from src/types/index.ts
+export type { GlobalTask, ProjectMetadata, Sprint } from '../types/index.js';
+
 /**
  * Task status enum
  */
@@ -22,7 +25,7 @@ export type MergeStatus = 'pending' | 'in_progress' | 'completed' | 'conflict';
 /**
  * Log level enum
  */
-export type LogLevel = 'info' | 'warn' | 'error' | 'debug';
+export type LogLevel = 'info' | 'warn' | 'error' | 'debug' | 'success';
 
 /**
  * Task definition

@@ -1,0 +1,79 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kugutsu.dev/schema/task.schema.json",
+  "title": "Task",
+  "description": "タスク定義のスキーマ",
+  "type": "object",
+  "required": ["tasks"],
+  "properties": {
+    "tasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "description", "priority", "status", "dependencies"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^task-[0-9]+$"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "description": {
+            "type": "string"
+          },
+          "storyId": {
+            "type": "string",
+            "pattern": "^story-[0-9]+-[0-9]+$"
+          },
+          "priority": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "estimatedHours": {
+            "type": "number",
+            "minimum": 0
+          },
+          "status": {
+            "type": "string",
+            "enum": ["pending", "ready", "in_progress", "in_review", "completed", "failed"]
+          },
+          "dependencies": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^task-[0-9]+$"
+            }
+          },
+          "tags": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "assignedEngineer": {
+            "type": ["string", "null"]
+          },
+          "worktreePath": {
+            "type": ["string", "null"]
+          },
+          "branchName": {
+            "type": ["string", "null"]
+          },
+          "sessionId": {
+            "type": ["string", "null"]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    }
+  }
+}

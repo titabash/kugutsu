@@ -17,6 +17,7 @@ import type {
   ProjectMetadata,
   Sprint,
 } from './types.js';
+import type { StoryMapping } from '../managers/DirectorAI.js';
 
 /**
  * Parallel Development State
@@ -247,6 +248,9 @@ export const ParallelDevState = Annotation.Root({
    * Reducer: Replace (default)
    */
   activeSprint: Annotation<Sprint | null>({
+    reducer: (state: Sprint | null, update: Sprint | null) => {
+      return update ?? state;
+    },
     default: () => null,
   }),
 
@@ -268,6 +272,9 @@ export const ParallelDevState = Annotation.Root({
    * Reducer: Replace (default)
    */
   currentUserRequest: Annotation<string | null>({
+    reducer: (state: string | null, update: string | null) => {
+      return update ?? state;
+    },
     default: () => null,
   }),
 
@@ -277,6 +284,9 @@ export const ParallelDevState = Annotation.Root({
    * Reducer: Replace (default)
    */
   continuationMode: Annotation<boolean>({
+    reducer: (state: boolean, update: boolean) => {
+      return update ?? state;
+    },
     default: () => false,
   }),
 
@@ -286,6 +296,101 @@ export const ParallelDevState = Annotation.Root({
    * Reducer: Replace (default)
    */
   currentProjectId: Annotation<string | null>({
+    reducer: (state: string | null, update: string | null) => {
+      return update ?? state;
+    },
+    default: () => null,
+  }),
+
+  /**
+   * Scrum Development Flow fields (Phase 6)
+   */
+
+  /**
+   * Story mapping approval status
+   *
+   * Reducer: Replace (default)
+   */
+  storyMappingApproved: Annotation<boolean | null>({
+    reducer: (state: boolean | null, update: boolean | null) => {
+      return update ?? state;
+    },
+    default: () => null,
+  }),
+
+  /**
+   * Review feedback from story mapping or design review
+   *
+   * Reducer: Replace (default)
+   */
+  reviewFeedback: Annotation<{
+    issues: Array<{
+      severity: 'critical' | 'major' | 'minor' | 'info';
+      category: string;
+      message: string;
+      storyId?: string;
+      epicId?: string;
+    }>;
+    suggestions: string[];
+  } | null>({
+    reducer: (state: any, update: any) => {
+      return update ?? state;
+    },
+    default: () => null,
+  }),
+
+  /**
+   * Story mapping (full data)
+   *
+   * Reducer: Replace (default)
+   */
+  storyMapping: Annotation<StoryMapping | null>({
+    reducer: (state: StoryMapping | null, update: StoryMapping | null) => {
+      return update ?? state;
+    },
+    default: () => null,
+  }),
+
+  /**
+   * Design documents metadata
+   *
+   * Reducer: Replace (default)
+   */
+  designDocs: Annotation<{
+    approved?: boolean;
+    designDocsPath?: string;
+    uiuxPath?: string;
+    databasePath?: string;
+    apiPath?: string;
+  } | null>({
+    reducer: (state: any, update: any) => {
+      return update ?? state;
+    },
+    default: () => null,
+  }),
+
+  /**
+   * Dependency graph
+   *
+   * Reducer: Replace (default)
+   */
+  dependencyGraph: Annotation<{
+    nodes: Array<{
+      id: string;
+      title: string;
+      status: string;
+    }>;
+    edges: Array<{
+      from: string;
+      to: string;
+      type: 'depends_on' | 'blocks';
+    }>;
+    criticalPath: string[];
+    parallelGroups: string[][];
+  } | null>({
+    reducer: (state: any, update: any) => {
+      return update ?? state;
+    },
     default: () => null,
   }),
 });
@@ -338,6 +443,21 @@ export function createInitialState(
       hasErrors: false,
       errors: [],
     },
+    // Sprint-driven development fields
+    globalTasks: [],
+    projects: new Map(),
+    sprints: [],
+    activeSprint: null,
+    completedSprintIds: [],
+    currentUserRequest: null,
+    continuationMode: false,
+    currentProjectId: null,
+    // Scrum Development Flow fields
+    storyMappingApproved: null,
+    reviewFeedback: null,
+    storyMapping: null,
+    designDocs: null,
+    dependencyGraph: null,
   };
 }
 

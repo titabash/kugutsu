@@ -14,8 +14,12 @@
     "declaration": false,
     "sourceMap": true,
     "allowSyntheticDefaultImports": true,
-    "types": ["node", "electron"]
+    "types": ["node", "electron"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./renderer/*"]
+    }
   },
   "include": ["**/*.ts"],
-  "exclude": ["node_modules", "preload/**/*.ts"]
+  "exclude": ["node_modules", "preload/**/*.ts", "vite.config.ts", "renderer/**/*.ts", "renderer/**/*.tsx"]
 }

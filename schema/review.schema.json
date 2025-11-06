@@ -1,0 +1,64 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kugutsu.dev/schema/review.schema.json",
+  "title": "Review History",
+  "description": "レビュー履歴のスキーマ",
+  "type": "object",
+  "required": ["reviews"],
+  "properties": {
+    "reviews": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["iteration", "timestamp", "reviewer", "approved", "comments", "suggestions"],
+        "properties": {
+          "iteration": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reviewer": {
+            "type": "string",
+            "description": "レビュアー名（ProductOwnerAI, DirectorAI, TechLeadAI等）"
+          },
+          "approved": {
+            "type": "boolean"
+          },
+          "comments": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["severity", "message"],
+              "properties": {
+                "storyId": {
+                  "type": "string",
+                  "pattern": "^story-[0-9]+-[0-9]+$"
+                },
+                "taskId": {
+                  "type": "string",
+                  "pattern": "^task-[0-9]+$"
+                },
+                "severity": {
+                  "type": "string",
+                  "enum": ["info", "minor", "major", "critical"]
+                },
+                "message": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "suggestions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}

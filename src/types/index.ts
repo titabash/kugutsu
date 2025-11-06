@@ -189,9 +189,23 @@ export interface DependencyFailureStrategy {
 /**
  * グローバルタスク（複数プロジェクト対応）
  *
- * 既存のTaskを拡張し、プロジェクト識別子と動的優先度を追加
+ * Note: 型システムを統一するため、独立した定義に変更
+ * priorityはnumber型（0-100）を使用
  */
-export interface GlobalTask extends Task {
+export interface GlobalTask {
+  id: string;
+  type: 'feature' | 'bugfix' | 'refactor' | 'test' | 'docs' | 'conflict-resolution';
+  title: string;
+  description: string;
+  priority: number;               // 基礎優先度（0-100）
+  dependencies: string[];
+  status: 'pending' | 'in_progress' | 'completed' | 'failed';
+  worktreePath?: string;
+  branchName?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+
+  // GlobalTask固有のフィールド
   projectId: string;              // プロジェクト識別子（uuid）
   requestTimestamp: Date;         // リクエスト受付時刻
   dynamicPriority: number;        // 動的優先度（0-1000）

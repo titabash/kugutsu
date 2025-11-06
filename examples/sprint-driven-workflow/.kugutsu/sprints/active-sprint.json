@@ -1,0 +1,41 @@
+{
+  "id": "sprint-002",
+  "name": "Sprint 2: OAuth2 and Password Management",
+  "goal": "Implement OAuth2 authentication and password reset functionality to enable users to login with third-party providers and recover their accounts",
+  "taskIds": [
+    "task-auth-005",
+    "task-auth-006",
+    "task-auth-007",
+    "task-auth-008"
+  ],
+  "status": "active",
+  "deployable": true,
+  "startedAt": "2025-01-16T09:00:00.000Z",
+  "metadata": {
+    "estimatedHours": 10,
+    "blockers": [],
+    "completedTasksCount": 0,
+    "failedTasksCount": 0,
+    "notes": [
+      "OAuth2 integration requires environment variables for client IDs and secrets",
+      "Email service needs to be configured before password reset can be tested",
+      "User profile endpoints depend on completed JWT implementation from Sprint 1"
+    ],
+    "technicalDecisions": [
+      {
+        "decision": "Use passport.js for OAuth2 strategy",
+        "reasoning": "Industry standard with good documentation and community support",
+        "alternatives": ["grant", "simple-oauth2"]
+      },
+      {
+        "decision": "Use SendGrid for email service",
+        "reasoning": "Free tier available, reliable delivery, good API",
+        "alternatives": ["AWS SES", "Mailgun"]
+      }
+    ],
+    "dependencies": {
+      "external": ["passport", "passport-google-oauth20", "passport-github2", "@sendgrid/mail"],
+      "internal": ["task-auth-001 (JWT utilities)", "task-auth-002 (User model)"]
+    }
+  }
+}

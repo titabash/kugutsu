@@ -224,6 +224,360 @@ export class DataPersistence {
   }
 
   // ========================================
+  // スクラム開発フロー: ストーリーマッピング
+  // ========================================
+
+  /**
+   * ストーリーマッピングを保存
+   *
+   * @param projectId - プロジェクトID
+   * @param storyMapping - ストーリーマッピングデータ
+   */
+  async saveStoryMapping(projectId: string, storyMapping: any): Promise<void> {
+    const storyMappingDir = path.join(this.projectsDir, projectId, 'story-mapping');
+    await FileSystemManager.ensureDirectory(storyMappingDir);
+
+    const filePath = path.join(storyMappingDir, 'story-map.json');
+    await FileSystemManager.writeJSON(filePath, storyMapping);
+  }
+
+  /**
+   * ストーリーマッピングを読み込み
+   *
+   * @param projectId - プロジェクトID
+   * @returns ストーリーマッピングデータ、または null
+   */
+  async loadStoryMapping(projectId: string): Promise<any | null> {
+    const filePath = path.join(this.projectsDir, projectId, 'story-mapping', 'story-map.json');
+    return await FileSystemManager.readJSONSafe(filePath, null);
+  }
+
+  /**
+   * ストーリーマッピングのMarkdownを保存
+   *
+   * @param projectId - プロジェクトID
+   * @param markdown - Markdownコンテンツ
+   */
+  async saveStoryMappingMarkdown(projectId: string, markdown: string): Promise<void> {
+    const storyMappingDir = path.join(this.projectsDir, projectId, 'story-mapping');
+    await FileSystemManager.ensureDirectory(storyMappingDir);
+
+    const filePath = path.join(storyMappingDir, 'story-map.md');
+    await FileSystemManager.writeFile(filePath, markdown);
+  }
+
+  /**
+   * ストーリーマッピングのレビュー履歴を保存
+   *
+   * @param projectId - プロジェクトID
+   * @param reviewHistory - レビュー履歴データ
+   */
+  async saveStoryMappingReviewHistory(projectId: string, reviewHistory: any): Promise<void> {
+    const filePath = path.join(
+      this.projectsDir,
+      projectId,
+      'story-mapping',
+      'review-history.json'
+    );
+    await FileSystemManager.writeJSON(filePath, reviewHistory);
+  }
+
+  /**
+   * ストーリーマッピングのレビュー履歴を読み込み
+   *
+   * @param projectId - プロジェクトID
+   * @returns レビュー履歴データ
+   */
+  async loadStoryMappingReviewHistory(projectId: string): Promise<any> {
+    const filePath = path.join(
+      this.projectsDir,
+      projectId,
+      'story-mapping',
+      'review-history.json'
+    );
+    return await FileSystemManager.readJSONSafe(filePath, { reviews: [] });
+  }
+
+  // ========================================
+  // スクラム開発フロー: 設計書
+  // ========================================
+
+  /**
+   * 設計書のMarkdownを保存
+   *
+   * @param projectId - プロジェクトID
+   * @param markdown - Markdownコンテンツ
+   */
+  async saveDesignDocsMarkdown(projectId: string, markdown: string): Promise<void> {
+    const designDir = path.join(this.projectsDir, projectId, 'design');
+    await FileSystemManager.ensureDirectory(designDir);
+
+    const filePath = path.join(designDir, 'design-docs.md');
+    await FileSystemManager.writeFile(filePath, markdown);
+  }
+
+  /**
+   * DB設計を保存
+   *
+   * @param projectId - プロジェクトID
+   * @param schema - DB schemaデータ
+   */
+  async saveDatabaseSchema(projectId: string, schema: any): Promise<void> {
+    const dbDir = path.join(this.projectsDir, projectId, 'design', 'database');
+    await FileSystemManager.ensureDirectory(dbDir);
+
+    const filePath = path.join(dbDir, 'schema.json');
+    await FileSystemManager.writeJSON(filePath, schema);
+  }
+
+  /**
+   * DB設計を読み込み
+   *
+   * @param projectId - プロジェクトID
+   * @returns DB schemaデータ、または null
+   */
+  async loadDatabaseSchema(projectId: string): Promise<any | null> {
+    const filePath = path.join(this.projectsDir, projectId, 'design', 'database', 'schema.json');
+    return await FileSystemManager.readJSONSafe(filePath, null);
+  }
+
+  /**
+   * ER図のMarkdownを保存
+   *
+   * @param projectId - プロジェクトID
+   * @param markdown - Markdownコンテンツ（Mermaid含む）
+   */
+  async saveDatabaseERDiagram(projectId: string, markdown: string): Promise<void> {
+    const dbDir = path.join(this.projectsDir, projectId, 'design', 'database');
+    await FileSystemManager.ensureDirectory(dbDir);
+
+    const filePath = path.join(dbDir, 'er-diagram.md');
+    await FileSystemManager.writeFile(filePath, markdown);
+  }
+
+  /**
+   * API仕様を保存（OpenAPI形式）
+   *
+   * @param projectId - プロジェクトID
+   * @param apiSpec - API仕様データ
+   */
+  async saveAPISpec(projectId: string, apiSpec: any): Promise<void> {
+    const interfacesDir = path.join(this.projectsDir, projectId, 'design', 'interfaces');
+    await FileSystemManager.ensureDirectory(interfacesDir);
+
+    const filePath = path.join(interfacesDir, 'api-spec.json');
+    await FileSystemManager.writeJSON(filePath, apiSpec);
+  }
+
+  /**
+   * API仕様を読み込み
+   *
+   * @param projectId - プロジェクトID
+   * @returns API仕様データ、または null
+   */
+  async loadAPISpec(projectId: string): Promise<any | null> {
+    const filePath = path.join(this.projectsDir, projectId, 'design', 'interfaces', 'api-spec.json');
+    return await FileSystemManager.readJSONSafe(filePath, null);
+  }
+
+  /**
+   * API仕様のMarkdownを保存
+   *
+   * @param projectId - プロジェクトID
+   * @param markdown - Markdownコンテンツ
+   */
+  async saveAPISpecMarkdown(projectId: string, markdown: string): Promise<void> {
+    const interfacesDir = path.join(this.projectsDir, projectId, 'design', 'interfaces');
+    await FileSystemManager.ensureDirectory(interfacesDir);
+
+    const filePath = path.join(interfacesDir, 'api-spec.md');
+    await FileSystemManager.writeFile(filePath, markdown);
+  }
+
+  /**
+   * UI/UX画面定義を保存
+   *
+   * @param projectId - プロジェクトID
+   * @param screens - 画面定義データ
+   */
+  async saveUIUXScreens(projectId: string, screens: any): Promise<void> {
+    const uiuxDir = path.join(this.projectsDir, projectId, 'design', 'uiux');
+    await FileSystemManager.ensureDirectory(uiuxDir);
+
+    const filePath = path.join(uiuxDir, 'screens.json');
+    await FileSystemManager.writeJSON(filePath, screens);
+  }
+
+  /**
+   * UI/UX画面定義を読み込み
+   *
+   * @param projectId - プロジェクトID
+   * @returns 画面定義データ、または null
+   */
+  async loadUIUXScreens(projectId: string): Promise<any | null> {
+    const filePath = path.join(this.projectsDir, projectId, 'design', 'uiux', 'screens.json');
+    return await FileSystemManager.readJSONSafe(filePath, null);
+  }
+
+  /**
+   * ワイヤーフレームのMarkdownを保存
+   *
+   * @param projectId - プロジェクトID
+   * @param markdown - Markdownコンテンツ（Mermaid含む）
+   */
+  async saveUIUXWireframes(projectId: string, markdown: string): Promise<void> {
+    const uiuxDir = path.join(this.projectsDir, projectId, 'design', 'uiux');
+    await FileSystemManager.ensureDirectory(uiuxDir);
+
+    const filePath = path.join(uiuxDir, 'wireframes.md');
+    await FileSystemManager.writeFile(filePath, markdown);
+  }
+
+  /**
+   * 設計書のレビュー履歴を保存
+   *
+   * @param projectId - プロジェクトID
+   * @param reviewHistory - レビュー履歴データ
+   */
+  async saveDesignReviewHistory(projectId: string, reviewHistory: any): Promise<void> {
+    const designDir = path.join(this.projectsDir, projectId, 'design');
+    await FileSystemManager.ensureDirectory(designDir);
+
+    const filePath = path.join(designDir, 'review-history.json');
+    await FileSystemManager.writeJSON(filePath, reviewHistory);
+  }
+
+  /**
+   * 設計書のレビュー履歴を読み込み
+   *
+   * @param projectId - プロジェクトID
+   * @returns レビュー履歴データ
+   */
+  async loadDesignReviewHistory(projectId: string): Promise<any> {
+    const filePath = path.join(this.projectsDir, projectId, 'design', 'review-history.json');
+    return await FileSystemManager.readJSONSafe(filePath, { reviews: [] });
+  }
+
+  // ========================================
+  // スクラム開発フロー: タスク管理
+  // ========================================
+
+  /**
+   * タスクリストを保存
+   *
+   * @param projectId - プロジェクトID
+   * @param taskList - タスクリストデータ
+   */
+  async saveTaskList(projectId: string, taskList: any): Promise<void> {
+    const tasksDir = path.join(this.projectsDir, projectId, 'tasks');
+    await FileSystemManager.ensureDirectory(tasksDir);
+
+    const filePath = path.join(tasksDir, 'task-list.json');
+    await FileSystemManager.writeJSON(filePath, taskList);
+  }
+
+  /**
+   * タスクリストを読み込み
+   *
+   * @param projectId - プロジェクトID
+   * @returns タスクリストデータ
+   */
+  async loadTaskList(projectId: string): Promise<any> {
+    const filePath = path.join(this.projectsDir, projectId, 'tasks', 'task-list.json');
+    return await FileSystemManager.readJSONSafe(filePath, { tasks: [] });
+  }
+
+  /**
+   * 依存関係グラフを保存
+   *
+   * @param projectId - プロジェクトID
+   * @param dependencyGraph - 依存関係グラフデータ
+   */
+  async saveDependencyGraph(projectId: string, dependencyGraph: any): Promise<void> {
+    const tasksDir = path.join(this.projectsDir, projectId, 'tasks');
+    await FileSystemManager.ensureDirectory(tasksDir);
+
+    const filePath = path.join(tasksDir, 'dependencies.json');
+    await FileSystemManager.writeJSON(filePath, dependencyGraph);
+  }
+
+  /**
+   * 依存関係グラフを読み込み
+   *
+   * @param projectId - プロジェクトID
+   * @returns 依存関係グラフデータ
+   */
+  async loadDependencyGraph(projectId: string): Promise<any> {
+    const filePath = path.join(this.projectsDir, projectId, 'tasks', 'dependencies.json');
+    return await FileSystemManager.readJSONSafe(filePath, {
+      graph: { nodes: [], edges: [] },
+      executionPlan: []
+    });
+  }
+
+  /**
+   * Kanbanステートを保存
+   *
+   * @param projectId - プロジェクトID
+   * @param kanbanState - Kanbanステートデータ
+   */
+  async saveKanbanState(projectId: string, kanbanState: any): Promise<void> {
+    const tasksDir = path.join(this.projectsDir, projectId, 'tasks');
+    await FileSystemManager.ensureDirectory(tasksDir);
+
+    const filePath = path.join(tasksDir, 'kanban-state.json');
+    await FileSystemManager.writeJSON(filePath, kanbanState);
+  }
+
+  /**
+   * Kanbanステートを読み込み
+   *
+   * @param projectId - プロジェクトID
+   * @returns Kanbanステートデータ
+   */
+  async loadKanbanState(projectId: string): Promise<any> {
+    const filePath = path.join(this.projectsDir, projectId, 'tasks', 'kanban-state.json');
+    return await FileSystemManager.readJSONSafe(filePath, {
+      columns: {
+        pending: { label: 'Pending', taskIds: [], color: 'amber' },
+        ready: { label: 'Ready', taskIds: [], color: 'blue' },
+        in_progress: { label: 'In Progress', taskIds: [], color: 'indigo' },
+        in_review: { label: 'In Review', taskIds: [], color: 'purple' },
+        completed: { label: 'Completed', taskIds: [], color: 'green' },
+        failed: { label: 'Failed', taskIds: [], color: 'red' }
+      },
+      updatedAt: new Date().toISOString()
+    });
+  }
+
+  /**
+   * タスクのレビュー記録を保存
+   *
+   * @param projectId - プロジェクトID
+   * @param taskId - タスクID
+   * @param review - レビューデータ
+   */
+  async saveTaskReview(projectId: string, taskId: string, review: any): Promise<void> {
+    const reviewsDir = path.join(this.projectsDir, projectId, 'reviews');
+    await FileSystemManager.ensureDirectory(reviewsDir);
+
+    const filePath = path.join(reviewsDir, `${taskId}.json`);
+    await FileSystemManager.writeJSON(filePath, review);
+  }
+
+  /**
+   * タスクのレビュー記録を読み込み
+   *
+   * @param projectId - プロジェクトID
+   * @param taskId - タスクID
+   * @returns レビューデータ、または null
+   */
+  async loadTaskReview(projectId: string, taskId: string): Promise<any | null> {
+    const filePath = path.join(this.projectsDir, projectId, 'reviews', `${taskId}.json`);
+    return await FileSystemManager.readJSONSafe(filePath, null);
+  }
+
+  // ========================================
   // ユーティリティ
   // ========================================
 

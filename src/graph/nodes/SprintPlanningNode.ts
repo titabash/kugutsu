@@ -145,7 +145,12 @@ JSON形式で以下の構造で出力してください：
     permissionMode: 'acceptEdits',
   })) {
     if (message.type === 'assistant' && message.content) {
-      sprintPlanResult += JSON.stringify(message.content);
+      // Handle both string and object content
+      if (typeof message.content === 'string') {
+        sprintPlanResult += message.content;
+      } else {
+        sprintPlanResult += JSON.stringify(message.content);
+      }
     }
   }
 

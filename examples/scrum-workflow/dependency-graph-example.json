@@ -1,0 +1,275 @@
+{
+  "nodes": [
+    {
+      "id": "task-1",
+      "type": "task",
+      "label": "データベーススキーマ設計",
+      "status": "completed",
+      "position": {"x": 50, "y": 50},
+      "data": {
+        "priority": 1,
+        "assignedEngineer": "Alice",
+        "dependencies": [],
+        "estimatedTime": 4
+      }
+    },
+    {
+      "id": "task-2",
+      "type": "task",
+      "label": "API エンドポイント設計",
+      "status": "completed",
+      "position": {"x": 50, "y": 230},
+      "data": {
+        "priority": 1,
+        "assignedEngineer": "Bob",
+        "dependencies": [],
+        "estimatedTime": 3
+      }
+    },
+    {
+      "id": "task-3",
+      "type": "task",
+      "label": "Prisma スキーマ実装",
+      "status": "completed",
+      "position": {"x": 350, "y": 50},
+      "data": {
+        "priority": 1,
+        "assignedEngineer": "Alice",
+        "dependencies": ["task-1"],
+        "estimatedTime": 3
+      }
+    },
+    {
+      "id": "task-4",
+      "type": "task",
+      "label": "ユーザー認証API実装",
+      "status": "in_progress",
+      "position": {"x": 350, "y": 230},
+      "data": {
+        "priority": 1,
+        "assignedEngineer": "Bob",
+        "dependencies": ["task-2", "task-3"],
+        "estimatedTime": 6
+      }
+    },
+    {
+      "id": "task-5",
+      "type": "task",
+      "label": "タスクCRUD API実装",
+      "status": "pending",
+      "position": {"x": 350, "y": 410},
+      "data": {
+        "priority": 2,
+        "assignedEngineer": "Charlie",
+        "dependencies": ["task-3"],
+        "estimatedTime": 5
+      }
+    },
+    {
+      "id": "task-6",
+      "type": "task",
+      "label": "プロジェクトCRUD API実装",
+      "status": "pending",
+      "position": {"x": 350, "y": 590},
+      "data": {
+        "priority": 3,
+        "assignedEngineer": "Diana",
+        "dependencies": ["task-3"],
+        "estimatedTime": 4
+      }
+    },
+    {
+      "id": "task-7",
+      "type": "task",
+      "label": "フロントエンド認証画面",
+      "status": "in_progress",
+      "position": {"x": 650, "y": 140},
+      "data": {
+        "priority": 1,
+        "assignedEngineer": "Eve",
+        "dependencies": ["task-4"],
+        "estimatedTime": 4
+      }
+    },
+    {
+      "id": "task-8",
+      "type": "task",
+      "label": "タスク管理画面",
+      "status": "pending",
+      "position": {"x": 650, "y": 320},
+      "data": {
+        "priority": 2,
+        "assignedEngineer": "Frank",
+        "dependencies": ["task-5", "task-7"],
+        "estimatedTime": 8
+      }
+    },
+    {
+      "id": "task-9",
+      "type": "task",
+      "label": "プロジェクト管理画面",
+      "status": "pending",
+      "position": {"x": 650, "y": 500},
+      "data": {
+        "priority": 3,
+        "assignedEngineer": "Grace",
+        "dependencies": ["task-6", "task-7"],
+        "estimatedTime": 6
+      }
+    },
+    {
+      "id": "task-10",
+      "type": "task",
+      "label": "E2Eテスト",
+      "status": "pending",
+      "position": {"x": 950, "y": 230},
+      "data": {
+        "priority": 1,
+        "assignedEngineer": "Henry",
+        "dependencies": ["task-7", "task-8"],
+        "estimatedTime": 5
+      }
+    },
+    {
+      "id": "task-11",
+      "type": "task",
+      "label": "パフォーマンス最適化",
+      "status": "pending",
+      "position": {"x": 950, "y": 410},
+      "data": {
+        "priority": 2,
+        "assignedEngineer": "Ivy",
+        "dependencies": ["task-8", "task-9"],
+        "estimatedTime": 4
+      }
+    },
+    {
+      "id": "task-12",
+      "type": "task",
+      "label": "本番デプロイ",
+      "status": "pending",
+      "position": {"x": 1250, "y": 320},
+      "data": {
+        "priority": 1,
+        "assignedEngineer": "DevOps Team",
+        "dependencies": ["task-10", "task-11"],
+        "estimatedTime": 3
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-1-3",
+      "source": "task-1",
+      "target": "task-3",
+      "type": "smoothstep"
+    },
+    {
+      "id": "edge-2-4",
+      "source": "task-2",
+      "target": "task-4",
+      "type": "smoothstep"
+    },
+    {
+      "id": "edge-3-4",
+      "source": "task-3",
+      "target": "task-4",
+      "type": "smoothstep"
+    },
+    {
+      "id": "edge-3-5",
+      "source": "task-3",
+      "target": "task-5",
+      "type": "smoothstep"
+    },
+    {
+      "id": "edge-3-6",
+      "source": "task-3",
+      "target": "task-6",
+      "type": "smoothstep"
+    },
+    {
+      "id": "edge-4-7",
+      "source": "task-4",
+      "target": "task-7",
+      "type": "smoothstep",
+      "animated": true
+    },
+    {
+      "id": "edge-5-8",
+      "source": "task-5",
+      "target": "task-8",
+      "type": "smoothstep"
+    },
+    {
+      "id": "edge-7-8",
+      "source": "task-7",
+      "target": "task-8",
+      "type": "smoothstep"
+    },
+    {
+      "id": "edge-6-9",
+      "source": "task-6",
+      "target": "task-9",
+      "type": "smoothstep"
+    },
+    {
+      "id": "edge-7-9",
+      "source": "task-7",
+      "target": "task-9",
+      "type": "smoothstep"
+    },
+    {
+      "id": "edge-7-10",
+      "source": "task-7",
+      "target": "task-10",
+      "type": "smoothstep"
+    },
+    {
+      "id": "edge-8-10",
+      "source": "task-8",
+      "target": "task-10",
+      "type": "smoothstep"
+    },
+    {
+      "id": "edge-8-11",
+      "source": "task-8",
+      "target": "task-11",
+      "type": "smoothstep"
+    },
+    {
+      "id": "edge-9-11",
+      "source": "task-9",
+      "target": "task-11",
+      "type": "smoothstep"
+    },
+    {
+      "id": "edge-10-12",
+      "source": "task-10",
+      "target": "task-12",
+      "type": "smoothstep"
+    },
+    {
+      "id": "edge-11-12",
+      "source": "task-11",
+      "target": "task-12",
+      "type": "smoothstep"
+    }
+  ],
+  "criticalPath": [
+    "task-1",
+    "task-3",
+    "task-4",
+    "task-7",
+    "task-8",
+    "task-10",
+    "task-12"
+  ],
+  "parallelGroups": [
+    ["task-1", "task-2"],
+    ["task-3", "task-4", "task-5", "task-6"],
+    ["task-7", "task-8", "task-9"],
+    ["task-10", "task-11"],
+    ["task-12"]
+  ]
+}

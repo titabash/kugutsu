@@ -1,0 +1,100 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kugutsu.dev/schema/story-mapping.schema.json",
+  "title": "User Story Mapping",
+  "description": "ユーザーストーリーマッピングのスキーマ定義",
+  "type": "object",
+  "required": ["persona", "epics"],
+  "properties": {
+    "persona": {
+      "type": "object",
+      "required": ["name", "role", "goal"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "ペルソナ名"
+        },
+        "role": {
+          "type": "string",
+          "description": "役割"
+        },
+        "goal": {
+          "type": "string",
+          "description": "ゴール"
+        },
+        "painPoints": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "ペインポイント"
+        }
+      }
+    },
+    "epics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "stories"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^epic-[0-9]+$"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "stories": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["id", "title", "asA", "iWantTo", "soThat", "acceptanceCriteria"],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^story-[0-9]+-[0-9]+$"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "asA": {
+                  "type": "string",
+                  "description": "As a ..."
+                },
+                "iWantTo": {
+                  "type": "string",
+                  "description": "I want to ..."
+                },
+                "soThat": {
+                  "type": "string",
+                  "description": "So that ..."
+                },
+                "acceptanceCriteria": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "minItems": 1
+                },
+                "priority": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "estimatedPoints": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 21
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

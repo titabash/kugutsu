@@ -39,8 +39,17 @@ function createWindow() {
     title: 'Multi-Engineer Parallel Development'
   });
 
-  // HTMLを読み込む
-  mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
+  // HTMLを読み込む（ビルド後のファイルを使用）
+  const rendererPath = path.join(__dirname, '../dist/renderer/index.html');
+  console.log('[Electron Main] Loading renderer from:', rendererPath);
+  console.log('[Electron Main] Renderer exists:', existsSync(rendererPath));
+
+  if (existsSync(rendererPath)) {
+    mainWindow.loadFile(rendererPath);
+  } else {
+    console.error('[Electron Main] Renderer file not found! Run `npm run build:renderer` first.');
+    mainWindow.loadURL('data:text/html,<h1>Error: Renderer not built. Run `npm run build:renderer`</h1>');
+  }
 
   // --devtoolsオプションが指定されている場合はDevToolsを開く
   if (shouldOpenDevTools) {

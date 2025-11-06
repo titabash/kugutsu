@@ -8,7 +8,7 @@
  */
 
 import type { ParallelDevStateType, ParallelDevStateUpdate } from '../state.js';
-import type { ProjectMetadata } from '../types.js';
+import type { ProjectMetadata } from '../../types/index.js';
 import { PriorityCalculator } from '../../utils/PriorityCalculator.js';
 import { DataPersistence } from '../../utils/DataPersistence.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
@@ -112,7 +112,12 @@ JSON形式で以下を出力してください：
     permissionMode: 'acceptEdits',
   })) {
     if (message.type === 'assistant' && message.content) {
-      aiResponseText += JSON.stringify(message.content);
+      // Handle both string and object content
+      if (typeof message.content === 'string') {
+        aiResponseText += message.content;
+      } else {
+        aiResponseText += JSON.stringify(message.content);
+      }
     }
   }
 

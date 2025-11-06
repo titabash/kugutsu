@@ -1,0 +1,73 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kugutsu.dev/schema/dependency-graph.schema.json",
+  "title": "Dependency Graph",
+  "description": "タスク依存関係グラフのスキーマ",
+  "type": "object",
+  "required": ["graph", "executionPlan"],
+  "properties": {
+    "graph": {
+      "type": "object",
+      "required": ["nodes", "edges"],
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "layer"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^task-[0-9]+$"
+              },
+              "layer": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["from", "to"],
+            "properties": {
+              "from": {
+                "type": "string",
+                "pattern": "^task-[0-9]+$"
+              },
+              "to": {
+                "type": "string",
+                "pattern": "^task-[0-9]+$"
+              }
+            }
+          }
+        }
+      }
+    },
+    "executionPlan": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["layer", "parallelTasks"],
+        "properties": {
+          "layer": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "parallelTasks": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^task-[0-9]+$"
+            }
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

@@ -92,7 +92,7 @@ export class PriorityCalculator {
     allTasks: GlobalTask[],
     allProjects: Map<string, ProjectMetadata>
   ): number {
-    const basePriority = task.priority || 0; // 0-1000
+    const basePriority = typeof task.priority === 'number' ? task.priority : 50; // 0-100, default 50
     const recencyBonus = this.calculateRecencyBonus(task.requestTimestamp, allProjects);
     const dependencyBonus = this.calculateDependencyBonus(task, allTasks);
 

@@ -1,0 +1,215 @@
+{
+  "overall": "# タスク管理アプリケーション - 全体設計\n\n## システム概要\n\n本システムは、プロジェクトマネージャーとチームメンバーがタスクを効率的に管理できるWebアプリケーションです。\n\n## 技術スタック\n\n### フロントエンド\n- **Framework**: React 19 + TypeScript\n- **State Management**: Zustand\n- **UI Library**: shadcn/ui + TailwindCSS v4\n- **Build Tool**: Vite 6\n- **Data Fetching**: TanStack Query (React Query)\n- **Routing**: React Router v7\n\n### バックエンド\n- **Runtime**: Node.js 20+ (LTS)\n- **Framework**: Express 5\n- **ORM**: Prisma 6\n- **Authentication**: Passport.js (JWT Strategy)\n- **Validation**: Zod\n- **API Documentation**: OpenAPI 3.1 / Swagger\n\n### データベース\n- **Primary**: PostgreSQL 16\n- **Cache**: Redis 7\n- **Full-text Search**: PostgreSQL FTS with pg_trgm\n\n### Infrastructure\n- **Container**: Docker + Docker Compose\n- **Orchestration**: AWS ECS Fargate\n- **Load Balancer**: AWS ALB\n- **CDN**: AWS CloudFront\n- **Storage**: AWS S3 (プロフィール画像、添付ファイル)\n- **Monitoring**: AWS CloudWatch + Sentry\n\n## アーキテクチャパターン\n\n### フロントエンド\n- **Feature-Sliced Design (FSD)**\n  - Layers: app, pages, widgets, features, entities, shared\n  - Segments: ui, model, api, lib, config\n\n### バックエンド\n- **Layered Architecture**\n  - Presentation Layer: Controllers\n  - Business Logic Layer: Services\n  - Data Access Layer: Repositories (Prisma)\n\n### API設計\n- **RESTful API** (CRUD操作)\n- **WebSocket** (リアルタイム通知、タスク更新)\n\n## セキュリティ方針\n\n1. **認証・認可**:\n   - JWT トークンベース認証\n   - HTTPOnly Cookie でトークン管理\n   - リフレッシュトークンによる長期セッション\n\n2. **データ保護**:\n   - すべての通信はHTTPS\n   - パスワードはbcryptでハッシュ化（cost: 12）\n   - 機密データはAES-256で暗号化\n\n3. **OWASP対策**:\n   - XSS: DOMPurifyでサニタイゼーション\n   - CSRF: SameSite Cookie + CSRFトークン\n   - SQL Injection: Prismaによるパラメータ化クエリ\n   - Rate Limiting: express-rate-limit\n\n## パフォーマンス要件\n\n- **初回ロード**: 3秒以内 (Lighthouse Score 90+)\n- **API レスポンス**: 平均200ms以内\n- **データベースクエリ**: 50ms以内\n- **同時接続数**: 1,000ユーザー\n\n## スケーラビリティ\n\n- **水平スケーリング**: ECS Fargateのオートスケーリング\n- **データベース**: Read Replicaによる読み取り分散\n- **キャッシュ戦略**: Redisによるクエリ結果キャッシュ（TTL: 5分）\n\n## 開発・デプロイフロー\n\n1. **開発**: ローカルDocker環境\n2. **CI/CD**: GitHub Actions\n   - Lint / Type Check / Unit Test\n   - E2E Test (Playwright)\n   - Security Scan (Snyk)\n3. **デプロイ**: \n   - Staging: 自動デプロイ (main branch)\n   - Production: Manual Approval後デプロイ\n\n## モニタリング・ロギング\n\n- **Application Logs**: Winston (JSON形式)\n- **Error Tracking**: Sentry\n- **Metrics**: CloudWatch (CPU, Memory, Request Count)\n- **Alerting**: CloudWatch Alarms → SNS → Slack\n",
+  "uiux": {
+    "wireframes": "# UI/UX設計 - ワイヤーフレーム\n\n## 画面構成\n\n### 1. ログイン画面 (Login)\n\n```\n+----------------------------------+\n|                                  |\n|      [Logo] TaskFlow             |\n|                                  |\n|  Email    [___________________]  |\n|  Password [___________________]  |\n|                                  |\n|  [ ] Remember Me                 |\n|                                  |\n|  [      Login Button     ]       |\n|                                  |\n|  Forgot Password? | Sign Up      |\n|                                  |\n+----------------------------------+\n```\n\n### 2. ダッシュボード (Dashboard)\n\n```\n+-----------------------------------------------+\n| [☰] TaskFlow    [Search...]    [User Avatar] |\n+-----------------------------------------------+\n| Sidebar       | Main Content                  |\n|               |                               |\n| • Dashboard   | プロジェクト進捗               |\n| • Projects    | +---------------------------+ |\n| • Tasks       | | Project A    [75%]       | |\n| • Calendar    | | ▓▓▓▓▓▓▓▓▓▓▓░░░░          | |\n| • Reports     | +---------------------------+ |\n|               | | Project B    [40%]       | |\n|               | | ▓▓▓▓▓▓░░░░░░░░░░         | |\n|               | +---------------------------+ |\n|               |                               |\n|               | 今日のタスク                   |\n|               | [ ] Complete design review   |\n|               | [ ] Update documentation     |\n|               | [✓] Team meeting             |\n+-----------------------------------------------+\n```\n\n### 3. タスク一覧 (Task Board - Kanban)\n\n```\n+-----------------------------------------------+\n| [☰] Tasks        [+ New Task]  [Filter] [⚙]  |\n+-----------------------------------------------+\n| TODO           | IN PROGRESS    | DONE        |\n| +------------+ | +------------+ | +---------+ |\n| | Task 1     | | | Task 4     | | | Task 7  | |\n| | P1 | 👤A   | | | P2 | 👤B   | | | P3|👤C  | |\n| +------------+ | +------------+ | +---------+ |\n| +------------+ | +------------+ | +---------+ |\n| | Task 2     | | | Task 5     | | | Task 8  | |\n| | P2 | 👤B   | | | P1 | 👤A   | | | P2|👤A  | |\n| +------------+ | +------------+ | +---------+ |\n| +------------+ | +------------+ |             |\n| | Task 3     | | | Task 6     | |             |\n| | P3 | 👤C   | | | P3 | 👤C   | |             |\n| +------------+ | +------------+ |             |\n+-----------------------------------------------+\n```\n\n### 4. タスク詳細 (Task Detail - Modal)\n\n```\n+-----------------------------------------------+\n| Task #123: Implement user authentication   [X]|\n+-----------------------------------------------+\n| Status: [In Progress ▼]  Priority: [High ▼]  |\n| Assignee: [John Doe ▼]   Due: [2025-02-15]   |\n|                                               |\n| Description:                                  |\n| [Text editor with markdown support...]        |\n|                                               |\n| Tags: [authentication] [backend] [+]          |\n|                                               |\n| Dependencies:                                 |\n| → Task #120: Setup database schema            |\n| → Task #121: Configure Passport.js            |\n|                                               |\n| Attachments:                                  |\n| 📄 auth-flow-diagram.png                      |\n|                                               |\n| Comments: (3)                                 |\n| 👤 Jane: "Added JWT implementation"           |\n| 👤 John: "Testing in progress"                |\n|                                               |\n| [Add Comment...]                              |\n|                                               |\n| [Cancel]                       [Save Changes] |\n+-----------------------------------------------+\n```\n\n### 5. プロジェクト管理 (Projects)\n\n```\n+-----------------------------------------------+\n| [☰] Projects                 [+ New Project]  |\n+-----------------------------------------------+\n| Grid View | List View | Timeline              |\n+-----------------------------------------------+\n| +------------------+  +------------------+    |\n| | Project Alpha    |  | Project Beta     |    |\n| | 🔵 75% Complete  |  | 🟢 40% Complete  |    |\n| | 12 tasks         |  | 8 tasks          |    |\n| | Due: 2025-03-01  |  | Due: 2025-04-15  |    |\n| +------------------+  +------------------+    |\n| +------------------+  +------------------+    |\n| | Project Gamma    |  | Project Delta    |    |\n| | 🟡 20% Complete  |  | 🔴 90% Complete  |    |\n| | 5 tasks          |  | 20 tasks         |    |\n| | Due: 2025-05-30  |  | Due: 2025-02-28  |    |\n| +------------------+  +------------------+    |\n+-----------------------------------------------+\n```\n\n### 6. カレンダー (Calendar)\n\n```\n+-----------------------------------------------+\n| [☰] Calendar         [Today]  [Month ▼]      |\n+-----------------------------------------------+\n|  Sun  Mon  Tue  Wed  Thu  Fri  Sat           |\n| +---+----+----+----+----+----+----+          |\n| | 1 | 2  | 3  | 4  | 5  | 6  | 7  |          |\n| +---+----+----+----+----+----+----+          |\n| | 8 | 9  | 10 | 11 | 12 | 13 | 14 |          |\n| |   |    |    | • Task A |    |    |          |\n| +---+----+----+----+----+----+----+          |\n| | 15| 16 | 17 | 18 | 19 | 20 | 21 |          |\n| |   |    |    | • Task B |    |    |          |\n| |   |    |    | • Task C |    |    |          |\n| +---+----+----+----+----+----+----+          |\n+-----------------------------------------------+\n| Upcoming Deadlines:                           |\n| • Task A - Feb 11 (3 days left)               |\n| • Task B - Feb 18 (10 days left)              |\n+-----------------------------------------------+\n```\n\n### 7. レポート (Reports)\n\n```\n+-----------------------------------------------+\n| [☰] Reports                                   |\n+-----------------------------------------------+\n| Period: [Last 30 days ▼]  [Export PDF]       |\n+-----------------------------------------------+\n| Tasks Completed: 45                           |\n| Average Time per Task: 2.3 days               |\n| On-Time Completion Rate: 87%                  |\n|                                               |\n| [Burndown Chart]                              |\n|     ^                                         |\n| 50  |\\                                        |\n|     | \\                                       |\n| 25  |  \\___                                   |\n|     |      \\____                              |\n| 0   +----------->                             |\n|      Week1  Week2  Week3  Week4               |\n|                                               |\n| Team Performance:                             |\n| 👤 John Doe    : 15 tasks (33%)               |\n| 👤 Jane Smith  : 18 tasks (40%)               |\n| 👤 Bob Johnson : 12 tasks (27%)               |\n+-----------------------------------------------+\n```\n\n### 8. 設定 (Settings)\n\n```\n+-----------------------------------------------+\n| [☰] Settings                                  |\n+-----------------------------------------------+\n| • Profile                                     |\n| • Account                                     |\n| • Notifications                               |\n| • Appearance                                  |\n| • Team Management                             |\n| • Integrations                                |\n+-----------------------------------------------+\n| Profile Settings:                             |\n| Avatar: [Upload Image]                        |\n| Name: [John Doe____________]                  |\n| Email: [john@example.com___]                  |\n| Timezone: [UTC+9 (Tokyo) ▼]                   |\n|                                               |\n| [Save Changes]                                |\n+-----------------------------------------------+\n```\n\n## デザインシステム\n\n### カラーパレット\n- Primary: #3b82f6 (Blue)\n- Success: #22c55e (Green)\n- Warning: #f59e0b (Amber)\n- Danger: #ef4444 (Red)\n- Background: #ffffff (Light) / #1f2937 (Dark)\n\n### タイポグラフィ\n- Font Family: Inter, system-ui\n- Heading: 24px/32px/40px (font-semibold)\n- Body: 16px (font-normal)\n- Small: 14px (font-normal)\n\n### スペーシング\n- Base: 4px (0.25rem)\n- Container: max-width 1280px\n- Padding: 16px/24px/32px\n",
+    "screens": [
+      {
+        "name": "Login",
+        "path": "/login",
+        "description": "ユーザーログイン画面"
+      },
+      {
+        "name": "Dashboard",
+        "path": "/",
+        "description": "ダッシュボード - プロジェクト進捗と今日のタスク"
+      },
+      {
+        "name": "TaskBoard",
+        "path": "/tasks",
+        "description": "カンバンボード形式のタスク一覧"
+      },
+      {
+        "name": "TaskDetail",
+        "path": "/tasks/:id",
+        "description": "タスク詳細・編集モーダル"
+      },
+      {
+        "name": "Projects",
+        "path": "/projects",
+        "description": "プロジェクト一覧"
+      },
+      {
+        "name": "Calendar",
+        "path": "/calendar",
+        "description": "カレンダー - タスク期限表示"
+      },
+      {
+        "name": "Reports",
+        "path": "/reports",
+        "description": "レポート・統計画面"
+      },
+      {
+        "name": "Settings",
+        "path": "/settings",
+        "description": "設定画面"
+      }
+    ]
+  },
+  "database": {
+    "erDiagram": "# データベース設計 - ER図\n\n```mermaid\nerDiagram\n    USERS ||--o{ TASKS : creates\n    USERS ||--o{ PROJECTS : owns\n    USERS ||--o{ PROJECT_MEMBERS : joins\n    USERS ||--o{ COMMENTS : writes\n    \n    PROJECTS ||--o{ TASKS : contains\n    PROJECTS ||--o{ PROJECT_MEMBERS : has\n    \n    TASKS ||--o{ TASK_DEPENDENCIES : depends_on\n    TASKS ||--o{ COMMENTS : has\n    TASKS ||--o{ TASK_TAGS : tagged_with\n    \n    TAGS ||--o{ TASK_TAGS : applied_to\n    \n    USERS {\n        uuid id PK\n        string email UK\n        string password_hash\n        string name\n        string avatar_url\n        string timezone\n        timestamp created_at\n        timestamp updated_at\n    }\n    \n    PROJECTS {\n        uuid id PK\n        uuid owner_id FK\n        string name\n        text description\n        string color\n        string icon\n        date start_date\n        date end_date\n        enum status\n        timestamp created_at\n        timestamp updated_at\n    }\n    \n    PROJECT_MEMBERS {\n        uuid id PK\n        uuid project_id FK\n        uuid user_id FK\n        enum role\n        timestamp joined_at\n    }\n    \n    TASKS {\n        uuid id PK\n        uuid project_id FK\n        uuid assignee_id FK\n        uuid created_by FK\n        string title\n        text description\n        enum status\n        enum priority\n        date due_date\n        int estimated_hours\n        timestamp created_at\n        timestamp updated_at\n        timestamp completed_at\n    }\n    \n    TASK_DEPENDENCIES {\n        uuid id PK\n        uuid task_id FK\n        uuid depends_on_task_id FK\n        timestamp created_at\n    }\n    \n    TAGS {\n        uuid id PK\n        string name UK\n        string color\n        timestamp created_at\n    }\n    \n    TASK_TAGS {\n        uuid id PK\n        uuid task_id FK\n        uuid tag_id FK\n        timestamp created_at\n    }\n    \n    COMMENTS {\n        uuid id PK\n        uuid task_id FK\n        uuid user_id FK\n        text content\n        timestamp created_at\n        timestamp updated_at\n    }\n```\n\n## テーブル詳細\n\n### users\nユーザー情報を管理\n\n- **id**: UUID, Primary Key\n- **email**: VARCHAR(255), Unique, NOT NULL\n- **password_hash**: VARCHAR(255), NOT NULL (bcrypt hashed)\n- **name**: VARCHAR(100), NOT NULL\n- **avatar_url**: TEXT, Nullable\n- **timezone**: VARCHAR(50), DEFAULT 'UTC'\n- **created_at**: TIMESTAMP, DEFAULT NOW()\n- **updated_at**: TIMESTAMP, DEFAULT NOW()\n\n**Indexes**:\n- PRIMARY KEY (id)\n- UNIQUE INDEX (email)\n\n### projects\nプロジェクト情報を管理\n\n- **id**: UUID, Primary Key\n- **owner_id**: UUID, Foreign Key → users(id)\n- **name**: VARCHAR(200), NOT NULL\n- **description**: TEXT, Nullable\n- **color**: VARCHAR(7), DEFAULT '#3b82f6'\n- **icon**: VARCHAR(50), DEFAULT 'folder'\n- **start_date**: DATE, Nullable\n- **end_date**: DATE, Nullable\n- **status**: ENUM('active', 'archived', 'completed'), DEFAULT 'active'\n- **created_at**: TIMESTAMP, DEFAULT NOW()\n- **updated_at**: TIMESTAMP, DEFAULT NOW()\n\n**Indexes**:\n- PRIMARY KEY (id)\n- INDEX (owner_id)\n- INDEX (status)\n\n### tasks\nタスク情報を管理\n\n- **id**: UUID, Primary Key\n- **project_id**: UUID, Foreign Key → projects(id)\n- **assignee_id**: UUID, Foreign Key → users(id), Nullable\n- **created_by**: UUID, Foreign Key → users(id)\n- **title**: VARCHAR(200), NOT NULL\n- **description**: TEXT, Nullable\n- **status**: ENUM('todo', 'in_progress', 'done'), DEFAULT 'todo'\n- **priority**: ENUM('low', 'medium', 'high'), DEFAULT 'medium'\n- **due_date**: DATE, Nullable\n- **estimated_hours**: INTEGER, Nullable\n- **created_at**: TIMESTAMP, DEFAULT NOW()\n- **updated_at**: TIMESTAMP, DEFAULT NOW()\n- **completed_at**: TIMESTAMP, Nullable\n\n**Indexes**:\n- PRIMARY KEY (id)\n- INDEX (project_id)\n- INDEX (assignee_id)\n- INDEX (status)\n- INDEX (due_date)\n- FULLTEXT INDEX (title, description) -- for search\n",
+    "schema": {
+      "tables": [
+        {
+          "name": "users",
+          "columns": [
+            {"name": "id", "type": "UUID", "constraints": ["PRIMARY KEY"]},
+            {"name": "email", "type": "VARCHAR(255)", "constraints": ["UNIQUE", "NOT NULL"]},
+            {"name": "password_hash", "type": "VARCHAR(255)", "constraints": ["NOT NULL"]},
+            {"name": "name", "type": "VARCHAR(100)", "constraints": ["NOT NULL"]},
+            {"name": "avatar_url", "type": "TEXT", "constraints": []},
+            {"name": "timezone", "type": "VARCHAR(50)", "constraints": ["DEFAULT 'UTC'"]},
+            {"name": "created_at", "type": "TIMESTAMP", "constraints": ["DEFAULT NOW()"]},
+            {"name": "updated_at", "type": "TIMESTAMP", "constraints": ["DEFAULT NOW()"]}
+          ]
+        },
+        {
+          "name": "projects",
+          "columns": [
+            {"name": "id", "type": "UUID", "constraints": ["PRIMARY KEY"]},
+            {"name": "owner_id", "type": "UUID", "constraints": ["REFERENCES users(id)"]},
+            {"name": "name", "type": "VARCHAR(200)", "constraints": ["NOT NULL"]},
+            {"name": "description", "type": "TEXT", "constraints": []},
+            {"name": "color", "type": "VARCHAR(7)", "constraints": ["DEFAULT '#3b82f6'"]},
+            {"name": "icon", "type": "VARCHAR(50)", "constraints": ["DEFAULT 'folder'"]},
+            {"name": "start_date", "type": "DATE", "constraints": []},
+            {"name": "end_date", "type": "DATE", "constraints": []},
+            {"name": "status", "type": "ENUM('active','archived','completed')", "constraints": ["DEFAULT 'active'"]},
+            {"name": "created_at", "type": "TIMESTAMP", "constraints": ["DEFAULT NOW()"]},
+            {"name": "updated_at", "type": "TIMESTAMP", "constraints": ["DEFAULT NOW()"]}
+          ]
+        },
+        {
+          "name": "tasks",
+          "columns": [
+            {"name": "id", "type": "UUID", "constraints": ["PRIMARY KEY"]},
+            {"name": "project_id", "type": "UUID", "constraints": ["REFERENCES projects(id)"]},
+            {"name": "assignee_id", "type": "UUID", "constraints": ["REFERENCES users(id)"]},
+            {"name": "created_by", "type": "UUID", "constraints": ["REFERENCES users(id)"]},
+            {"name": "title", "type": "VARCHAR(200)", "constraints": ["NOT NULL"]},
+            {"name": "description", "type": "TEXT", "constraints": []},
+            {"name": "status", "type": "ENUM('todo','in_progress','done')", "constraints": ["DEFAULT 'todo'"]},
+            {"name": "priority", "type": "ENUM('low','medium','high')", "constraints": ["DEFAULT 'medium'"]},
+            {"name": "due_date", "type": "DATE", "constraints": []},
+            {"name": "estimated_hours", "type": "INTEGER", "constraints": []},
+            {"name": "created_at", "type": "TIMESTAMP", "constraints": ["DEFAULT NOW()"]},
+            {"name": "updated_at", "type": "TIMESTAMP", "constraints": ["DEFAULT NOW()"]},
+            {"name": "completed_at", "type": "TIMESTAMP", "constraints": []}
+          ]
+        }
+      ]
+    }
+  },
+  "interfaces": {
+    "apiSpec": "# API仕様書\n\n## Base URL\n\n```\nProduction: https://api.taskflow.example.com/v1\nStaging: https://api.staging.taskflow.example.com/v1\nDevelopment: http://localhost:3000/api/v1\n```\n\n## 認証\n\nすべてのAPIエンドポイント（/auth/*を除く）は認証が必要です。\n\n```\nAuthorization: Bearer <JWT_TOKEN>\n```\n\n## エンドポイント一覧\n\n### 認証 (Authentication)\n\n#### POST /auth/register\nユーザー登録\n\n**Request Body**:\n```json\n{\n  \"email\": \"user@example.com\",\n  \"password\": \"SecurePass123!\",\n  \"name\": \"John Doe\"\n}\n```\n\n**Response (201 Created)**:\n```json\n{\n  \"user\": {\n    \"id\": \"uuid\",\n    \"email\": \"user@example.com\",\n    \"name\": \"John Doe\"\n  },\n  \"token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\"\n}\n```\n\n#### POST /auth/login\nログイン\n\n**Request Body**:\n```json\n{\n  \"email\": \"user@example.com\",\n  \"password\": \"SecurePass123!\"\n}\n```\n\n**Response (200 OK)**:\n```json\n{\n  \"user\": {\n    \"id\": \"uuid\",\n    \"email\": \"user@example.com\",\n    \"name\": \"John Doe\"\n  },\n  \"token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\"\n}\n```\n\n### プロジェクト (Projects)\n\n#### GET /projects\nプロジェクト一覧取得\n\n**Query Parameters**:\n- `status` (optional): 'active' | 'archived' | 'completed'\n- `page` (optional): ページ番号 (default: 1)\n- `limit` (optional): 件数 (default: 20)\n\n**Response (200 OK)**:\n```json\n{\n  \"projects\": [\n    {\n      \"id\": \"uuid\",\n      \"name\": \"Project Alpha\",\n      \"description\": \"Description here\",\n      \"status\": \"active\",\n      \"progress\": 75,\n      \"taskCount\": 12,\n      \"dueDate\": \"2025-03-01\"\n    }\n  ],\n  \"pagination\": {\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 50\n  }\n}\n```\n\n#### POST /projects\nプロジェクト作成\n\n**Request Body**:\n```json\n{\n  \"name\": \"New Project\",\n  \"description\": \"Project description\",\n  \"startDate\": \"2025-02-01\",\n  \"endDate\": \"2025-06-30\",\n  \"color\": \"#3b82f6\"\n}\n```\n\n**Response (201 Created)**:\n```json\n{\n  \"id\": \"uuid\",\n  \"name\": \"New Project\",\n  \"description\": \"Project description\",\n  \"status\": \"active\",\n  \"createdAt\": \"2025-02-08T10:00:00Z\"\n}\n```\n\n### タスク (Tasks)\n\n#### GET /tasks\nタスク一覧取得\n\n**Query Parameters**:\n- `projectId` (optional): プロジェクトID\n- `status` (optional): 'todo' | 'in_progress' | 'done'\n- `priority` (optional): 'low' | 'medium' | 'high'\n- `assigneeId` (optional): 担当者ID\n- `search` (optional): 検索キーワード\n- `page` (optional): ページ番号\n- `limit` (optional): 件数\n\n**Response (200 OK)**:\n```json\n{\n  \"tasks\": [\n    {\n      \"id\": \"uuid\",\n      \"title\": \"Implement user auth\",\n      \"description\": \"JWT authentication\",\n      \"status\": \"in_progress\",\n      \"priority\": \"high\",\n      \"assignee\": {\n        \"id\": \"uuid\",\n        \"name\": \"John Doe\",\n        \"avatarUrl\": \"https://...\"\n      },\n      \"dueDate\": \"2025-02-15\",\n      \"createdAt\": \"2025-02-01T10:00:00Z\"\n    }\n  ],\n  \"pagination\": {...}\n}\n```\n\n#### POST /tasks\nタスク作成\n\n**Request Body**:\n```json\n{\n  \"projectId\": \"uuid\",\n  \"title\": \"New Task\",\n  \"description\": \"Task description\",\n  \"priority\": \"medium\",\n  \"assigneeId\": \"uuid\",\n  \"dueDate\": \"2025-02-20\",\n  \"tags\": [\"backend\", \"api\"]\n}\n```\n\n**Response (201 Created)**:\n```json\n{\n  \"id\": \"uuid\",\n  \"title\": \"New Task\",\n  \"status\": \"todo\",\n  \"createdAt\": \"2025-02-08T10:00:00Z\"\n}\n```\n\n#### PATCH /tasks/:id\nタスク更新\n\n**Request Body** (partial update):\n```json\n{\n  \"status\": \"done\",\n  \"completedAt\": \"2025-02-15T14:30:00Z\"\n}\n```\n\n**Response (200 OK)**:\n```json\n{\n  \"id\": \"uuid\",\n  \"title\": \"Task Title\",\n  \"status\": \"done\",\n  \"updatedAt\": \"2025-02-15T14:30:00Z\"\n}\n```\n\n## エラーレスポンス\n\nすべてのエラーは以下の形式で返されます：\n\n```json\n{\n  \"error\": {\n    \"code\": \"VALIDATION_ERROR\",\n    \"message\": \"Invalid email format\",\n    \"details\": [\n      {\n        \"field\": \"email\",\n        \"message\": \"Must be a valid email address\"\n      }\n    ]\n  }\n}\n```\n\n### エラーコード\n\n- `VALIDATION_ERROR` (400): リクエストパラメータが不正\n- `UNAUTHORIZED` (401): 認証が必要\n- `FORBIDDEN` (403): 権限不足\n- `NOT_FOUND` (404): リソースが見つからない\n- `CONFLICT` (409): リソースが既に存在\n- `INTERNAL_ERROR` (500): サーバーエラー\n",
+    "apiSpecJson": {
+      "openapi": "3.1.0",
+      "info": {
+        "title": "TaskFlow API",
+        "version": "1.0.0",
+        "description": "Task Management Application API"
+      },
+      "servers": [
+        {"url": "https://api.taskflow.example.com/v1", "description": "Production"},
+        {"url": "http://localhost:3000/api/v1", "description": "Development"}
+      ],
+      "paths": {
+        "/auth/register": {
+          "post": {
+            "summary": "ユーザー登録",
+            "tags": ["Authentication"],
+            "requestBody": {
+              "required": true,
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "object",
+                    "required": ["email", "password", "name"],
+                    "properties": {
+                      "email": {"type": "string", "format": "email"},
+                      "password": {"type": "string", "minLength": 8},
+                      "name": {"type": "string"}
+                    }
+                  }
+                }
+              }
+            },
+            "responses": {
+              "201": {
+                "description": "登録成功",
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "type": "object",
+                      "properties": {
+                        "user": {"$ref": "#/components/schemas/User"},
+                        "token": {"type": "string"}
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "/tasks": {
+          "get": {
+            "summary": "タスク一覧取得",
+            "tags": ["Tasks"],
+            "security": [{"bearerAuth": []}],
+            "parameters": [
+              {"name": "projectId", "in": "query", "schema": {"type": "string"}},
+              {"name": "status", "in": "query", "schema": {"type": "string", "enum": ["todo", "in_progress", "done"]}},
+              {"name": "priority", "in": "query", "schema": {"type": "string", "enum": ["low", "medium", "high"]}}
+            ],
+            "responses": {
+              "200": {
+                "description": "タスク一覧",
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "type": "object",
+                      "properties": {
+                        "tasks": {
+                          "type": "array",
+                          "items": {"$ref": "#/components/schemas/Task"}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "components": {
+        "schemas": {
+          "User": {
+            "type": "object",
+            "properties": {
+              "id": {"type": "string", "format": "uuid"},
+              "email": {"type": "string", "format": "email"},
+              "name": {"type": "string"}
+            }
+          },
+          "Task": {
+            "type": "object",
+            "properties": {
+              "id": {"type": "string", "format": "uuid"},
+              "title": {"type": "string"},
+              "status": {"type": "string", "enum": ["todo", "in_progress", "done"]},
+              "priority": {"type": "string", "enum": ["low", "medium", "high"]}
+            }
+          }
+        },
+        "securitySchemes": {
+          "bearerAuth": {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT"
+          }
+        }
+      }
+    }
+  }
+}

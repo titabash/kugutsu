@@ -1,0 +1,134 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kugutsu.dev/schema/kanban-state.schema.json",
+  "title": "Kanban State",
+  "description": "Kanbanボード状態のスキーマ",
+  "type": "object",
+  "required": ["columns", "updatedAt"],
+  "properties": {
+    "columns": {
+      "type": "object",
+      "required": ["pending", "ready", "in_progress", "in_review", "completed", "failed"],
+      "properties": {
+        "pending": {
+          "type": "object",
+          "required": ["label", "taskIds", "color"],
+          "properties": {
+            "label": {
+              "type": "string"
+            },
+            "taskIds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^task-[0-9]+$"
+              }
+            },
+            "color": {
+              "type": "string"
+            }
+          }
+        },
+        "ready": {
+          "type": "object",
+          "required": ["label", "taskIds", "color"],
+          "properties": {
+            "label": {
+              "type": "string"
+            },
+            "taskIds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^task-[0-9]+$"
+              }
+            },
+            "color": {
+              "type": "string"
+            }
+          }
+        },
+        "in_progress": {
+          "type": "object",
+          "required": ["label", "taskIds", "color"],
+          "properties": {
+            "label": {
+              "type": "string"
+            },
+            "taskIds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^task-[0-9]+$"
+              }
+            },
+            "color": {
+              "type": "string"
+            }
+          }
+        },
+        "in_review": {
+          "type": "object",
+          "required": ["label", "taskIds", "color"],
+          "properties": {
+            "label": {
+              "type": "string"
+            },
+            "taskIds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^task-[0-9]+$"
+              }
+            },
+            "color": {
+              "type": "string"
+            }
+          }
+        },
+        "completed": {
+          "type": "object",
+          "required": ["label", "taskIds", "color"],
+          "properties": {
+            "label": {
+              "type": "string"
+            },
+            "taskIds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^task-[0-9]+$"
+              }
+            },
+            "color": {
+              "type": "string"
+            }
+          }
+        },
+        "failed": {
+          "type": "object",
+          "required": ["label", "taskIds", "color"],
+          "properties": {
+            "label": {
+              "type": "string"
+            },
+            "taskIds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^task-[0-9]+$"
+              }
+            },
+            "color": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

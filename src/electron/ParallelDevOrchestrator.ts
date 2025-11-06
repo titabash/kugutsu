@@ -6,10 +6,15 @@
  */
 
 import type { BrowserWindow } from 'electron';
-import { compileParallelDevGraph } from '../graph/ParallelDevGraph.js';
+import { compileParallelDevGraph, compileSprintDrivenGraph, compileScrumDevGraph } from '../graph/ParallelDevGraph.js';
 import { createInitialState, type ParallelDevStateType } from '../graph/state.js';
 import type { ParallelDevConfig } from '../graph/types.js';
 import { graphStreamAdapter } from './GraphStreamAdapter.js';
+
+/**
+ * Workflow type
+ */
+export type WorkflowType = 'parallel' | 'sprint' | 'scrum';
 
 /**
  * Orchestrator configuration
@@ -29,6 +34,20 @@ export interface OrchestratorConfig {
    * Electron window for UI updates (optional)
    */
   window?: BrowserWindow | null;
+
+  /**
+   * Workflow type (default: 'sprint')
+   * - 'parallel': Standard parallel development
+   * - 'sprint': Sprint-driven development
+   * - 'scrum': Scrum development (story mapping → design → tasks)
+   */
+  workflowType?: WorkflowType;
+
+  /**
+   * Use sprint-driven development workflow (default: true)
+   * @deprecated Use workflowType instead
+   */
+  useSprintDriven?: boolean;
 }
 
 /**
@@ -53,23 +72,37 @@ export class ParallelDevOrchestrator {
    * Execute the parallel development workflow
    */
   async execute(orchestratorConfig: OrchestratorConfig): Promise<ParallelDevStateType> {
-    const { userRequest, config, window } = orchestratorConfig;
+    const { userRequest, config, window, useSprintDriven, workflowType: explicitWorkflowType } = orchestratorConfig;
 
     // Set window if provided
     if (window) {
       this.setWindow(window);
     }
 
+    // Determine workflow type (with backward compatibility)
+    const workflowType: WorkflowType = explicitWorkflowType
+      || (useSprintDriven === false ? 'parallel' : 'sprint');
+
+    const workflowNames = {
+      parallel: '標準並列開発',
+      sprint: 'スプリント駆動開発',
+      scrum: 'スクラム開発フロー',
+    };
+
     console.log('🚀 Parallel Development Orchestrator 起動');
     console.log(`📝 ユーザー要求: ${userRequest}`);
+    console.log(`🔄 ワークフロー: ${workflowNames[workflowType]}`);
 
     try {
       // Create initial state
       const initialState = createInitialState(userRequest, config);
 
-      // Compile graph
+      // Compile graph based on workflow type
       console.log('📊 LangGraphワークフローをコンパイル中...');
-      const graph = compileParallelDevGraph();
+      const graph =
+        workflowType === 'scrum' ? compileScrumDevGraph() :
+        workflowType === 'sprint' ? compileSprintDrivenGraph() :
+        compileParallelDevGraph();
 
       // Stream initial state
       await graphStreamAdapter.processStateUpdate(initialState);

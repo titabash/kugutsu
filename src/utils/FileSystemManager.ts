@@ -70,6 +70,21 @@ export class FileSystemManager {
   }
 
   /**
+   * ファイルに書き込む
+   *
+   * @param filePath - ファイルパス
+   * @param content - 書き込む内容
+   */
+  static async writeFile(filePath: string, content: string): Promise<void> {
+    // 親ディレクトリを確保
+    const dirPath = path.dirname(filePath);
+    await this.ensureDirectory(dirPath);
+
+    // ファイルに書き込み
+    await fs.writeFile(filePath, content, 'utf-8');
+  }
+
+  /**
    * ファイルが存在するかチェック
    *
    * @param filePath - ファイルパス

@@ -1,0 +1,74 @@
+appId: com.titabash.kugutsu
+productName: Kugutsu
+copyright: Copyright © 2025 titabash
+
+directories:
+  buildResources: build
+  output: dist-electron
+
+files:
+  - electron/main/**/*
+  - electron/preload/**/*
+  - electron/dist/**/*
+  - dist/**/*
+  - package.json
+  - node_modules/**/*
+
+extraResources:
+  - from: docs
+    to: docs
+  - from: CLAUDE.md
+    to: CLAUDE.md
+  - from: README.md
+    to: README.md
+
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  icon: build/icon.icns
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+dmg:
+  title: ${productName} ${version}
+  icon: build/icon.icns
+  contents:
+    - x: 410
+      y: 150
+      type: link
+      path: /Applications
+    - x: 130
+      y: 150
+      type: file
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.ico
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: ${productName}
+
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Development
+  icon: build/icon.png
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+publish:
+  provider: github
+  owner: titabash
+  repo: kugutsu

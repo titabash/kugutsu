@@ -1,12 +1,13 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, dialog } from 'electron';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
-import { existsSync } from 'fs';
+import { existsSync, statSync } from 'fs';
 // ESM用の__dirname代替
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 let mainWindow = null;
+let currentProjectPath = null;
 // コマンドライン引数をチェック
 const shouldOpenDevTools = process.argv.includes('--devtools');
 // --original-cwdオプションから元のワーキングディレクトリを取得
@@ -72,6 +73,151 @@ function createWindow() {
     mainWindow.on('closed', () => {
         mainWindow = null;
     });
+    // メニューバーを作成
+    createMenu();
+}
+/**
+ * アプリケーションメニューを作成
+ */
+function createMenu() {
+    const template = [
+        {
+            label: 'File',
+            submenu: [
+                {
+                    label: 'Open Project...',
+                    accelerator: 'CmdOrCtrl+O',
+                    click: async () => {
+                        await openProject();
+                    }
+                },
+                {
+                    label: 'Close Project',
+                    accelerator: 'CmdOrCtrl+W',
+                    enabled: currentProjectPath !== null,
+                    click: () => {
+                        closeProject();
+                    }
+                },
+                { type: 'separator' },
+                {
+                    label: 'Quit',
+                    accelerator: 'CmdOrCtrl+Q',
+                    click: () => {
+                        app.quit();
+                    }
+                }
+            ]
+        },
+        {
+            label: 'Edit',
+            submenu: [
+                { role: 'undo' },
+                { role: 'redo' },
+                { type: 'separator' },
+                { role: 'cut' },
+                { role: 'copy' },
+                { role: 'paste' },
+                { role: 'selectAll' }
+            ]
+        },
+        {
+            label: 'View',
+            submenu: [
+                { role: 'reload' },
+                { role: 'forceReload' },
+                { role: 'toggleDevTools' },
+                { type: 'separator' },
+                { role: 'resetZoom' },
+                { role: 'zoomIn' },
+                { role: 'zoomOut' },
+                { type: 'separator' },
+                { role: 'togglefullscreen' }
+            ]
+        },
+        {
+            label: 'Help',
+            submenu: [
+                {
+                    label: 'Learn More',
+                    click: async () => {
+                        const { shell } = require('electron');
+                        await shell.openExternal('https://github.com/titabash/kugutsu');
+                    }
+                }
+            ]
+        }
+    ];
+    const menu = Menu.buildFromTemplate(template);
+    Menu.setApplicationMenu(menu);
+}
+/**
+ * プロジェクトを開く
+ */
+async function openProject() {
+    if (!mainWindow)
+        return;
+    const result = await dialog.showOpenDialog(mainWindow, {
+        properties: ['openDirectory'],
+        title: 'Select Project Directory',
+        message: 'Choose a Git repository to work with'
+    });
+    // Electronのバージョンによって戻り値の型が異なる可能性があるため、型ガードを使用
+    if (typeof result !== 'object' || !('canceled' in result)) {
+        // 古いAPI（配列を直接返す）または不正な戻り値
+        return;
+    }
+    // Electron v6+ の新しいAPI
+    if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+        return;
+    }
+    const selectedPath = result.filePaths[0];
+    // Gitリポジトリかどうか確認
+    const gitDir = path.join(selectedPath, '.git');
+    if (!existsSync(gitDir)) {
+        await dialog.showMessageBox(mainWindow, {
+            type: 'error',
+            title: 'Invalid Project',
+            message: 'The selected directory is not a Git repository.',
+            detail: 'Please select a directory that contains a .git folder.'
+        });
+        return;
+    }
+    // worktreeまたはサブモジュールのチェック
+    const gitDirStat = statSync(gitDir);
+    if (gitDirStat.isFile()) {
+        await dialog.showMessageBox(mainWindow, {
+            type: 'error',
+            title: 'Invalid Project',
+            message: 'Cannot open Git worktree or submodule.',
+            detail: 'Please select the main repository root directory.'
+        });
+        return;
+    }
+    // プロジェクトパスを設定
+    currentProjectPath = selectedPath;
+    // Rendererプロセスに通知
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('project-opened', {
+            projectPath: currentProjectPath
+        });
+    }
+    // メニューを更新（Close Projectを有効化）
+    createMenu();
+    console.log('[Electron Main] Project opened:', currentProjectPath);
+}
+/**
+ * プロジェクトを閉じる
+ */
+function closeProject() {
+    currentProjectPath = null;
+    // Rendererプロセスに通知
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('project-closed');
+    }
+    // メニューを更新（Close Projectを無効化）
+    createMenu();
+    console.log('[Electron Main] Project closed');
 }
 app.whenReady().then(() => {
     createWindow();
@@ -162,6 +308,15 @@ ipcMain.handle('get-task-instruction', async (event, taskId) => {
 ipcMain.handle('get-working-directory', async (event) => {
     // 元のコマンド実行ディレクトリを返す（コマンドライン引数から取得）
     return originalCwd || process.cwd();
+});
+ipcMain.handle('get-current-project-path', async (event) => {
+    // 現在開いているプロジェクトのパスを返す
+    return currentProjectPath;
+});
+ipcMain.handle('open-project-dialog', async (event) => {
+    // プロジェクト選択ダイアログを開く
+    await openProject();
+    return currentProjectPath;
 });
 // 親プロセスからのメッセージを処理（並列開発システムとの通信）
 if (process.send) {

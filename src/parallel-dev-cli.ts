@@ -4,16 +4,14 @@
 process.setMaxListeners(0); // 無制限
 
 import { ParallelDevelopmentOrchestrator } from './managers/ParallelDevelopmentOrchestrator.js';
-import { ParallelDevelopmentOrchestratorWithElectron } from './managers/ParallelDevelopmentOrchestratorWithElectron.js';
 import { SystemConfig } from './types/index.js';
-import { electronLogAdapter } from './utils/ElectronLogAdapter.js';
 import { ClaudeCodeSetupChecker } from './utils/ClaudeCodeSetupChecker.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
 
 /**
- * AI並列開発システムのメインエントリーポイント
+ * AI並列開発システムのCLIエントリーポイント（Electron非依存版）
  */
 class ParallelDevelopmentCLI {
 
@@ -22,10 +20,10 @@ class ParallelDevelopmentCLI {
    */
   private static showUsage(): void {
     console.log(`
-🤖 Kugutsu - AI並列開発システム
+🤖 Kugutsu - AI並列開発システム (CLI版)
 
 📖 使用方法:
-  kugutsu "<開発要求>" [オプション]
+  kugutsu-cli "<開発要求>" [オプション]
 
 引数:
   開発要求    (必須) 実装したい機能や修正内容
@@ -39,18 +37,18 @@ class ParallelDevelopmentCLI {
   --use-remote              リモートリポジトリを使用 (デフォルト: ローカルのみ)
   --keep-worktrees          実行後にWorktreeとブランチを保持 (デフォルト: 自動削除)
   --visual-ui               ターミナル分割表示を使用
-  --electron                Electron UIを使用（デフォルト）
-  --no-electron             Electron UIを無効化してCLIモードで実行
-  --devtools                Electron DevToolsを自動的に開く
   --version, -v             バージョン情報を表示
   --help, -h                このヘルプを表示
 
 例:
-  kugutsu "ユーザー認証機能を実装してください" --electron
-  kugutsu "バグ修正: ログイン時のエラーハンドリング" --max-engineers 2 --no-electron
-  kugutsu "新しいAPI endpointを3つ追加" --keep-worktrees
-  kugutsu "機能改善" --use-remote --visual-ui
-  kugutsu "デバッグ作業" --devtools --keep-worktrees
+  kugutsu-cli "ユーザー認証機能を実装してください"
+  kugutsu-cli "バグ修正: ログイン時のエラーハンドリング" --max-engineers 2
+  kugutsu-cli "新しいAPI endpointを3つ追加" --keep-worktrees
+  kugutsu-cli "機能改善" --use-remote --visual-ui
+
+注意:
+  このCLI版はElectron UIを使用しません。
+  Electron UIを使用する場合は、Electronアプリを起動してください。
 `);
   }
 
@@ -64,7 +62,7 @@ class ParallelDevelopmentCLI {
         encoding: 'utf8',
         stdio: ['pipe', 'pipe', 'ignore']
       }).trim();
-      
+
       if (!branch) {
         // detached HEAD状態の場合
         const rev = execSync('git rev-parse --abbrev-ref HEAD', {
@@ -74,7 +72,7 @@ class ParallelDevelopmentCLI {
         }).trim();
         return rev === 'HEAD' ? 'main' : rev;
       }
-      
+
       return branch;
     } catch (error) {
       return null;
@@ -90,7 +88,6 @@ class ParallelDevelopmentCLI {
     keepWorktrees: boolean;
     showHelp: boolean;
     visualUI: boolean;
-    electronUI: boolean;
   } {
     const config: SystemConfig = {
       baseRepoPath: process.cwd(),
@@ -104,7 +101,6 @@ class ParallelDevelopmentCLI {
     let keepWorktrees = false; // デフォルトは自動削除
     let showHelp = false;
     let visualUI = false;
-    let electronUI = true; // デフォルトでElectron UIを有効化
     let userRequest: string | undefined;
 
     for (let i = 0; i < args.length; i++) {
@@ -121,12 +117,6 @@ class ParallelDevelopmentCLI {
         keepWorktrees = true;
       } else if (arg === '--visual-ui') {
         visualUI = true;
-        electronUI = false; // visual-uiが指定された場合はElectronを無効化
-      } else if (arg === '--electron') {
-        electronUI = true;
-        visualUI = false;
-      } else if (arg === '--no-electron') {
-        electronUI = false;
       } else if (arg === '--use-remote') {
         config.useRemote = true;
       } else if (arg === '--base-repo') {
@@ -144,7 +134,7 @@ class ParallelDevelopmentCLI {
       }
     }
 
-    return { userRequest, config, keepWorktrees, showHelp, visualUI, electronUI };
+    return { userRequest, config, keepWorktrees, showHelp, visualUI };
   }
 
   /**
@@ -159,8 +149,8 @@ class ParallelDevelopmentCLI {
     // Gitリポジトリかどうか確認
     const gitDir = path.join(config.baseRepoPath, '.git');
     if (!fs.existsSync(gitDir)) {
-      return { 
-        valid: false, 
+      return {
+        valid: false,
         error: `❌ エラー: このツールはGitリポジトリでのみ実行できます。\n\n` +
                `指定されたパスはGitリポジトリではありません: ${config.baseRepoPath}\n\n` +
                `以下のいずれかの方法でGitリポジトリを準備してください：\n` +
@@ -190,7 +180,7 @@ class ParallelDevelopmentCLI {
         encoding: 'utf8',
         stdio: ['pipe', 'pipe', 'pipe']
       }).trim();
-      
+
       if (!hasCommits) {
         return {
           valid: false,
@@ -232,7 +222,7 @@ class ParallelDevelopmentCLI {
    */
   public static async main(): Promise<void> {
     const args = process.argv.slice(2);
-    const { userRequest, config, keepWorktrees, showHelp, visualUI, electronUI } = this.parseArgs(args);
+    const { userRequest, config, keepWorktrees, showHelp, visualUI } = this.parseArgs(args);
 
     // ヘルプ表示
     if (showHelp || args.length === 0) {
@@ -272,7 +262,7 @@ class ParallelDevelopmentCLI {
         // Gitリポジトリチェックは既に通過しているので、これは予期しないエラー
         console.error(`❌ エラー: 現在のGitブランチを取得できませんでした。`);
         console.error(`--base-branch オプションで明示的にベースブランチを指定してください。`);
-        console.error(`例: kugutsu "${userRequest}" --base-branch main`);
+        console.error(`例: kugutsu-cli "${userRequest}" --base-branch main`);
         process.exit(1);
       }
     }
@@ -280,21 +270,21 @@ class ParallelDevelopmentCLI {
     // Claude Codeのセットアップ状態を確認
     console.log('🔍 Claude Codeのセットアップ状態を確認中...\n');
     const setupCheck = await ClaudeCodeSetupChecker.checkSetup();
-    
+
     if (!setupCheck.isValid) {
       console.error('❌ Claude Codeのセットアップに問題があります:\n');
-      
+
       // エラーを表示
       setupCheck.errors.forEach((error, index) => {
         console.error(`  ${index + 1}. ${error}`);
       });
-      
+
       // セットアップガイドを表示
       ClaudeCodeSetupChecker.displaySetupGuide();
-      
+
       process.exit(1);
     }
-    
+
     console.log('✅ Claude Codeのセットアップが確認されました');
     if (setupCheck.info.version) {
       console.log(`📌 Claude Codeバージョン: ${setupCheck.info.version}`);
@@ -306,28 +296,28 @@ class ParallelDevelopmentCLI {
     if (protectedBranches.includes(config.baseBranch)) {
       console.warn(`\n⚠️  警告: 保護されたブランチ '${config.baseBranch}' を使用しようとしています`);
       console.warn(`このブランチへの直接的な変更は推奨されません。`);
-      
+
       // ユーザーに確認を求める
       const readline = await import('readline');
       const rl = readline.createInterface({
         input: process.stdin,
         output: process.stdout
       });
-      
+
       const answer = await new Promise<string>((resolve) => {
         rl.question(`\n⚠️  保護されたブランチ '${config.baseBranch}' を使用しますか？ (yes/no): `, resolve);
       });
       rl.close();
-      
+
       if (answer.toLowerCase() !== 'yes' && answer.toLowerCase() !== 'y') {
         console.log('\n🛑 ユーザーによりキャンセルされました');
         process.exit(0);
       }
-      
+
       console.log(`\n✅ '${config.baseBranch}' ブランチの使用を続行します\n`);
     }
 
-    console.log('🤖 AI並列開発システム起動');
+    console.log('🤖 AI並列開発システム起動 (CLI版)');
     console.log(`📂 ベースリポジトリ: ${config.baseRepoPath}`);
     console.log(`🌿 Worktreeベース: ${config.worktreeBasePath}`);
     console.log(`👥 最大同時エンジニア数: ${config.maxConcurrentEngineers}`);
@@ -335,13 +325,11 @@ class ParallelDevelopmentCLI {
     console.log(`🌱 ベースブランチ: ${config.baseBranch}`);
     console.log(`📡 リモート使用: ${config.useRemote ? 'はい' : 'いいえ'}`);
     console.log(`🧹 実行後クリーンアップ: ${keepWorktrees ? 'いいえ' : 'はい'}`);
-    console.log(`🖥️  UIモード: ${electronUI ? 'Electron' : (visualUI ? 'Terminal分割' : '標準')}`);
+    console.log(`🖥️  UIモード: ${visualUI ? 'Terminal分割' : '標準'}`);
 
     try {
-      // オーケストレーターを初期化
-      const orchestrator = electronUI 
-        ? new ParallelDevelopmentOrchestratorWithElectron(config, visualUI, electronUI)
-        : new ParallelDevelopmentOrchestrator(config, visualUI);
+      // オーケストレーターを初期化（Electron非依存）
+      const orchestrator = new ParallelDevelopmentOrchestrator(config, visualUI);
 
       // シグナルハンドラーを設定（Ctrl+Cなどで適切にクリーンアップ）
       let isCleaningUp = false;
@@ -351,24 +339,19 @@ class ParallelDevelopmentCLI {
           return;
         }
         isCleaningUp = true;
-        
+
         console.log('\n🛑 システム停止中...');
-        
+
         try {
-          // Electronプロセスを終了
-          if (electronUI) {
-            electronLogAdapter.stop();
-          }
-          
           orchestrator.stopLogViewer();
           await Promise.race([
             orchestrator.cleanup(true),
-            new Promise(resolve => setTimeout(resolve, 30000)) // 30秒でタイムアウト（SIGINTクリーンアップのみ）
+            new Promise(resolve => setTimeout(resolve, 30000)) // 30秒でタイムアウト
           ]);
         } catch (error) {
           console.error('🚨 クリーンアップエラー:', error);
         }
-        
+
         process.exit(0);
       };
 
@@ -379,26 +362,11 @@ class ParallelDevelopmentCLI {
       process.on('SIGTERM', cleanup_handler);
 
       // 並列開発を実行
-      let analysis: any;
-      let results: any[];
-      let successCount: number;
-      let failCount: number;
-      
-      if (electronUI) {
-        // Electron版の場合
-        const result = await orchestrator.executeUserRequest(userRequest);
-        analysis = result.analysis;
-        results = [...result.completedTasks, ...result.failedTasks];
-        successCount = result.completedTasks.length;
-        failCount = result.failedTasks.length;
-      } else {
-        // 通常版の場合
-        const result = await orchestrator.executeUserRequest(userRequest);
-        analysis = result.analysis;
-        results = result.results;
-        successCount = results.filter(r => r.success).length;
-        failCount = results.filter(r => !r.success).length;
-      }
+      const result = await orchestrator.executeUserRequest(userRequest);
+      const { analysis, results, completedTasks, failedTasks } = result;
+
+      const successCount = results.filter(r => r.success).length;
+      const failCount = results.filter(r => !r.success).length;
 
       // 結果のサマリーを表示（全プロセス完了後）
       console.log('\n📊 実行結果サマリー');
@@ -414,8 +382,7 @@ class ParallelDevelopmentCLI {
       if (failCount > 0) {
         console.log('\n❌ 失敗したタスク詳細:');
         results
-          .filter(r => !r.success && !r.taskId) // 通常版の場合
-          .concat(results.filter(r => r.taskId && r.error)) // Electron版の場合
+          .filter(r => !r.success)
           .forEach(r => {
             const task = analysis.tasks.find((t: any) => t.id === r.taskId);
             console.log(`  - ${task?.title || r.taskId}: ${r.error}`);

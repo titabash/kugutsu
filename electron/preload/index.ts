@@ -1,13 +1,7 @@
 // Preloadスクリプトの最初にログを出力
 console.log('[Preload] Starting preload script execution...');
 
-import { contextBridge, ipcRenderer } from 'electron';
-
-// Type definition for IpcRendererEvent
-interface IpcRendererEvent {
-  sender: any;
-  senderId: number;
-}
+import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
 
 console.log('[Preload] Electron modules loaded successfully');
 
@@ -67,6 +61,16 @@ const electronAPI = {
   },
   onTaskOverviewUpdate: (callback: (overview: string) => void) => {
     ipcRenderer.on('task-overview-updated', (_event: IpcRendererEvent, overview: string) => callback(overview));
+  },
+
+  // プロジェクト管理関連
+  getCurrentProjectPath: () => ipcRenderer.invoke('get-current-project-path'),
+  openProjectDialog: () => ipcRenderer.invoke('open-project-dialog'),
+  onProjectOpened: (callback: (data: { projectPath: string }) => void) => {
+    ipcRenderer.on('project-opened', (_event: IpcRendererEvent, data: { projectPath: string }) => callback(data));
+  },
+  onProjectClosed: (callback: () => void) => {
+    ipcRenderer.on('project-closed', (_event: IpcRendererEvent) => callback());
   }
 };
 

@@ -53,6 +53,15 @@ const electronAPI = {
     },
     onTaskOverviewUpdate: (callback) => {
         electron_1.ipcRenderer.on('task-overview-updated', (_event, overview) => callback(overview));
+    },
+    // プロジェクト管理関連
+    getCurrentProjectPath: () => electron_1.ipcRenderer.invoke('get-current-project-path'),
+    openProjectDialog: () => electron_1.ipcRenderer.invoke('open-project-dialog'),
+    onProjectOpened: (callback) => {
+        electron_1.ipcRenderer.on('project-opened', (_event, data) => callback(data));
+    },
+    onProjectClosed: (callback) => {
+        electron_1.ipcRenderer.on('project-closed', (_event) => callback());
     }
 };
 exports.electronAPI = electronAPI;

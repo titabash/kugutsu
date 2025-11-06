@@ -1,13 +1,18 @@
 import { useEffect } from 'react'
 import { Header } from '@/components/Header'
+import { Toolbar } from '@/components/Toolbar'
 import { MainLayout } from '@/components/MainLayout'
 import { BottomPanel } from '@/components/BottomPanel'
 import { GraphVisualization } from '@/components/GraphVisualization'
 import { TaskKanbanBoard } from '@/components/TaskKanbanBoard'
 import { LogViewer } from '@/components/LogViewer'
+import { WelcomeScreen } from '@/components/WelcomeScreen'
 import { useElectronSync } from './hooks/useElectronSync'
+import { useAppStore } from './store/appStore'
 
 export default function App() {
+  const { projectPath } = useAppStore()
+
   // Sync Electron IPC events with app store
   useElectronSync()
 
@@ -18,16 +23,27 @@ export default function App() {
 
   return (
     <div className="flex h-screen flex-col bg-background text-foreground">
-      {/* Header */}
-      <Header />
+      {/* Toolbar */}
+      <Toolbar />
 
-      {/* Main Content */}
-      <MainLayout leftPanel={<GraphVisualization />} rightPanel={<TaskKanbanBoard />} />
+      {/* Conditional Content */}
+      {projectPath ? (
+        <>
+          {/* Header */}
+          <Header />
 
-      {/* Bottom Panel (Logs) */}
-      <BottomPanel>
-        <LogViewer />
-      </BottomPanel>
+          {/* Main Content */}
+          <MainLayout leftPanel={<GraphVisualization />} rightPanel={<TaskKanbanBoard />} />
+
+          {/* Bottom Panel (Logs) */}
+          <BottomPanel>
+            <LogViewer />
+          </BottomPanel>
+        </>
+      ) : (
+        /* Welcome Screen */
+        <WelcomeScreen />
+      )}
     </div>
   )
 }

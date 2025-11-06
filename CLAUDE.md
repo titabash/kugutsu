@@ -241,6 +241,12 @@ npm run build
 ```
 
 ### Development Commands
+
+#### CLI vs Electron: Two Separate Modes
+The system now has two completely independent execution modes:
+1. **CLI Mode**: Terminal-based execution (no Electron UI)
+2. **Electron Mode**: Standalone desktop application (VSCode/Cursor-like UI)
+
 ```bash
 # Build the project
 npm run build
@@ -248,26 +254,63 @@ npm run build
 # Build Electron components
 npm run build:electron
 
+# Build Renderer (React UI)
+npm run build:renderer
+
+# Build everything
+npm run build:all
+
 # Start the main CLI (after build)
 npm start
 
 # Run in development mode with TypeScript
 npm run dev "<prompt>" [directory]
+```
 
-# Run parallel development system (CLI version)
+#### CLI Mode (Terminal-based)
+```bash
+# Run parallel development system (CLI only - no Electron)
 npm run parallel-dev-cli "<development request>" [options]
 
-# Run parallel development system (Electron UI - default)
-npm run parallel-dev "<development request>" [options]
+# Examples
+npm run parallel-dev-cli "Implement user authentication system"
+npm run parallel-dev-cli "Fix bugs in login flow" --max-engineers 2
+npm run parallel-dev-cli "Add API endpoints" --visual-ui
+```
 
-# Run parallel development system with GUI explicitly
-npm run parallel-dev-gui "<development request>" [options]
-
-# Start Electron app
+#### Electron Mode (Desktop Application)
+```bash
+# Start Electron app (standalone, no project opened initially)
 npm run electron
 
 # Build and start Electron
 npm run electron:build
+
+# Development build (full rebuild + start)
+npm run electron:dev
+```
+
+**Electron App Usage:**
+1. Launch app: `npm run electron`
+2. File > Open Project to select a Git repository
+3. Use the UI to configure and run AI development tasks
+4. The app works like VSCode/Cursor - open a project first, then work with it
+
+#### Application Distribution (Electron)
+```bash
+# Install electron-builder (first time only)
+npm install --save-dev electron-builder
+
+# Build distributable app (directory only, for testing)
+npm run pack
+
+# Build distributable app (installers for current platform)
+npm run dist
+
+# Build for specific platforms
+npm run dist:mac      # Build .dmg for macOS
+npm run dist:win      # Build .exe for Windows
+npm run dist:linux    # Build AppImage/deb for Linux
 ```
 
 ### Type Checking and Linting
@@ -279,21 +322,20 @@ npx tsc --noEmit
 # npm run lint (if configured)
 ```
 
-### Running the System
+### Running the System - Updated
 ```bash
 # Single Claude Code SDK execution
 npm run dev "Please analyze this codebase"
 npm run dev "Fix TypeScript errors" ./src
 
-# AI Parallel Development System (Electron UI)
-npm run parallel-dev "Implement user authentication system"
-npm run parallel-dev "Add API endpoints for user management" --max-engineers 2
-npm run parallel-dev "Bug fixes for login flow" --cleanup
-npm run parallel-dev "Performance improvements" --electron
+# AI Parallel Development System (CLI - Terminal only)
+npm run parallel-dev-cli "Implement user authentication system"
+npm run parallel-dev-cli "Add API endpoints for user management" --max-engineers 2
+npm run parallel-dev-cli "Bug fixes for login flow" --keep-worktrees
+npm run parallel-dev-cli "Performance improvements" --visual-ui
 
-# AI Parallel Development System (CLI version)
-npm run parallel-dev-cli "Implement authentication" --visual-ui
-npm run parallel-dev-cli "Fix bugs" --no-electron
+# Electron App (Desktop Application)
+npm run electron  # Then use File > Open Project in the app
 ```
 
 ## Architecture

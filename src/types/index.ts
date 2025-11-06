@@ -71,6 +71,7 @@ export interface TaskAnalysisResult {
   tasks: Task[];
   summary: string;
   riskAssessment: string;
+  estimatedTime?: string;
   // 拡張分析情報
   analysisDetails?: {
     codebaseAssessment?: string;

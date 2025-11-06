@@ -20,6 +20,9 @@ interface AppState {
   // Graph
   dependencyGraph: DependencyGraph | null
 
+  // Project
+  projectPath: string | null
+
   // UI State
   logFilter: {
     level: LogEntry['level'] | 'all'
@@ -43,6 +46,9 @@ interface AppState {
 
   // Actions - Graph
   setDependencyGraph: (graph: DependencyGraph | null) => void
+
+  // Actions - Project
+  setProjectPath: (path: string | null) => void
 
   // Actions - UI
   setSelectedTaskId: (taskId: string | null) => void
@@ -74,6 +80,7 @@ export const useAppStore = create<AppState>()(
         isPaused: false,
       },
       dependencyGraph: null,
+      projectPath: null,
       logFilter: {
         level: 'all',
         search: '',
@@ -160,6 +167,9 @@ export const useAppStore = create<AppState>()(
 
       // Graph Actions
       setDependencyGraph: (graph) => set({ dependencyGraph: graph }),
+
+      // Project Actions
+      setProjectPath: (path) => set({ projectPath: path }),
 
       // UI Actions
       setSelectedTaskId: (taskId) => set({ selectedTaskId: taskId }),

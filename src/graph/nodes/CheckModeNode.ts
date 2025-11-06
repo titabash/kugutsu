@@ -13,6 +13,7 @@ import { PriorityCalculator } from '../../utils/PriorityCalculator.js';
 import { DataPersistence } from '../../utils/DataPersistence.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 import type { AIProviderConfig } from '../../providers/IAIProvider.js';
+import { GitWorktreeManager } from '../../managers/GitWorktreeManager.js';
 import { randomUUID } from 'crypto';
 
 /**
@@ -44,6 +45,194 @@ export async function checkModeNode(
   console.log(`📊 既存タスク数: ${globalTasks.length}`);
   console.log(`📁 既存プロジェクト数: ${projects.size}`);
 
+  // AI Provider設定
+  const providerConfig: AIProviderConfig = {
+    provider: config.provider || 'claude',
+    claude: {
+      model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-5-20250929',
+    },
+  };
+
+  // リポジトリメタデータの初期化（初回実行時のみ）
+  const repositoryMetadata = await persistence.loadRepositoryMetadata();
+  if (!repositoryMetadata) {
+    console.log('🔍 初回実行: リポジトリ全体を分析しています...');
+
+    // リポジトリ分析プロンプト
+    const repositoryAnalysisPrompt = `
+# リポジトリ全体の分析
+
+このリポジトリ全体を分析し、以下の情報をJSON形式で出力してください。
+
+## 分析項目
+
+1. **基本情報**:
+   - リポジトリ名（package.jsonやREADMEから推測）
+   - 説明（READMEから）
+   - 主要なプログラミング言語（TypeScript, JavaScript, Python等）
+   - フレームワーク（React, Vue, Express, Django等）
+
+2. **規模**:
+   - ファイル数（概算）
+   - コード行数（概算）
+
+3. **技術スタック**:
+   - フロントエンド（該当する場合）
+   - バックエンド（該当する場合）
+   - データベース（該当する場合）
+   - インフラ（Docker, Kubernetes等）
+
+4. **アーキテクチャ**:
+   - アーキテクチャパターン（MVC, Clean Architecture, Layered等）
+   - ディレクトリ構造の特徴
+
+5. **コーディング規約**:
+   - 命名規則（既存コードから推測）
+   - コメントスタイル
+
+## 出力形式
+
+\`\`\`json
+{
+  "repositoryName": "...",
+  "description": "...",
+  "primaryLanguages": ["TypeScript", "JavaScript"],
+  "frameworks": ["React", "Node.js"],
+  "linesOfCode": 10000,
+  "fileCount": 100,
+  "techStack": {
+    "frontend": {
+      "framework": "React",
+      "version": "19.0.0",
+      "language": "TypeScript"
+    },
+    "backend": {
+      "runtime": "Node.js",
+      "framework": "Express",
+      "language": "TypeScript"
+    },
+    "database": {
+      "primary": "PostgreSQL"
+    }
+  },
+  "architecture": {
+    "pattern": "Clean Architecture",
+    "layers": ["presentation", "application", "domain", "infrastructure"]
+  },
+  "codingStandards": {
+    "namingConvention": "camelCase for variables, PascalCase for classes",
+    "commentStyle": "JSDoc for public APIs"
+  }
+}
+\`\`\`
+`;
+
+    const repositoryAnalysisProvider = AIProviderFactory.create(providerConfig);
+    let repositoryAnalysisText = '';
+    for await (const message of repositoryAnalysisProvider.execute(
+      repositoryAnalysisPrompt,
+      {
+        maxTurns: 10,
+        cwd: config.baseRepoPath,
+        allowedTools: ['Read', 'Glob', 'Grep'],
+        permissionMode: 'acceptEdits',
+      }
+    )) {
+      if (message.type === 'assistant' && message.content) {
+        if (typeof message.content === 'string') {
+          repositoryAnalysisText += message.content;
+        } else {
+          repositoryAnalysisText += JSON.stringify(message.content);
+        }
+      }
+    }
+
+    // JSONを抽出してパース
+    const repositoryJsonMatch = repositoryAnalysisText.match(/```json\n([\s\S]*?)\n```/);
+    if (repositoryJsonMatch) {
+      try {
+        const analysisResult = JSON.parse(repositoryJsonMatch[1]);
+
+        // メタデータを保存
+        const metadata = {
+          ...analysisResult,
+          analyzedAt: new Date().toISOString(),
+          lastUpdated: new Date().toISOString(),
+          kugutsuVersion: '2.0.0',
+          developmentPhase: 'active',
+        };
+        await persistence.saveRepositoryMetadata(metadata);
+
+        // 技術スタックを保存
+        if (analysisResult.techStack) {
+          await persistence.saveTechStack(analysisResult.techStack);
+        }
+
+        // アーキテクチャ概要を保存
+        const architectureOverview = `# アーキテクチャ概要
+
+**最終更新**: ${new Date().toISOString()}
+
+## アーキテクチャパターン
+
+${analysisResult.architecture?.pattern || 'N/A'}
+
+## レイヤー構造
+
+${analysisResult.architecture?.layers?.map((layer: string) => `- ${layer}`).join('\n') || 'N/A'}
+
+## 技術スタック
+
+- **フロントエンド**: ${analysisResult.techStack?.frontend?.framework || 'N/A'}
+- **バックエンド**: ${analysisResult.techStack?.backend?.framework || 'N/A'}
+- **データベース**: ${analysisResult.techStack?.database?.primary || 'N/A'}
+`;
+        await persistence.saveArchitectureOverview(architectureOverview);
+
+        // コーディング規約を保存
+        const codingStandards = `# コーディング規約
+
+**最終更新**: ${new Date().toISOString()}
+
+## 命名規則
+
+${analysisResult.codingStandards?.namingConvention || 'N/A'}
+
+## コメントスタイル
+
+${analysisResult.codingStandards?.commentStyle || 'N/A'}
+`;
+        await persistence.saveCodingStandards(codingStandards);
+
+        console.log('✅ リポジトリ仕様を初期化しました');
+
+        // repository/の変更をコミット
+        console.log('📝 repository/の変更をコミットしています...');
+        const gitManager = new GitWorktreeManager(
+          config.baseRepoPath,
+          config.worktreeBasePath || './worktrees',
+          config.baseBranch || 'main'
+        );
+
+        try {
+          await gitManager.addAndCommit(
+            '.kugutsu/repository/',
+            'chore: Initialize repository specifications\n\n🤖 Generated with Kugutsu 2.0\n\nCo-Authored-By: Claude <noreply@anthropic.com>'
+          );
+        } catch (commitError) {
+          console.warn('⚠️ repository/のコミットに失敗しました:', commitError);
+          // コミット失敗しても処理は継続
+        }
+      } catch (error) {
+        console.error('❌ リポジトリ分析結果のJSON解析に失敗しました:', error);
+      }
+    } else {
+      console.warn('⚠️ リポジトリ分析結果からJSONを抽出できませんでした');
+    }
+  } else {
+    console.log('✅ 既存のリポジトリ仕様を使用します');
+  }
+
   // 未完了タスク数を計算
   const incompleteTasks = globalTasks.filter(
     (task) => task.status !== 'completed' && task.status !== 'failed'
@@ -59,13 +248,6 @@ export async function checkModeNode(
   }
 
   // AI駆動で継続モードを判定
-  const providerConfig: AIProviderConfig = {
-    provider: config.provider || 'claude',
-    claude: {
-      model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-5-20250929',
-    },
-  };
-
   const provider = AIProviderFactory.create(providerConfig);
 
   const continuationDetectionPrompt = `

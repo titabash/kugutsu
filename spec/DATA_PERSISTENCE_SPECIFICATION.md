@@ -53,6 +53,25 @@
 /Users/user/my-project/                # ユーザーのリポジトリ
 ├── .kugutsu/                          # Kugutsu管理ディレクトリ
 │   ├── config.json                    # プロジェクト設定
+│   ├── repository/                    # 🆕 リポジトリ全体の仕様（プロジェクト横断）
+│   │   ├── metadata.json              # リポジトリメタ情報（初回分析時に生成）
+│   │   ├── architecture/              # アーキテクチャ設計
+│   │   │   ├── overview.md           # 全体アーキテクチャ
+│   │   │   ├── tech-stack.json       # 技術スタック定義
+│   │   │   └── layers.md             # レイヤー構造
+│   │   ├── standards/                 # 標準・規約
+│   │   │   ├── coding-standards.md   # コーディング規約
+│   │   │   ├── naming-conventions.md # 命名規則
+│   │   │   └── security-policy.md    # セキュリティポリシー
+│   │   ├── database/                  # リポジトリ全体のDB設計
+│   │   │   ├── schema.json           # 全体スキーマ
+│   │   │   └── er-diagram.md         # ER図
+│   │   ├── api/                       # リポジトリ全体のAPI仕様
+│   │   │   ├── api-spec.json         # OpenAPI仕様
+│   │   │   └── api-spec.md           # API設計書
+│   │   └── deployment/                # デプロイメント設定
+│   │       ├── environments.json     # 環境定義
+│   │       └── ci-cd.md              # CI/CD設計
 │   ├── tasks/                         # 🆕 グローバルタスク管理
 │   │   └── global-queue.json          # 全プロジェクトのタスクキュー
 │   ├── sprints/                       # 🆕 スプリント管理
@@ -88,16 +107,26 @@
 │       │       └── execution.log       # 実行ログ
 │       └── {projectId-2}/             # 別の実行
 │           └── ...
-├── .gitignore                         # .kugutsu/ を除外推奨
+├── .gitignore
 └── ...
 ```
 
 **主要な変更点（スプリント駆動開発対応）**:
+- **repository/**: リポジトリ全体の仕様を管理（プロジェクト横断）
+  - 初回実行時にAIが自動生成し、各プロジェクト実行時に更新
+  - アーキテクチャ、技術スタック、コーディング規約、DB/API設計等を含む
 - **tasks/global-queue.json**: 複数プロジェクトにまたがるグローバルタスクキュー
 - **sprints/active-sprint.json**: 現在アクティブなスプリント情報
 - **sprints/sprint-history.json**: 完了したスプリントの履歴
 
-**注意**: `.kugutsu/` ディレクトリは `.gitignore` に追加することを推奨（実行時の一時データのため）
+**Git管理の方針**:
+- `.kugutsu/repository/`: リポジトリ全体の仕様 → **Git管理する**
+- `.kugutsu/projects/`: プロジェクト実行履歴 → **Git管理する**
+- `.kugutsu/tasks/`, `.kugutsu/sprints/`: タスク/スプリント状態 → **Git管理する**
+
+**使い分け**:
+- **repository/**: リポジトリ全体で共通する設計・規約（全プロジェクトで参照）
+- **projects/{projectId}/**: 特定の機能追加や改修の設計（プロジェクト固有）
 
 ---
 
@@ -143,7 +172,226 @@
 
 ---
 
-### 3.2 project.json
+### 3.2 リポジトリ仕様（repository/）
+
+#### 3.2.1 metadata.json
+
+**パス**: `.kugutsu/repository/metadata.json`
+
+**目的**: リポジトリ全体のメタ情報
+
+**スキーマ**: なし（メタ情報）
+
+**内容**:
+```json
+{
+  "repositoryName": "my-app",
+  "description": "E-commerce platform for small businesses",
+  "analyzedAt": "2025-11-05T10:00:00Z",
+  "lastUpdated": "2025-11-06T14:30:00Z",
+  "kugutsuVersion": "2.0.0",
+  "primaryLanguages": ["TypeScript", "JavaScript"],
+  "frameworks": ["React", "Node.js", "Express"],
+  "linesOfCode": 45000,
+  "fileCount": 320,
+  "teamSize": "5-10",
+  "developmentPhase": "active"
+}
+```
+
+**生成タイミング**: Kugutsu初回実行時（CheckModeNode）
+
+**更新タイミング**: プロジェクト実行時に必要に応じて更新
+
+---
+
+#### 3.2.2 architecture/overview.md
+
+**パス**: `.kugutsu/repository/architecture/overview.md`
+
+**目的**: リポジトリ全体のアーキテクチャ概要
+
+**フォーマット**: Markdown + Mermaid
+
+**内容例**:
+```markdown
+# アーキテクチャ概要
+
+**最終更新**: 2025-11-06
+
+## 全体構成
+
+\`\`\`mermaid
+graph TB
+    Client[Frontend: React SPA]
+    API[API Gateway]
+    Auth[Auth Service]
+    Backend[Backend Service: Node.js]
+    DB[(PostgreSQL)]
+    Cache[(Redis)]
+    Storage[S3 Storage]
+
+    Client --> API
+    API --> Auth
+    API --> Backend
+    Backend --> DB
+    Backend --> Cache
+    Backend --> Storage
+\`\`\`
+
+## レイヤー構造
+
+- **Frontend**: React 19 + TypeScript
+- **API Layer**: Express REST API
+- **Business Logic**: Service層 + Repository層
+- **Data Layer**: PostgreSQL 16 + Prisma ORM
+
+## 主要な設計パターン
+
+- Clean Architecture
+- Repository Pattern
+- Dependency Injection
+```
+
+**生成タイミング**: Kugutsu初回実行時
+
+**更新タイミング**: アーキテクチャに影響する変更時（TechLeadDesignNode）
+
+---
+
+#### 3.2.3 architecture/tech-stack.json
+
+**パス**: `.kugutsu/repository/architecture/tech-stack.json`
+
+**目的**: 技術スタックの構造化データ
+
+**スキーマ**: なし（構造化データ）
+
+**内容**:
+```json
+{
+  "frontend": {
+    "framework": "React",
+    "version": "19.0.0",
+    "language": "TypeScript",
+    "buildTool": "Vite",
+    "stateManagement": "Redux Toolkit",
+    "styling": "Tailwind CSS",
+    "testing": "Jest + React Testing Library"
+  },
+  "backend": {
+    "runtime": "Node.js",
+    "version": "20.x",
+    "framework": "Express",
+    "language": "TypeScript",
+    "orm": "Prisma",
+    "validation": "Zod",
+    "testing": "Jest + Supertest"
+  },
+  "database": {
+    "primary": "PostgreSQL",
+    "version": "16",
+    "cache": "Redis",
+    "migrations": "Prisma Migrate"
+  },
+  "infrastructure": {
+    "deployment": "Docker + Kubernetes",
+    "ci-cd": "GitHub Actions",
+    "monitoring": "Datadog",
+    "logging": "Winston"
+  }
+}
+```
+
+**生成タイミング**: Kugutsu初回実行時
+
+**更新タイミング**: 技術スタック変更時
+
+---
+
+#### 3.2.4 standards/coding-standards.md
+
+**パス**: `.kugutsu/repository/standards/coding-standards.md`
+
+**目的**: コーディング規約
+
+**フォーマット**: Markdown
+
+**内容例**:
+```markdown
+# コーディング規約
+
+**最終更新**: 2025-11-06
+
+## TypeScript
+
+### 命名規則
+
+- **変数・関数**: camelCase (`getUserById`)
+- **クラス・型**: PascalCase (`UserRepository`)
+- **定数**: UPPER_SNAKE_CASE (`MAX_RETRY_COUNT`)
+- **プライベートメンバー**: アンダースコアなし（private修飾子を使用）
+
+### コメント規約
+
+- 複雑なロジックには必ずコメントを付ける
+- JSDocを使用して関数の説明を記述
+
+## React
+
+- Functional Component + Hooks を使用
+- Props は interface で定義
+- 1コンポーネント200行以内を目安に分割
+
+## エラーハンドリング
+
+- カスタムエラークラスを使用
+- ユーザー向けとシステム向けのエラーメッセージを分ける
+```
+
+**生成タイミング**: Kugutsu初回実行時（既存コードから推論）
+
+**更新タイミング**: コーディング規約変更時
+
+---
+
+#### 3.2.5 database/schema.json
+
+**パス**: `.kugutsu/repository/database/schema.json`
+
+**目的**: リポジトリ全体のDB設計（全テーブル定義）
+
+**スキーマ**: `schema/design-docs.schema.json` (database部分)
+
+**内容**: プロジェクト固有のDB設計と同じ形式（3.7参照）だが、リポジトリ全体のスキーマ
+
+**生成タイミング**:
+- 初回実行時: 既存DBスキーマをリバースエンジニアリング
+- プロジェクト実行時: TechLeadDesignNodeでプロジェクト固有の設計を反映
+
+**更新タイミング**: DB設計に影響する変更時
+
+---
+
+#### 3.2.6 api/api-spec.json
+
+**パス**: `.kugutsu/repository/api/api-spec.json`
+
+**目的**: リポジトリ全体のAPI仕様（全エンドポイント定義）
+
+**フォーマット**: OpenAPI 3.0準拠
+
+**内容**: プロジェクト固有のAPI設計と同じ形式（3.8参照）だが、リポジトリ全体の仕様
+
+**生成タイミング**:
+- 初回実行時: 既存APIスキーマを解析
+- プロジェクト実行時: TechLeadDesignNodeでプロジェクト固有の設計を反映
+
+**更新タイミング**: API設計に影響する変更時
+
+---
+
+### 3.3 project.json
 
 **パス**: `.kugutsu/projects/{projectId}/project.json`
 

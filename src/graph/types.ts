@@ -296,7 +296,7 @@ export interface ParallelDevConfig {
   /**
    * AI provider configuration
    */
-  provider?: 'claude' | 'codex';
+  provider?: 'claude' | 'codex' | 'mock';
 }
 
 /**

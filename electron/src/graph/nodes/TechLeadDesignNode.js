@@ -11,6 +11,7 @@
  */
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 import { DataPersistence } from '../../utils/DataPersistence.js';
+import { GitWorktreeManager } from '../../managers/GitWorktreeManager.js';
 /**
  * Tech Lead Design Node
  *
@@ -182,6 +183,16 @@ export async function techLeadDesignNode(state) {
         console.log('✅ api-spec.jsonを保存しました');
     }
     console.log('✅ 設計書作成完了');
+    // repository/の変更をコミット
+    console.log('📝 repository/の変更をコミットしています...');
+    const gitManager = new GitWorktreeManager(config.baseRepoPath, config.worktreeBasePath || './worktrees', config.baseBranch || 'main');
+    try {
+        await gitManager.addAndCommit('.kugutsu/repository/', 'chore: Update repository specifications\n\n🤖 Generated with Kugutsu 2.0\n\nCo-Authored-By: Claude <noreply@anthropic.com>');
+    }
+    catch (commitError) {
+        console.warn('⚠️ repository/のコミットに失敗しました:', commitError);
+        // コミット失敗しても処理は継続
+    }
     return {
         logs: [
             {
@@ -274,8 +285,22 @@ ${JSON.stringify(storyMapping, null, 2)}
 ## 重要な指針
 
 - **既存システムを尊重**: コードベースを分析し、既存の技術スタックと整合性を保つ
+- **リポジトリ全体の仕様を参照**: \`.kugutsu/repository/\` 配下に保存されているリポジトリ全体の仕様（アーキテクチャ、技術スタック、コーディング規約、既存DB/API設計）を必ず参照し、整合性を保つ
 - **必要最小限**: 過剰設計を避け、ストーリーを実現する最小限の設計
 - **明確性**: エンジニア間で実装がブレない明確さ
+
+## リポジトリ全体の仕様
+
+以下のファイルに、既存のリポジトリ全体の仕様が保存されています。設計時は必ず参照してください：
+
+- \`.kugutsu/repository/metadata.json\`: リポジトリの基本情報
+- \`.kugutsu/repository/architecture/overview.md\`: 全体アーキテクチャ
+- \`.kugutsu/repository/architecture/tech-stack.json\`: 技術スタック
+- \`.kugutsu/repository/standards/coding-standards.md\`: コーディング規約
+- \`.kugutsu/repository/database/schema.json\`: 既存のDB設計
+- \`.kugutsu/repository/api/api-spec.json\`: 既存のAPI仕様
+
+**設計完了後**: プロジェクト固有の設計をリポジトリ全体の仕様に反映する必要がある場合は、該当ファイルを更新してください。
 
 ## 出力形式
 

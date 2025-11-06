@@ -64,6 +64,16 @@ export class FileSystemManager {
         await fs.writeFile(filePath, content, 'utf-8');
     }
     /**
+     * ファイルを読み込む
+     *
+     * @param filePath - ファイルパス
+     * @returns ファイルの内容
+     * @throws ファイルが存在しない場合
+     */
+    static async readFile(filePath) {
+        return await fs.readFile(filePath, 'utf-8');
+    }
+    /**
      * ファイルに書き込む
      *
      * @param filePath - ファイルパス

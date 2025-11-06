@@ -369,6 +369,49 @@ export class GitWorktreeManager {
         }
     }
     /**
+     * 指定したパスの変更をaddしてcommitする
+     *
+     * @param paths - git addするパス（複数指定可能）
+     * @param message - コミットメッセージ
+     * @returns コミットが実行された場合true、変更がない場合false
+     */
+    async addAndCommit(paths, message) {
+        try {
+            const pathArray = Array.isArray(paths) ? paths : [paths];
+            // git add
+            for (const p of pathArray) {
+                execSync(`git add "${p}"`, {
+                    cwd: this.baseRepoPath,
+                    stdio: 'pipe'
+                });
+            }
+            // 変更があるかチェック
+            try {
+                execSync('git diff --cached --quiet', {
+                    cwd: this.baseRepoPath,
+                    stdio: 'pipe'
+                });
+                // 変更がない場合（git diff --quietが成功した場合）
+                console.log('📝 コミットする変更がありません');
+                return false;
+            }
+            catch {
+                // 変更がある場合（git diff --quietが失敗した場合）
+            }
+            // git commit
+            execSync(`git commit -m "${message.replace(/"/g, '\\"')}"`, {
+                cwd: this.baseRepoPath,
+                stdio: 'pipe'
+            });
+            console.log(`✅ コミット完了: ${message.split('\n')[0]}`);
+            return true;
+        }
+        catch (error) {
+            console.error('❌ git add/commit エラー:', error);
+            throw new Error(`Failed to commit changes: ${error}`);
+        }
+    }
+    /**
      * 孤立したタスクブランチ（worktreeが存在しないfeature/task-*ブランチ）を削除
      */
     async cleanupOrphanedTaskBranches() {

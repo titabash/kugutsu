@@ -70,6 +70,17 @@ export class FileSystemManager {
   }
 
   /**
+   * ファイルを読み込む
+   *
+   * @param filePath - ファイルパス
+   * @returns ファイルの内容
+   * @throws ファイルが存在しない場合
+   */
+  static async readFile(filePath: string): Promise<string> {
+    return await fs.readFile(filePath, 'utf-8');
+  }
+
+  /**
    * ファイルに書き込む
    *
    * @param filePath - ファイルパス

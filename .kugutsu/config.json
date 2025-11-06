@@ -1,0 +1,94 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Kugutsu Configuration",
+  "description": "Configuration file for Kugutsu AI parallel development system",
+  "type": "object",
+  "properties": {
+    "provider": {
+      "type": "string",
+      "enum": [
+        "claude",
+        "codex"
+      ],
+      "default": "claude",
+      "description": "AI provider to use (claude or codex)"
+    },
+    "claude": {
+      "type": "object",
+      "properties": {
+        "model": {
+          "type": "string",
+          "default": "claude-sonnet-4-5-20250929",
+          "description": "Claude model ID"
+        },
+        "apiKey": {
+          "type": "string",
+          "description": "Claude API key (can be overridden by ANTHROPIC_API_KEY env var)"
+        }
+      }
+    },
+    "codex": {
+      "type": "object",
+      "properties": {
+        "model": {
+          "type": "string",
+          "default": "gpt-5-codex",
+          "description": "OpenAI Codex model ID"
+        },
+        "apiKey": {
+          "type": "string",
+          "description": "OpenAI API key (can be overridden by OPENAI_API_KEY env var)"
+        }
+      }
+    },
+    "parallelDev": {
+      "type": "object",
+      "properties": {
+        "maxEngineers": {
+          "type": "number",
+          "default": 3,
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Maximum number of concurrent AI engineers"
+        },
+        "maxTurns": {
+          "type": "number",
+          "default": 30,
+          "minimum": 5,
+          "maximum": 50,
+          "description": "Maximum turns per task"
+        },
+        "baseBranch": {
+          "type": "string",
+          "default": "main",
+          "description": "Base branch for development"
+        },
+        "worktreeBasePath": {
+          "type": "string",
+          "default": "./worktrees",
+          "description": "Base path for git worktrees"
+        },
+        "cleanup": {
+          "type": "boolean",
+          "default": false,
+          "description": "Clean up worktrees after completion"
+        }
+      }
+    },
+    "ui": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "electron",
+            "cli",
+            "visual"
+          ],
+          "default": "electron",
+          "description": "UI mode (electron, cli, or visual)"
+        }
+      }
+    }
+  }
+}

@@ -17,7 +17,7 @@ import type {
   ProjectMetadata,
   Sprint,
 } from './types.js';
-import type { StoryMapping } from '../managers/DirectorAI.js';
+import type { StoryMapping } from '../types/scrum.js';
 
 /**
  * Parallel Development State

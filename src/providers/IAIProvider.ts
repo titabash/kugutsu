@@ -159,7 +159,7 @@ export interface AIProviderConfig {
   /**
    * Provider type
    */
-  provider: 'claude' | 'codex';
+  provider: 'claude' | 'codex' | 'mock';
 
   /**
    * Claude-specific configuration

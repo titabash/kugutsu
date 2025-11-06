@@ -15,7 +15,7 @@ import type { ParallelDevStateType, ParallelDevStateUpdate } from '../state.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 import type { AIProviderConfig } from '../../providers/IAIProvider.js';
 import { DataPersistence } from '../../utils/DataPersistence.js';
-import type { StoryMapping } from '../../managers/DirectorAI.js';
+import type { StoryMapping } from '../../types/scrum.js';
 
 /**
  * ストーリーマッピングレビュー結果

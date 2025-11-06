@@ -43,7 +43,13 @@ export class AIProviderFactory {
      * @returns IAIProvider instance
      */
     static createFromEnv() {
-        const provider = (process.env.KUGUTSU_PROVIDER || 'claude');
+        // Default to 'mock' for safety and cost efficiency
+        // Use 'claude' or 'codex' explicitly when needed
+        const provider = (process.env.KUGUTSU_PROVIDER || 'mock');
+        // If mock provider is requested, return it immediately
+        if (provider === 'mock') {
+            return new MockAIProvider();
+        }
         const config = {
             provider,
             claude: {

@@ -26,6 +26,7 @@ export interface SprintHistoryData {
 export class DataPersistence {
   private baseRepoPath: string;
   private kugutsuDir: string;
+  private repositoryDir: string;
   private tasksDir: string;
   private sprintsDir: string;
   private projectsDir: string;
@@ -33,6 +34,7 @@ export class DataPersistence {
   constructor(baseRepoPath: string) {
     this.baseRepoPath = baseRepoPath;
     this.kugutsuDir = path.join(baseRepoPath, '.kugutsu');
+    this.repositoryDir = path.join(this.kugutsuDir, 'repository');
     this.tasksDir = path.join(this.kugutsuDir, 'tasks');
     this.sprintsDir = path.join(this.kugutsuDir, 'sprints');
     this.projectsDir = path.join(this.kugutsuDir, 'projects');
@@ -43,6 +45,12 @@ export class DataPersistence {
    */
   async initialize(): Promise<void> {
     await FileSystemManager.ensureDirectory(this.kugutsuDir);
+    await FileSystemManager.ensureDirectory(this.repositoryDir);
+    await FileSystemManager.ensureDirectory(path.join(this.repositoryDir, 'architecture'));
+    await FileSystemManager.ensureDirectory(path.join(this.repositoryDir, 'standards'));
+    await FileSystemManager.ensureDirectory(path.join(this.repositoryDir, 'database'));
+    await FileSystemManager.ensureDirectory(path.join(this.repositoryDir, 'api'));
+    await FileSystemManager.ensureDirectory(path.join(this.repositoryDir, 'deployment'));
     await FileSystemManager.ensureDirectory(this.tasksDir);
     await FileSystemManager.ensureDirectory(this.sprintsDir);
     await FileSystemManager.ensureDirectory(this.projectsDir);
@@ -575,6 +583,302 @@ export class DataPersistence {
   async loadTaskReview(projectId: string, taskId: string): Promise<any | null> {
     const filePath = path.join(this.projectsDir, projectId, 'reviews', `${taskId}.json`);
     return await FileSystemManager.readJSONSafe(filePath, null);
+  }
+
+  // ========================================
+  // リポジトリ仕様（repository/）
+  // ========================================
+
+  /**
+   * リポジトリメタデータを保存
+   *
+   * @param metadata - リポジトリメタデータ
+   */
+  async saveRepositoryMetadata(metadata: any): Promise<void> {
+    const filePath = path.join(this.repositoryDir, 'metadata.json');
+    await FileSystemManager.writeJSON(filePath, metadata);
+  }
+
+  /**
+   * リポジトリメタデータを読み込み
+   *
+   * @returns リポジトリメタデータ、または null
+   */
+  async loadRepositoryMetadata(): Promise<any | null> {
+    const filePath = path.join(this.repositoryDir, 'metadata.json');
+    return await FileSystemManager.readJSONSafe(filePath, null);
+  }
+
+  /**
+   * アーキテクチャ概要（Markdown）を保存
+   *
+   * @param markdown - アーキテクチャ概要のMarkdown
+   */
+  async saveArchitectureOverview(markdown: string): Promise<void> {
+    const filePath = path.join(this.repositoryDir, 'architecture', 'overview.md');
+    await FileSystemManager.writeFile(filePath, markdown);
+  }
+
+  /**
+   * アーキテクチャ概要を読み込み
+   *
+   * @returns Markdownコンテンツ、または null
+   */
+  async loadArchitectureOverview(): Promise<string | null> {
+    const filePath = path.join(this.repositoryDir, 'architecture', 'overview.md');
+    try {
+      return await FileSystemManager.readFile(filePath);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 技術スタック定義を保存
+   *
+   * @param techStack - 技術スタック定義
+   */
+  async saveTechStack(techStack: any): Promise<void> {
+    const filePath = path.join(this.repositoryDir, 'architecture', 'tech-stack.json');
+    await FileSystemManager.writeJSON(filePath, techStack);
+  }
+
+  /**
+   * 技術スタック定義を読み込み
+   *
+   * @returns 技術スタック定義、または null
+   */
+  async loadTechStack(): Promise<any | null> {
+    const filePath = path.join(this.repositoryDir, 'architecture', 'tech-stack.json');
+    return await FileSystemManager.readJSONSafe(filePath, null);
+  }
+
+  /**
+   * レイヤー構造（Markdown）を保存
+   *
+   * @param markdown - レイヤー構造のMarkdown
+   */
+  async saveArchitectureLayers(markdown: string): Promise<void> {
+    const filePath = path.join(this.repositoryDir, 'architecture', 'layers.md');
+    await FileSystemManager.writeFile(filePath, markdown);
+  }
+
+  /**
+   * レイヤー構造を読み込み
+   *
+   * @returns Markdownコンテンツ、または null
+   */
+  async loadArchitectureLayers(): Promise<string | null> {
+    const filePath = path.join(this.repositoryDir, 'architecture', 'layers.md');
+    try {
+      return await FileSystemManager.readFile(filePath);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * コーディング規約（Markdown）を保存
+   *
+   * @param markdown - コーディング規約のMarkdown
+   */
+  async saveCodingStandards(markdown: string): Promise<void> {
+    const filePath = path.join(this.repositoryDir, 'standards', 'coding-standards.md');
+    await FileSystemManager.writeFile(filePath, markdown);
+  }
+
+  /**
+   * コーディング規約を読み込み
+   *
+   * @returns Markdownコンテンツ、または null
+   */
+  async loadCodingStandards(): Promise<string | null> {
+    const filePath = path.join(this.repositoryDir, 'standards', 'coding-standards.md');
+    try {
+      return await FileSystemManager.readFile(filePath);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 命名規則（Markdown）を保存
+   *
+   * @param markdown - 命名規則のMarkdown
+   */
+  async saveNamingConventions(markdown: string): Promise<void> {
+    const filePath = path.join(this.repositoryDir, 'standards', 'naming-conventions.md');
+    await FileSystemManager.writeFile(filePath, markdown);
+  }
+
+  /**
+   * 命名規則を読み込み
+   *
+   * @returns Markdownコンテンツ、または null
+   */
+  async loadNamingConventions(): Promise<string | null> {
+    const filePath = path.join(this.repositoryDir, 'standards', 'naming-conventions.md');
+    try {
+      return await FileSystemManager.readFile(filePath);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * セキュリティポリシー（Markdown）を保存
+   *
+   * @param markdown - セキュリティポリシーのMarkdown
+   */
+  async saveSecurityPolicy(markdown: string): Promise<void> {
+    const filePath = path.join(this.repositoryDir, 'standards', 'security-policy.md');
+    await FileSystemManager.writeFile(filePath, markdown);
+  }
+
+  /**
+   * セキュリティポリシーを読み込み
+   *
+   * @returns Markdownコンテンツ、または null
+   */
+  async loadSecurityPolicy(): Promise<string | null> {
+    const filePath = path.join(this.repositoryDir, 'standards', 'security-policy.md');
+    try {
+      return await FileSystemManager.readFile(filePath);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * リポジトリ全体のDB設計を保存
+   *
+   * @param schema - DB schema
+   */
+  async saveRepositoryDatabaseSchema(schema: any): Promise<void> {
+    const filePath = path.join(this.repositoryDir, 'database', 'schema.json');
+    await FileSystemManager.writeJSON(filePath, schema);
+  }
+
+  /**
+   * リポジトリ全体のDB設計を読み込み
+   *
+   * @returns DB schema、または null
+   */
+  async loadRepositoryDatabaseSchema(): Promise<any | null> {
+    const filePath = path.join(this.repositoryDir, 'database', 'schema.json');
+    return await FileSystemManager.readJSONSafe(filePath, null);
+  }
+
+  /**
+   * リポジトリ全体のER図（Markdown）を保存
+   *
+   * @param markdown - ER図のMarkdown
+   */
+  async saveRepositoryERDiagram(markdown: string): Promise<void> {
+    const filePath = path.join(this.repositoryDir, 'database', 'er-diagram.md');
+    await FileSystemManager.writeFile(filePath, markdown);
+  }
+
+  /**
+   * リポジトリ全体のER図を読み込み
+   *
+   * @returns Markdownコンテンツ、または null
+   */
+  async loadRepositoryERDiagram(): Promise<string | null> {
+    const filePath = path.join(this.repositoryDir, 'database', 'er-diagram.md');
+    try {
+      return await FileSystemManager.readFile(filePath);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * リポジトリ全体のAPI仕様を保存
+   *
+   * @param apiSpec - API仕様（OpenAPI形式）
+   */
+  async saveRepositoryAPISpec(apiSpec: any): Promise<void> {
+    const filePath = path.join(this.repositoryDir, 'api', 'api-spec.json');
+    await FileSystemManager.writeJSON(filePath, apiSpec);
+  }
+
+  /**
+   * リポジトリ全体のAPI仕様を読み込み
+   *
+   * @returns API仕様、または null
+   */
+  async loadRepositoryAPISpec(): Promise<any | null> {
+    const filePath = path.join(this.repositoryDir, 'api', 'api-spec.json');
+    return await FileSystemManager.readJSONSafe(filePath, null);
+  }
+
+  /**
+   * リポジトリ全体のAPI仕様（Markdown）を保存
+   *
+   * @param markdown - API仕様のMarkdown
+   */
+  async saveRepositoryAPISpecMarkdown(markdown: string): Promise<void> {
+    const filePath = path.join(this.repositoryDir, 'api', 'api-spec.md');
+    await FileSystemManager.writeFile(filePath, markdown);
+  }
+
+  /**
+   * リポジトリ全体のAPI仕様（Markdown）を読み込み
+   *
+   * @returns Markdownコンテンツ、または null
+   */
+  async loadRepositoryAPISpecMarkdown(): Promise<string | null> {
+    const filePath = path.join(this.repositoryDir, 'api', 'api-spec.md');
+    try {
+      return await FileSystemManager.readFile(filePath);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * デプロイメント環境定義を保存
+   *
+   * @param environments - 環境定義
+   */
+  async saveDeploymentEnvironments(environments: any): Promise<void> {
+    const filePath = path.join(this.repositoryDir, 'deployment', 'environments.json');
+    await FileSystemManager.writeJSON(filePath, environments);
+  }
+
+  /**
+   * デプロイメント環境定義を読み込み
+   *
+   * @returns 環境定義、または null
+   */
+  async loadDeploymentEnvironments(): Promise<any | null> {
+    const filePath = path.join(this.repositoryDir, 'deployment', 'environments.json');
+    return await FileSystemManager.readJSONSafe(filePath, null);
+  }
+
+  /**
+   * CI/CD設計（Markdown）を保存
+   *
+   * @param markdown - CI/CD設計のMarkdown
+   */
+  async saveCICDDesign(markdown: string): Promise<void> {
+    const filePath = path.join(this.repositoryDir, 'deployment', 'ci-cd.md');
+    await FileSystemManager.writeFile(filePath, markdown);
+  }
+
+  /**
+   * CI/CD設計を読み込み
+   *
+   * @returns Markdownコンテンツ、または null
+   */
+  async loadCICDDesign(): Promise<string | null> {
+    const filePath = path.join(this.repositoryDir, 'deployment', 'ci-cd.md');
+    try {
+      return await FileSystemManager.readFile(filePath);
+    } catch {
+      return null;
+    }
   }
 
   // ========================================

@@ -343,32 +343,44 @@ npm run electron  # Then use File > Open Project in the app
 ### Project Structure
 - `src/` - Main source directory
   - `index.ts` - Basic Claude Code SDK runner
-  - `parallel-dev.ts` - AI parallel development CLI entry point
-  - `parallel-dev-electron.ts` - Electron UI entry point
+  - `parallel-dev-cli.ts` - CLI entry point (LangGraph-based)
+  - `graph/` - LangGraph workflow definitions
+    - `state.ts` - State definition and reducers
+    - `types.ts` - Type definitions for workflow
+    - `ParallelDevGraph.ts` - Graph construction (3 workflows)
+    - `nodes/` - LangGraph node implementations
+      - `ProductOwnerNode.ts` - Task analysis and decomposition
+      - `EngineerNode.ts` - Code implementation
+      - `ReviewNode.ts` - Code review
+      - `MergeCoordinatorNode.ts` - Merge coordination
+      - `ConflictResolverNode.ts` - Conflict resolution
+      - `DirectorNode.ts` - Story mapping creation
+      - `SprintPlanningNode.ts` - Sprint planning
+      - `CheckModeNode.ts` - Continuation mode detection
+      - And more...
+  - `providers/` - AI Provider abstraction layer
+    - `IAIProvider.ts` - Provider interface
+    - `AIProviderFactory.ts` - Factory for creating providers
+    - `ClaudeAgentProvider.ts` - Claude Agent SDK provider
+    - `OpenAICodexProvider.ts` - OpenAI Codex provider (planned)
+    - `MockAIProvider.ts` - Mock provider for testing
   - `managers/` - Core system managers
-    - `BaseAI.ts` - Base AI agent functionality
-    - `ParallelDevelopmentOrchestrator.ts` - Main orchestrator
-    - `ParallelDevelopmentOrchestratorWithElectron.ts` - Electron-enhanced orchestrator
-    - `ParallelPipelineManager.ts` - Event-driven pipeline orchestrator
-    - `EngineerAI.ts` - AI engineer implementation
-    - `ProductOwnerAI.ts` - Task analysis and planning
-    - `TechLeadAI.ts` - Technical review and guidance
-    - `ReviewWorkflow.ts` - Code review automation
     - `GitWorktreeManager.ts` - Git worktree operations
+    - `FileSystemManager.ts` - File system operations
   - `utils/` - Utility functions
-    - `MergeCoordinator.ts` - Merge conflict resolution
+    - `DataPersistence.ts` - JSON-based data persistence
     - `TaskInstructionManager.ts` - Task instruction management
-    - `TaskQueue.ts` - Priority-based task queue
-    - `ReviewQueue.ts` - Review queue management
-    - `MergeQueue.ts` - Merge queue with mutex
-    - `TaskEventEmitter.ts` - Event-driven communication
-    - `ParallelLogViewer.ts` - Terminal-based log viewer
-    - `ImprovedParallelLogViewer.ts` - Enhanced log viewer
+    - `SchemaValidator.ts` - JSON schema validation
+    - `MemoryMonitor.ts` - Memory usage monitoring
     - `ElectronLogAdapter.ts` - Electron logging adapter
     - `LogFormatter.ts` - Log formatting utilities
   - `types/` - TypeScript type definitions
     - `index.ts` - Core type definitions
     - `logging.ts` - Logging-related types
+    - `scrum.ts` - Scrum development types
+  - `electron/` - Electron-specific code
+    - `ParallelDevOrchestrator.ts` - Orchestrator with Electron support
+    - `StateStreamManager.ts` - Real-time state streaming
 - `electron/` - Electron application
   - `main/` - Main process
     - `index.ts` - Electron main process
@@ -395,16 +407,26 @@ npm run electron  # Then use File > Open Project in the app
 6. **Merge Coordination**: Intelligent conflict resolution and merge management
 
 ### Core Components
-1. **ParallelPipelineManager**: Event-driven pipeline orchestrator with true parallel processing
-2. **ProductOwnerAI**: Requirements analysis and task decomposition
-3. **EngineerAI**: Code implementation with Claude Code SDK and context preservation
-4. **TechLeadAI**: Technical oversight and architecture guidance
-5. **ReviewWorkflow**: Automated code review process with parallel reviewers
-6. **GitWorktreeManager**: Git operations and branch management
-7. **TaskQueue/ReviewQueue/MergeQueue**: Priority-based processing queues with mutex protection
-8. **ElectronLogAdapter**: Real-time log streaming to Electron UI
-9. **ParallelLogViewer**: Terminal-based visual log monitoring
-10. **BaseAI**: Shared functionality for all AI agents
+1. **LangGraph Workflows**: Three specialized workflows for different development modes
+   - **Parallel Development**: Standard parallel task execution
+   - **Sprint-Driven Development**: Sprint-based iterative development
+   - **Scrum Development**: Full Scrum workflow with story mapping
+2. **AI Provider Abstraction**: Unified interface for multiple AI providers
+   - Claude Agent SDK Provider
+   - OpenAI Codex Provider (planned)
+   - Mock Provider (for testing)
+3. **LangGraph Nodes**: Modular workflow components
+   - **ProductOwnerNode**: Requirements analysis and task decomposition
+   - **EngineerNode**: Code implementation with AI assistance
+   - **ReviewNode**: Automated code review
+   - **MergeCoordinatorNode**: Intelligent merge coordination
+   - **ConflictResolverNode**: AI-powered conflict resolution
+   - **DirectorNode**: Story mapping and user story creation
+4. **State Management**: LangGraph-based state with reducers
+5. **GitWorktreeManager**: Git operations and branch management
+6. **DataPersistence**: JSON-based persistence for workflows
+7. **StateStreamManager**: Real-time state streaming for Electron UI
+8. **MemoryMonitor**: System resource monitoring
 
 ### Parallel Development Workflow
 The system implements a true parallel processing workflow with three independent pipelines:

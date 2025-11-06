@@ -14,6 +14,7 @@ import { conflictResolverNode } from './nodes/ConflictResolverNode.js';
 import { checkModeNode, checkModeRouter } from './nodes/CheckModeNode.js';
 import { sprintPlanningNode, sprintPlanningRouter } from './nodes/SprintPlanningNode.js';
 import { sprintReviewNode, sprintReviewRouter } from './nodes/SprintReviewNode.js';
+import { directorNode } from './nodes/DirectorNode.js';
 import { reviewStoryMappingNode } from './nodes/ReviewStoryMappingNode.js';
 import { techLeadDesignNode } from './nodes/TechLeadDesignNode.js';
 import { reviewDesignNode } from './nodes/ReviewDesignNode.js';
@@ -378,26 +379,7 @@ export function compileSprintDrivenGraph() {
 export function createScrumDevGraph() {
     const workflow = new StateGraph(ParallelDevState)
         // Scrum Development Flow nodes
-        .addNode('director_ai', async (state) => {
-        // DirectorAI: Create story mapping
-        const { DirectorAI } = await import('../managers/DirectorAI.js');
-        const director = new DirectorAI(state.config.baseRepoPath);
-        console.log('📋 DirectorAI: ストーリーマッピング作成開始');
-        const result = await director.createStoryMapping(state.userRequest, state.currentProjectId || 'default-project');
-        console.log('✅ ストーリーマッピング作成完了');
-        return {
-            storyMapping: result.storyMapping,
-            currentProjectId: state.currentProjectId || 'default-project',
-            logs: [
-                {
-                    timestamp: new Date(),
-                    level: 'success',
-                    source: 'director_ai',
-                    message: `ストーリーマッピング作成完了（${result.storyMapping.epics.length} Epics）`,
-                },
-            ],
-        };
-    })
+        .addNode('director_ai', directorNode)
         .addNode('review_story_mapping', reviewStoryMappingNode)
         .addNode('tech_lead_design', techLeadDesignNode)
         .addNode('review_design', reviewDesignNode)

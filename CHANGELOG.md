@@ -5,6 +5,60 @@ All notable changes to Kugutsu will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### 🔄 Architecture Unification
+
+**Major refactoring to unify CLI and Electron architectures under LangGraph**
+
+#### Breaking Changes
+- **Removed legacy event-driven architecture**
+  - Deleted `ParallelDevelopmentOrchestrator` (old CLI implementation)
+  - Deleted `ParallelPipelineManager` (event-driven pipeline)
+  - Deleted `BaseAI`, `EngineerAI`, `ProductOwnerAI`, `TechLeadAI` (old AI classes)
+  - Deleted `TaskEventEmitter`, `TaskQueue`, `ReviewQueue`, `MergeQueue`
+  - Deleted `ReviewWorkflow`, `MergeCoordinator`, `ClaudeCodeSetupChecker`
+
+#### Added
+- **Mock AI Provider support**
+  - Added `'mock'` as default AI provider for safe testing
+  - Environment variable `KUGUTSU_PROVIDER` now accepts `mock`, `claude`, or `codex`
+  - No API costs for testing with mock provider
+- **DirectorNode** for Scrum workflow
+  - Extracted from DirectorAI class
+  - Uses AI Provider abstraction
+  - Integrated with LangGraph state management
+- **Scrum type definitions** (`src/types/scrum.ts`)
+  - Extracted StoryMapping, Epic, UserStory types for reuse
+
+#### Changed
+- **Unified CLI implementation**
+  - `parallel-dev-cli.ts` now uses LangGraph exclusively
+  - Both CLI and Electron versions use the same LangGraph workflows
+  - Added comprehensive validation (Git repo, commits, worktree detection)
+  - Added protected branch warnings
+  - Improved error messages and user guidance
+- **AI Provider type system**
+  - Updated `AIProviderConfig` to include `'mock'` provider
+  - Updated `ParallelDevConfig` to support `'mock'` provider
+- **Documentation**
+  - Updated `CLAUDE.md` to reflect unified architecture
+  - Removed references to legacy implementation
+  - Updated project structure documentation
+
+#### Fixed
+- Build errors related to removed legacy files
+- Type inconsistencies in AI provider configuration
+- Import errors in LangGraph nodes
+
+#### Impact
+- **100% LangGraph adoption**: Both CLI and Electron now use LangGraph
+- **Simplified codebase**: Removed 15+ legacy files
+- **Better testability**: Mock provider enables cost-free testing
+- **Consistent behavior**: CLI and Electron share the same workflow logic
+
+---
+
 ## [2.0.0] - 2025-11-07
 
 ### 🎉 Major Release: LangGraph Architecture + Scrum Development

@@ -7,6 +7,7 @@ import { GraphVisualization } from '@/components/GraphVisualization'
 import { TaskKanbanBoard } from '@/components/TaskKanbanBoard'
 import { LogViewer } from '@/components/LogViewer'
 import { WelcomeScreen } from '@/components/WelcomeScreen'
+import { PromptPanel } from '@/components/PromptPanel'
 import { useElectronSync } from './hooks/useElectronSync'
 import { useAppStore } from './store/appStore'
 
@@ -33,7 +34,11 @@ export default function App() {
           <Header />
 
           {/* Main Content */}
-          <MainLayout leftPanel={<GraphVisualization />} rightPanel={<TaskKanbanBoard />} />
+          <MainLayout
+            leftPanel={<PromptPanel />}
+            graphPanel={<GraphVisualization />}
+            taskPanel={<TaskKanbanBoard />}
+          />
 
           {/* Bottom Panel (Logs) */}
           <BottomPanel>

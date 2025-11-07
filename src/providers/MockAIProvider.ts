@@ -29,6 +29,14 @@ export interface MockResponse {
    * Error message (if shouldThrowError is true)
    */
   errorMessage?: string;
+
+  /**
+   * Enable tool simulation (optional)
+   *
+   * When enabled, MockAIProvider will actually execute tool operations
+   * like Write, Read, Bash, etc.
+   */
+  simulateTools?: boolean;
 }
 
 /**
@@ -37,7 +45,8 @@ export interface MockResponse {
  * Used for testing without calling actual AI APIs
  */
 export class MockAIProvider implements IAIProvider {
-  private mockResponses: Map<string, MockResponse> = new Map();
+  private mockResponses: Array<{ pattern: RegExp; response: MockResponse }> = [];
+  private defaultResponse: MockResponse | undefined;
   private callCount: number = 0;
   private lastPrompt: string = '';
   private lastOptions: ExecuteOptions = {};
@@ -48,15 +57,15 @@ export class MockAIProvider implements IAIProvider {
    * Set mock response for a specific prompt pattern
    */
   setMockResponse(promptPattern: string | RegExp, response: MockResponse): void {
-    const key = promptPattern instanceof RegExp ? promptPattern.source : promptPattern;
-    this.mockResponses.set(key, response);
+    const pattern = promptPattern instanceof RegExp ? promptPattern : new RegExp(promptPattern);
+    this.mockResponses.push({ pattern, response });
   }
 
   /**
    * Set default mock response (fallback)
    */
   setDefaultResponse(response: MockResponse): void {
-    this.mockResponses.set('__default__', response);
+    this.defaultResponse = response;
   }
 
   /**
@@ -70,11 +79,8 @@ export class MockAIProvider implements IAIProvider {
     // Find matching response
     let response: MockResponse | undefined;
 
-    for (const [pattern, resp] of this.mockResponses.entries()) {
-      if (pattern === '__default__') continue;
-
-      const regex = new RegExp(pattern);
-      if (regex.test(prompt)) {
+    for (const { pattern, response: resp } of this.mockResponses) {
+      if (pattern.test(prompt)) {
         response = resp;
         break;
       }
@@ -82,7 +88,7 @@ export class MockAIProvider implements IAIProvider {
 
     // Use default if no match
     if (!response) {
-      response = this.mockResponses.get('__default__');
+      response = this.defaultResponse;
     }
 
     // If still no response, return empty
@@ -101,10 +107,46 @@ export class MockAIProvider implements IAIProvider {
       await new Promise((resolve) => setTimeout(resolve, response.delay));
     }
 
-    // Yield messages
+    // Yield messages and simulate tools if enabled
     for (const message of response.messages) {
+      // Simulate tool execution if enabled
+      if (response.simulateTools && message.type === 'system' && message.content?.toolUse) {
+        await this.simulateTool(message.content.toolUse);
+      }
+
       yield message;
     }
+  }
+
+  /**
+   * Simulate tool execution
+   *
+   * @param toolUse Tool use information
+   */
+  private async simulateTool(toolUse: any): Promise<void> {
+    const { tool, arguments: args } = toolUse;
+
+    if (tool === 'Write') {
+      // Simulate Write tool: actually create the file
+      const fs = await import('fs/promises');
+      const path = await import('path');
+
+      const { file_path, content } = args;
+      const dir = path.dirname(file_path);
+
+      // Create directory if it doesn't exist
+      await fs.mkdir(dir, { recursive: true });
+
+      // Write file
+      await fs.writeFile(file_path, content, 'utf-8');
+    } else if (tool === 'Read') {
+      // Simulate Read tool: actually read the file
+      const fs = await import('fs/promises');
+
+      const { file_path } = args;
+      await fs.readFile(file_path, 'utf-8');
+    }
+    // Add more tool simulations as needed (Bash, Edit, etc.)
   }
 
   /**
@@ -167,6 +209,8 @@ export class MockAIProvider implements IAIProvider {
    * Reset mock state
    */
   reset(): void {
+    this.mockResponses = [];
+    this.defaultResponse = undefined;
     this.callCount = 0;
     this.lastPrompt = '';
     this.lastOptions = {};

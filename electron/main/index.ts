@@ -1,19 +1,18 @@
 import { app, BrowserWindow, ipcMain, Menu, dialog } from 'electron';
 import * as path from 'path';
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
 import { existsSync, statSync } from 'fs';
 import { StateStreamManager } from '../../src/electron/StateStreamManager.js';
+import { ParallelDevOrchestrator } from '../../src/electron/ParallelDevOrchestrator.js';
 import type { ParallelDevStateType } from '../../src/graph/state.js';
+import type { ParallelDevConfig } from '../../src/graph/types.js';
 
-// ESM用の__dirname代替
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+// electron-viteが__dirnameと__filenameを自動的に提供するため、手動宣言は不要
 
 let mainWindow: BrowserWindow | null = null;
 let currentProjectPath: string | null = null;
 let stateStreamManager: StateStreamManager | null = null;
 let currentGraphState: ParallelDevStateType | null = null;
+let orchestrator: ParallelDevOrchestrator | null = null;
 
 // コマンドライン引数をチェック
 const shouldOpenDevTools = process.argv.includes('--devtools');
@@ -27,7 +26,7 @@ if (cwdIndex !== -1 && process.argv[cwdIndex + 1]) {
 }
 
 function createWindow() {
-  const preloadPath = path.join(__dirname, '../preload/index.cjs');
+  const preloadPath = path.join(__dirname, '../preload/index.mjs');
   console.log('[Electron Main] Preload script path:', preloadPath);
   console.log('[Electron Main] Preload script exists:', existsSync(preloadPath));
   
@@ -44,16 +43,16 @@ function createWindow() {
     title: 'Multi-Engineer Parallel Development'
   });
 
-  // HTMLを読み込む（ビルド後のファイルを使用）
-  const rendererPath = path.join(__dirname, '../dist/renderer/index.html');
+  // HTMLを読み込む（electron-viteビルド後のファイルを使用）
+  const rendererPath = path.join(__dirname, '../renderer/index.html');
   console.log('[Electron Main] Loading renderer from:', rendererPath);
   console.log('[Electron Main] Renderer exists:', existsSync(rendererPath));
 
   if (existsSync(rendererPath)) {
     mainWindow.loadFile(rendererPath);
   } else {
-    console.error('[Electron Main] Renderer file not found! Run `npm run build:renderer` first.');
-    mainWindow.loadURL('data:text/html,<h1>Error: Renderer not built. Run `npm run build:renderer`</h1>');
+    console.error('[Electron Main] Renderer file not found! Run `npm run electron:build` first.');
+    mainWindow.loadURL('data:text/html,<h1>Error: Renderer not built. Run `npm run electron:build`</h1>');
   }
 
   // レンダラープロセスのエラーをキャッチ
@@ -475,6 +474,99 @@ ipcMain.handle('get-task-details', async (event, taskId: string) => {
  */
 ipcMain.handle('log-error', async (event, { message, details }: { message: string; details?: any }) => {
   console.error('[Renderer Error]', message, details);
+});
+
+/**
+ * Execute prompt (start development workflow)
+ */
+ipcMain.handle('execute-prompt', async (event, { prompt, options }: {
+  prompt: string;
+  options: { provider?: string; maxEngineers?: number; maxTurns?: number }
+}) => {
+  console.log('[Electron Main] execute-prompt called:', { prompt, options });
+
+  if (!currentProjectPath) {
+    throw new Error('No project is currently opened');
+  }
+
+  const provider = (options.provider || 'mock') as 'claude' | 'codex' | 'mock';
+  const maxEngineers = options.maxEngineers || 3;
+  const maxTurns = options.maxTurns || 30;
+
+  console.log('[Electron Main] Prompt execution requested:', {
+    prompt,
+    projectPath: currentProjectPath,
+    provider,
+    maxEngineers,
+    maxTurns
+  });
+
+  // Send notification to renderer
+  if (mainWindow) {
+    mainWindow.webContents.send('prompt-execution-started', {
+      prompt,
+      provider,
+      maxEngineers,
+      maxTurns
+    });
+  }
+
+  try {
+    // Initialize Orchestrator if needed
+    if (!orchestrator) {
+      orchestrator = new ParallelDevOrchestrator();
+      orchestrator.setWindow(mainWindow);
+      console.log('[Electron Main] Orchestrator initialized');
+    }
+
+    // Build ParallelDevConfig
+    const config: ParallelDevConfig = {
+      maxEngineers,
+      maxTurns,
+      baseBranch: 'main',
+      baseRepoPath: currentProjectPath,
+      worktreeBasePath: path.join(currentProjectPath, 'worktrees'),
+      cleanup: false, // Don't cleanup worktrees for debugging
+      provider,
+    };
+
+    console.log('[Electron Main] Starting workflow execution...');
+
+    // Execute workflow (non-blocking - runs in background)
+    orchestrator.execute({
+      userRequest: prompt,
+      config,
+      window: mainWindow,
+      workflowType: 'parallel', // Use standard parallel workflow
+    }).then(finalState => {
+      console.log('[Electron Main] Workflow completed successfully');
+      console.log(`[Electron Main] Tasks completed: ${finalState.completedTasks.length}/${finalState.tasks.length}`);
+
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('prompt-execution-completed', {
+          success: true,
+          tasksCompleted: finalState.completedTasks.length,
+          tasksTotal: finalState.tasks.length,
+        });
+      }
+    }).catch(error => {
+      console.error('[Electron Main] Workflow execution failed:', error);
+
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('prompt-execution-failed', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    });
+
+    return {
+      success: true,
+      message: `Workflow execution started with ${provider} provider`
+    };
+  } catch (error) {
+    console.error('[Electron Main] Failed to start workflow:', error);
+    throw error;
+  }
 });
 
 // ==========================================

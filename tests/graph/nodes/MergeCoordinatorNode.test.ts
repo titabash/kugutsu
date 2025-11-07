@@ -3,7 +3,7 @@
  */
 
 import { jest } from '@jest/globals';
-import type { ParallelDevStateType } from '../../../src/graph/state.js';
+import { createInitialState, type ParallelDevStateType } from '../../../src/graph/state.js';
 import type { Task, Review } from '../../../src/graph/types.js';
 
 // Mock mergeCoordinatorNode function for testing logic
@@ -62,37 +62,28 @@ async function mockMergeCoordinatorNode(state: ParallelDevStateType) {
 describe('MergeCoordinatorNode', () => {
   test('should handle no tasks ready for merge', async () => {
     // Create state with no approved tasks
-    const state: ParallelDevStateType = {
-      userRequest: 'Test',
-      tasks: [
-        {
-          id: 'task-002',
-          title: 'Not reviewed task',
-          description: 'No review yet',
-          status: 'completed',
-          priority: 100,
-          dependencies: [],
-          worktreePath: '/test/worktrees/task-002',
-          branchName: 'task/task-002',
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-      ],
-      completedTasks: [],
-      failedTasks: [],
-      reviews: [],
-      mergeQueue: [],
-      worktrees: new Map(),
-      config: {
-        maxEngineers: 1,
-        maxTurns: 30,
-        baseBranch: 'main',
-        baseRepoPath: '/test/repo',
-        worktreeBasePath: '/test/worktrees',
+    const state = createInitialState('Test', {
+      maxEngineers: 1,
+      maxTurns: 30,
+      baseBranch: 'main',
+      baseRepoPath: '/test/repo',
+      worktreeBasePath: '/test/worktrees',
+    });
+
+    state.tasks = [
+      {
+        id: 'task-002',
+        title: 'Not reviewed task',
+        description: 'No review yet',
+        status: 'completed',
+        priority: 100,
+        dependencies: [],
+        worktreePath: '/test/worktrees/task-002',
+        branchName: 'task/task-002',
+        createdAt: new Date(),
+        updatedAt: new Date(),
       },
-      logs: [],
-      metadata: {},
-    };
+    ];
 
     // Execute mocked node
     const result = await mockMergeCoordinatorNode(state);
@@ -103,45 +94,38 @@ describe('MergeCoordinatorNode', () => {
   });
 
   test('should skip tasks with changes_requested review', async () => {
-    const state: ParallelDevStateType = {
-      userRequest: 'Test',
-      tasks: [
-        {
-          id: 'task-003',
-          title: 'Task with requested changes',
-          description: 'Needs changes',
-          status: 'completed',
-          priority: 100,
-          dependencies: [],
-          worktreePath: '/test/worktrees/task-003',
-          branchName: 'task/task-003',
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-      ],
-      completedTasks: [],
-      failedTasks: [],
-      reviews: [
-        {
-          taskId: 'task-003',
-          reviewer: 'TechLeadAI',
-          status: 'changes_requested',
-          comments: ['Please fix issues'],
-          timestamp: new Date(),
-        },
-      ],
-      mergeQueue: [],
-      worktrees: new Map(),
-      config: {
-        maxEngineers: 1,
-        maxTurns: 30,
-        baseBranch: 'main',
-        baseRepoPath: '/test/repo',
-        worktreeBasePath: '/test/worktrees',
+    const state = createInitialState('Test', {
+      maxEngineers: 1,
+      maxTurns: 30,
+      baseBranch: 'main',
+      baseRepoPath: '/test/repo',
+      worktreeBasePath: '/test/worktrees',
+    });
+
+    state.tasks = [
+      {
+        id: 'task-003',
+        title: 'Task with requested changes',
+        description: 'Needs changes',
+        status: 'completed',
+        priority: 100,
+        dependencies: [],
+        worktreePath: '/test/worktrees/task-003',
+        branchName: 'task/task-003',
+        createdAt: new Date(),
+        updatedAt: new Date(),
       },
-      logs: [],
-      metadata: {},
-    };
+    ];
+
+    state.reviews = [
+      {
+        taskId: 'task-003',
+        reviewer: 'TechLeadAI',
+        status: 'changes_requested',
+        comments: ['Please fix issues'],
+        timestamp: new Date(),
+      },
+    ];
 
     // Execute mocked node
     const result = await mockMergeCoordinatorNode(state);
@@ -152,53 +136,48 @@ describe('MergeCoordinatorNode', () => {
   });
 
   test('should skip tasks already in merge queue', async () => {
-    const state: ParallelDevStateType = {
-      userRequest: 'Test',
-      tasks: [
-        {
-          id: 'task-004',
-          title: 'Already in queue',
-          description: 'Already queued for merge',
-          status: 'completed',
-          priority: 100,
-          dependencies: [],
-          worktreePath: '/test/worktrees/task-004',
-          branchName: 'task/task-004',
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-      ],
-      completedTasks: [],
-      failedTasks: [],
-      reviews: [
-        {
-          taskId: 'task-004',
-          reviewer: 'TechLeadAI',
-          status: 'approved',
-          comments: ['Approved'],
-          timestamp: new Date(),
-        },
-      ],
-      mergeQueue: [
-        {
-          taskId: 'task-004',
-          sourceBranch: 'task/task-004',
-          targetBranch: 'main',
-          status: 'pending',
-          attemptedAt: new Date(),
-        },
-      ],
-      worktrees: new Map(),
-      config: {
-        maxEngineers: 1,
-        maxTurns: 30,
-        baseBranch: 'main',
-        baseRepoPath: '/test/repo',
-        worktreeBasePath: '/test/worktrees',
+    const state = createInitialState('Test', {
+      maxEngineers: 1,
+      maxTurns: 30,
+      baseBranch: 'main',
+      baseRepoPath: '/test/repo',
+      worktreeBasePath: '/test/worktrees',
+    });
+
+    state.tasks = [
+      {
+        id: 'task-004',
+        title: 'Already in queue',
+        description: 'Already queued for merge',
+        status: 'completed',
+        priority: 100,
+        dependencies: [],
+        worktreePath: '/test/worktrees/task-004',
+        branchName: 'task/task-004',
+        createdAt: new Date(),
+        updatedAt: new Date(),
       },
-      logs: [],
-      metadata: {},
-    };
+    ];
+
+    state.reviews = [
+      {
+        taskId: 'task-004',
+        reviewer: 'TechLeadAI',
+        status: 'approved',
+        comments: ['Approved'],
+        timestamp: new Date(),
+      },
+    ];
+
+    state.mergeQueue = [
+      {
+        taskId: 'task-004',
+        sourceBranch: 'task/task-004',
+        targetBranch: 'main',
+        status: 'pending',
+        attemptedAt: new Date(),
+      },
+    ];
 
     // Execute mocked node
     const result = await mockMergeCoordinatorNode(state);
@@ -209,45 +188,38 @@ describe('MergeCoordinatorNode', () => {
   });
 
   test('should skip tasks without branch name', async () => {
-    const state: ParallelDevStateType = {
-      userRequest: 'Test',
-      tasks: [
-        {
-          id: 'task-005',
-          title: 'No branch name',
-          description: 'Missing branch',
-          status: 'completed',
-          priority: 100,
-          dependencies: [],
-          worktreePath: '/test/worktrees/task-005',
-          // branchName is missing
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-      ],
-      completedTasks: [],
-      failedTasks: [],
-      reviews: [
-        {
-          taskId: 'task-005',
-          reviewer: 'TechLeadAI',
-          status: 'approved',
-          comments: ['Approved'],
-          timestamp: new Date(),
-        },
-      ],
-      mergeQueue: [],
-      worktrees: new Map(),
-      config: {
-        maxEngineers: 1,
-        maxTurns: 30,
-        baseBranch: 'main',
-        baseRepoPath: '/test/repo',
-        worktreeBasePath: '/test/worktrees',
+    const state = createInitialState('Test', {
+      maxEngineers: 1,
+      maxTurns: 30,
+      baseBranch: 'main',
+      baseRepoPath: '/test/repo',
+      worktreeBasePath: '/test/worktrees',
+    });
+
+    state.tasks = [
+      {
+        id: 'task-005',
+        title: 'No branch name',
+        description: 'Missing branch',
+        status: 'completed',
+        priority: 100,
+        dependencies: [],
+        worktreePath: '/test/worktrees/task-005',
+        // branchName is missing
+        createdAt: new Date(),
+        updatedAt: new Date(),
       },
-      logs: [],
-      metadata: {},
-    };
+    ];
+
+    state.reviews = [
+      {
+        taskId: 'task-005',
+        reviewer: 'TechLeadAI',
+        status: 'approved',
+        comments: ['Approved'],
+        timestamp: new Date(),
+      },
+    ];
 
     // Execute mocked node
     const result = await mockMergeCoordinatorNode(state);
@@ -258,45 +230,38 @@ describe('MergeCoordinatorNode', () => {
   });
 
   test('should add approved tasks to merge queue', async () => {
-    const state: ParallelDevStateType = {
-      userRequest: 'Test',
-      tasks: [
-        {
-          id: 'task-001',
-          title: 'Completed task',
-          description: 'Ready to merge',
-          status: 'completed',
-          priority: 100,
-          dependencies: [],
-          worktreePath: '/test/worktrees/task-001',
-          branchName: 'task/task-001',
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-      ],
-      completedTasks: [],
-      failedTasks: [],
-      reviews: [
-        {
-          taskId: 'task-001',
-          reviewer: 'TechLeadAI',
-          status: 'approved',
-          comments: ['Good work'],
-          timestamp: new Date(),
-        },
-      ],
-      mergeQueue: [],
-      worktrees: new Map(),
-      config: {
-        maxEngineers: 1,
-        maxTurns: 30,
-        baseBranch: 'main',
-        baseRepoPath: '/test/repo',
-        worktreeBasePath: '/test/worktrees',
+    const state = createInitialState('Test', {
+      maxEngineers: 1,
+      maxTurns: 30,
+      baseBranch: 'main',
+      baseRepoPath: '/test/repo',
+      worktreeBasePath: '/test/worktrees',
+    });
+
+    state.tasks = [
+      {
+        id: 'task-001',
+        title: 'Completed task',
+        description: 'Ready to merge',
+        status: 'completed',
+        priority: 100,
+        dependencies: [],
+        worktreePath: '/test/worktrees/task-001',
+        branchName: 'task/task-001',
+        createdAt: new Date(),
+        updatedAt: new Date(),
       },
-      logs: [],
-      metadata: {},
-    };
+    ];
+
+    state.reviews = [
+      {
+        taskId: 'task-001',
+        reviewer: 'TechLeadAI',
+        status: 'approved',
+        comments: ['Good work'],
+        timestamp: new Date(),
+      },
+    ];
 
     // Execute mocked node
     const result = await mockMergeCoordinatorNode(state);
@@ -310,64 +275,57 @@ describe('MergeCoordinatorNode', () => {
   });
 
   test('should process multiple approved tasks', async () => {
-    const state: ParallelDevStateType = {
-      userRequest: 'Test',
-      tasks: [
-        {
-          id: 'task-006',
-          title: 'First task',
-          description: 'First merge',
-          status: 'completed',
-          priority: 100,
-          dependencies: [],
-          worktreePath: '/test/worktrees/task-006',
-          branchName: 'task/task-006',
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-        {
-          id: 'task-007',
-          title: 'Second task',
-          description: 'Second merge',
-          status: 'completed',
-          priority: 80,
-          dependencies: [],
-          worktreePath: '/test/worktrees/task-007',
-          branchName: 'task/task-007',
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-      ],
-      completedTasks: [],
-      failedTasks: [],
-      reviews: [
-        {
-          taskId: 'task-006',
-          reviewer: 'TechLeadAI',
-          status: 'approved',
-          comments: ['Good'],
-          timestamp: new Date(),
-        },
-        {
-          taskId: 'task-007',
-          reviewer: 'TechLeadAI',
-          status: 'approved',
-          comments: ['Good'],
-          timestamp: new Date(),
-        },
-      ],
-      mergeQueue: [],
-      worktrees: new Map(),
-      config: {
-        maxEngineers: 2,
-        maxTurns: 30,
-        baseBranch: 'main',
-        baseRepoPath: '/test/repo',
-        worktreeBasePath: '/test/worktrees',
+    const state = createInitialState('Test', {
+      maxEngineers: 2,
+      maxTurns: 30,
+      baseBranch: 'main',
+      baseRepoPath: '/test/repo',
+      worktreeBasePath: '/test/worktrees',
+    });
+
+    state.tasks = [
+      {
+        id: 'task-006',
+        title: 'First task',
+        description: 'First merge',
+        status: 'completed',
+        priority: 100,
+        dependencies: [],
+        worktreePath: '/test/worktrees/task-006',
+        branchName: 'task/task-006',
+        createdAt: new Date(),
+        updatedAt: new Date(),
       },
-      logs: [],
-      metadata: {},
-    };
+      {
+        id: 'task-007',
+        title: 'Second task',
+        description: 'Second merge',
+        status: 'completed',
+        priority: 80,
+        dependencies: [],
+        worktreePath: '/test/worktrees/task-007',
+        branchName: 'task/task-007',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ];
+
+    state.reviews = [
+      {
+        taskId: 'task-006',
+        reviewer: 'TechLeadAI',
+        status: 'approved',
+        comments: ['Good'],
+        timestamp: new Date(),
+      },
+      {
+        taskId: 'task-007',
+        reviewer: 'TechLeadAI',
+        status: 'approved',
+        comments: ['Good'],
+        timestamp: new Date(),
+      },
+    ];
 
     // Execute mocked node
     const result = await mockMergeCoordinatorNode(state);

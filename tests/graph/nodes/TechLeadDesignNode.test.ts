@@ -166,12 +166,20 @@ POST /api/auth/login
         yield createMockMessage.result(true);
       });
 
+      const fs = await import('fs');
+      const path = await import('path');
+      const { mkdtempSync } = await import('fs');
+      const { tmpdir } = await import('os');
+
+      const tempDir = mkdtempSync(path.join(tmpdir(), 'techlead-design-test-'));
+      const worktreesDir = path.join(tempDir, 'worktrees');
+
       const initialState = createInitialState('Implement authentication', {
         maxEngineers: 3,
         maxTurns: 30,
         baseBranch: 'main',
-        baseRepoPath: '/test/repo',
-        worktreeBasePath: '/test/worktrees',
+        baseRepoPath: tempDir,
+        worktreeBasePath: worktreesDir,
       });
 
       const stateWithStoryMapping = {
@@ -365,12 +373,20 @@ Basic wireframes
         yield createMockMessage.result(true);
       });
 
+      const fs = await import('fs');
+      const path = await import('path');
+      const { mkdtempSync } = await import('fs');
+      const { tmpdir } = await import('os');
+
+      const tempDir = mkdtempSync(path.join(tmpdir(), 'techlead-json-test-'));
+      const worktreesDir = path.join(tempDir, 'worktrees');
+
       const initialState = createInitialState('Request', {
         maxEngineers: 3,
         maxTurns: 30,
         baseBranch: 'main',
-        baseRepoPath: '/test/repo',
-        worktreeBasePath: '/test/worktrees',
+        baseRepoPath: tempDir,
+        worktreeBasePath: worktreesDir,
       });
 
       const stateWithStoryMapping = {

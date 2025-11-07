@@ -1,28 +1,47 @@
-import { useState } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 interface MainLayoutProps {
   leftPanel: React.ReactNode
-  rightPanel: React.ReactNode
+  graphPanel: React.ReactNode
+  taskPanel: React.ReactNode
 }
 
-export function MainLayout({ leftPanel, rightPanel }: MainLayoutProps) {
+export function MainLayout({ leftPanel, graphPanel, taskPanel }: MainLayoutProps) {
   return (
     <div className="flex flex-1 overflow-hidden">
-      {/* Left Panel: Graph Visualization */}
-      <div className="flex w-1/2 flex-col border-r border-border bg-background">
-        <div className="flex h-12 items-center border-b border-border px-4">
-          <h2 className="text-sm font-semibold">依存関係グラフ</h2>
-        </div>
-        <div className="flex-1 overflow-hidden">{leftPanel}</div>
+      {/* Left Panel: Prompt/Chat */}
+      <div className="flex w-2/5 flex-col border-r border-border bg-background">
+        {leftPanel}
       </div>
 
-      {/* Right Panel: Task Kanban Board */}
-      <div className="flex w-1/2 flex-col bg-muted/20">
-        <div className="flex h-12 items-center border-b border-border px-4">
-          <h2 className="text-sm font-semibold">タスクボード</h2>
-        </div>
-        <div className="flex-1 overflow-hidden">{rightPanel}</div>
+      {/* Right Panel: Tabs (Graph / Tasks) */}
+      <div className="flex w-3/5 flex-col bg-muted/20">
+        <Tabs defaultValue="tasks" className="flex h-full flex-col">
+          <div className="border-b border-border bg-background">
+            <TabsList className="h-12 w-full justify-start rounded-none border-0 bg-transparent p-0">
+              <TabsTrigger
+                value="tasks"
+                className="h-12 rounded-none border-b-2 border-transparent px-6 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+              >
+                📋 タスクボード
+              </TabsTrigger>
+              <TabsTrigger
+                value="graph"
+                className="h-12 rounded-none border-b-2 border-transparent px-6 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+              >
+                📊 依存関係グラフ
+              </TabsTrigger>
+            </TabsList>
+          </div>
+
+          <TabsContent value="tasks" className="flex-1 overflow-hidden m-0">
+            {taskPanel}
+          </TabsContent>
+
+          <TabsContent value="graph" className="flex-1 overflow-hidden m-0">
+            {graphPanel}
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   )

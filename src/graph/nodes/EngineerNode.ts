@@ -2,12 +2,19 @@
  * Engineer Node
  *
  * Executes code implementation for a specific task
+ *
+ * **File-based Artifact Management:**
+ * - Reads tasks from `.kugutsu/tasks.json`
+ * - Reads instruction from `.kugutsu/tasks/{taskId}/instruction.md`
+ * - Updates task status to `implemented` in tasks.json after completion
  */
 
 import type { ParallelDevStateType, ParallelDevStateUpdate } from '../state.js';
-import type { Task } from '../types.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 import type { AIProviderConfig } from '../../providers/IAIProvider.js';
+import { FileReader } from '../../utils/FileReader.js';
+import { FileWriter } from '../../utils/FileWriter.js';
+import type { TaskArtifact } from '../../types/artifacts.js';
 
 /**
  * Engineer Node
@@ -23,10 +30,35 @@ export async function engineerNode(
   state: ParallelDevStateType,
   taskId: string
 ): Promise<ParallelDevStateUpdate> {
-  // Find the task
-  const task = state.tasks.find((t) => t.id === taskId);
+  const { config, tasksPath } = state;
 
-  if (!task) {
+  console.log(`👷 Engineer: タスク ${taskId} を実装しています...`);
+
+  // Read tasks from file
+  const fileReader = new FileReader(config.baseRepoPath);
+  const fileWriter = new FileWriter(config.baseRepoPath);
+
+  let tasks: TaskArtifact[];
+  try {
+    tasks = await fileReader.readJSON<TaskArtifact[]>(tasksPath || '.kugutsu/tasks.json');
+  } catch (error) {
+    return {
+      logs: [
+        {
+          timestamp: new Date(),
+          level: 'error',
+          source: 'EngineerNode',
+          message: `tasks.json の読み込みに失敗: ${error instanceof Error ? error.message : String(error)}`,
+          taskId,
+        },
+      ],
+    };
+  }
+
+  // Find the task
+  const taskArtifact = tasks.find((t) => t.id === taskId);
+
+  if (!taskArtifact) {
     return {
       logs: [
         {
@@ -40,7 +72,7 @@ export async function engineerNode(
     };
   }
 
-  if (!task.worktreePath) {
+  if (!taskArtifact.worktreePath) {
     return {
       logs: [
         {
@@ -54,7 +86,26 @@ export async function engineerNode(
     };
   }
 
-  console.log(`👷 Engineer: タスク ${taskId} を実装しています...`);
+  // Read instruction.md
+  const instructionPath = `.kugutsu/tasks/${taskId}/instruction.md`;
+  let instruction: string;
+  try {
+    instruction = await fileReader.readMarkdown(instructionPath);
+  } catch (error) {
+    return {
+      logs: [
+        {
+          timestamp: new Date(),
+          level: 'error',
+          source: 'EngineerNode',
+          message: `instruction.md の読み込みに失敗: ${error instanceof Error ? error.message : String(error)}`,
+          taskId,
+        },
+      ],
+    };
+  }
+
+  console.log(`📖 instruction.md を読み込みました`);
 
   try {
     // Create AI provider
@@ -67,10 +118,10 @@ export async function engineerNode(
 
     const provider = AIProviderFactory.create(providerConfig);
 
-    // Build implementation prompt
-    const dependenciesSection = task.dependencies.length > 0
+    // Build implementation prompt with instruction.md content
+    const dependenciesSection = taskArtifact.dependencies.length > 0
       ? `このタスクは以下のタスクに依存しています：
-${task.dependencies.map((depId) => `- ${depId}`).join('\n')}
+${taskArtifact.dependencies.map((depId) => `- ${depId}`).join('\n')}
 
 これらのタスクの変更内容を確認し、整合性を保ってください。`
       : 'このタスクに依存関係はありません。';
@@ -81,12 +132,15 @@ ${task.dependencies.map((depId) => `- ${depId}`).join('\n')}
 以下のタスクを実装してください。
 
 ## タスク情報
-- **ID**: ${task.id}
-- **タイトル**: ${task.title}
-- **説明**: ${task.description}
+- **ID**: ${taskArtifact.id}
+- **タイトル**: ${taskArtifact.title}
 
 ## 作業ディレクトリ
-${task.worktreePath}
+${taskArtifact.worktreePath}
+
+## タスクの詳細指示
+
+${instruction}
 
 ## 実装要件
 
@@ -119,14 +173,14 @@ ${dependenciesSection}
 
     // Execute implementation
     const messages: any[] = [];
-    let sessionId: string | undefined = task.sessionId;
+    let sessionId: string | undefined = taskArtifact.sessionId;
 
     for await (const message of provider.execute(implementationPrompt, {
       maxTurns: state.config.maxTurns,
-      cwd: task.worktreePath,
+      cwd: taskArtifact.worktreePath,
       permissionMode: 'acceptEdits',
       allowedTools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
-      resume: task.sessionId,
+      resume: taskArtifact.sessionId,
     })) {
       messages.push(message);
 
@@ -143,23 +197,21 @@ ${dependenciesSection}
 
     console.log(`✅ タスク ${taskId} の実装が完了しました`);
 
-    // Update task as completed
-    const completedTask: Task = {
-      ...task,
-      status: 'completed',
-      sessionId,
-      updatedAt: new Date(),
-    };
+    // Update task status to 'implemented' and save to file
+    taskArtifact.status = 'implemented';
+    taskArtifact.sessionId = sessionId;
+    taskArtifact.updatedAt = new Date().toISOString();
+
+    await fileWriter.writeJSON(tasksPath || '.kugutsu/tasks.json', tasks);
+    console.log(`📝 タスクステータスを更新しました: implemented`);
 
     return {
-      tasks: [completedTask],
-      completedTasks: [completedTask],
       logs: [
         {
           timestamp: new Date(),
           level: 'info',
           source: 'EngineerNode',
-          message: `タスク ${taskId} が完了しました`,
+          message: `タスク ${taskId} の実装が完了しました`,
           data: {
             taskId,
             messageCount: messages.length,
@@ -176,17 +228,24 @@ ${dependenciesSection}
   } catch (error) {
     console.error(`❌ タスク ${taskId} の実装に失敗:`, error);
 
-    // Mark task as failed
-    const failedTask: Task = {
-      ...task,
-      status: 'failed',
-      error: error instanceof Error ? error.message : String(error),
-      updatedAt: new Date(),
-    };
+    // Try to update task status to 'failed' in tasks.json
+    try {
+      const fileReader = new FileReader(config.baseRepoPath);
+      const fileWriter = new FileWriter(config.baseRepoPath);
+      const tasks = await fileReader.readJSON<TaskArtifact[]>(tasksPath || '.kugutsu/tasks.json');
+      const taskArtifact = tasks.find((t) => t.id === taskId);
+
+      if (taskArtifact) {
+        taskArtifact.status = 'failed';
+        taskArtifact.updatedAt = new Date().toISOString();
+        await fileWriter.writeJSON(tasksPath || '.kugutsu/tasks.json', tasks);
+        console.log(`📝 タスクステータスを更新しました: failed`);
+      }
+    } catch (fileError) {
+      console.error(`❌ tasks.json の更新に失敗:`, fileError);
+    }
 
     return {
-      tasks: [failedTask],
-      failedTasks: [failedTask],
       logs: [
         {
           timestamp: new Date(),

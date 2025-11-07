@@ -3,12 +3,20 @@
  *
  * Analyzes user requirements and generates tasks for parallel execution
  * Uses AI-driven analysis instead of hardcoded logic
+ *
+ * **File-based Artifact Management:**
+ * - Creates artifacts in `.kugutsu/` directory
+ * - AI directly writes files using Write tool
+ * - Returns file paths in state instead of data
  */
 
+import * as path from 'path';
 import type { ParallelDevStateType, ParallelDevStateUpdate } from '../state.js';
 import type { Task } from '../types.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 import type { AIProviderConfig } from '../../providers/IAIProvider.js';
+import { FileReader } from '../../utils/FileReader.js';
+import type { TechStack, Requirements, TaskArtifact } from '../../types/artifacts.js';
 
 /**
  * Product Owner Node
@@ -36,12 +44,16 @@ export async function productOwnerNode(
 
   console.log('📊 Product Owner: ユーザー要求を分析しています...');
 
+  const kugutsuDir = path.join(config.baseRepoPath, '.kugutsu');
+  const fileReader = new FileReader(config.baseRepoPath);
+
   try {
     // Phase 1: Technology Stack Analysis
+    const techStackFilePath = path.join(kugutsuDir, 'tech-stack.json');
     const techStackAnalysisPrompt = `
 # Technology Stack Analysis
 
-プロジェクトの技術スタックを分析してください。
+プロジェクトの技術スタックを分析して、ファイルに保存してください。
 
 ## 対象リポジトリ
 ${config.baseRepoPath}
@@ -52,9 +64,14 @@ ${config.baseRepoPath}
 2. 使用されているプログラミング言語を特定
 3. フレームワークとライブラリを特定
 4. ビルドツールとテストフレームワークを特定
+5. **Write ツールを使用して結果をファイルに保存**
 
-## 出力形式
-JSON形式で以下の構造で出力してください：
+## 出力ファイル
+**ファイルパス**: ${techStackFilePath}
+
+**ファイル形式**: JSON
+
+**構造**:
 \`\`\`json
 {
   "languages": ["言語1", "言語2"],
@@ -64,43 +81,57 @@ JSON形式で以下の構造で出力してください：
   "projectType": "プロジェクトタイプ"
 }
 \`\`\`
+
+**重要**: 必ず Write ツールを使用してファイルを作成してください。
 `;
 
-    let techStackResult = '';
     for await (const message of provider.execute(techStackAnalysisPrompt, {
       maxTurns: 5,
       cwd: config.baseRepoPath,
-      allowedTools: ['Read', 'Glob', 'Grep'],
+      allowedTools: ['Read', 'Glob', 'Grep', 'Write'],
       permissionMode: 'acceptEdits',
     })) {
-      if (message.type === 'assistant' && message.content) {
-        techStackResult += JSON.stringify(message.content);
-      }
+      // AI が Write ツールでファイルを作成するのを待つ
     }
 
     console.log('✅ 技術スタック分析完了');
 
+    // Read tech stack from file
+    let techStackContent = '';
+    try {
+      const techStack = await fileReader.readJSON<TechStack>('.kugutsu/tech-stack.json');
+      techStackContent = JSON.stringify(techStack, null, 2);
+    } catch (error) {
+      console.warn('⚠️ tech-stack.json の読み込みに失敗しました:', error);
+    }
+
     // Phase 2: Requirements Analysis
+    const requirementsFilePath = path.join(kugutsuDir, 'requirements.json');
     const requirementsAnalysisPrompt = `
 # Requirements Analysis
 
-以下の開発要求を分析してください。
+以下の開発要求を分析して、ファイルに保存してください。
 
 ## ユーザー要求
 ${userRequest}
 
 ## 技術スタック
-${techStackResult}
+${techStackContent}
 
 ## タスク
-MECE原則（漏れなく、重複なく）に基づいて要求を分析し、以下を出力してください：
+MECE原則（漏れなく、重複なく）に基づいて要求を分析し、以下を実行してください：
 
 1. **機能要件**: 実装すべき機能のリスト
 2. **非機能要件**: パフォーマンス、セキュリティ等の要件
 3. **制約条件**: 技術的制約や依存関係
+4. **Write ツールを使用して結果をファイルに保存**
 
-## 出力形式
-JSON形式で以下の構造で出力してください：
+## 出力ファイル
+**ファイルパス**: ${requirementsFilePath}
+
+**ファイル形式**: JSON
+
+**構造**:
 \`\`\`json
 {
   "functional": ["機能1", "機能2"],
@@ -108,30 +139,39 @@ JSON形式で以下の構造で出力してください：
   "constraints": ["制約1"]
 }
 \`\`\`
+
+**重要**: 必ず Write ツールを使用してファイルを作成してください。
 `;
 
-    let requirementsResult = '';
     for await (const message of provider.execute(requirementsAnalysisPrompt, {
       maxTurns: 5,
       cwd: config.baseRepoPath,
-      allowedTools: ['Read', 'Glob', 'Grep'],
+      allowedTools: ['Read', 'Glob', 'Grep', 'Write'],
       permissionMode: 'acceptEdits',
     })) {
-      if (message.type === 'assistant' && message.content) {
-        requirementsResult += JSON.stringify(message.content);
-      }
+      // AI が Write ツールでファイルを作成するのを待つ
     }
 
     console.log('✅ 要求分析完了');
 
+    // Read requirements from file
+    let requirementsContent = '';
+    try {
+      const requirements = await fileReader.readJSON<Requirements>('.kugutsu/requirements.json');
+      requirementsContent = JSON.stringify(requirements, null, 2);
+    } catch (error) {
+      console.warn('⚠️ requirements.json の読み込みに失敗しました:', error);
+    }
+
     // Phase 3: Task Generation
+    const tasksFilePath = path.join(kugutsuDir, 'tasks.json');
     const taskGenerationPrompt = `
 # Task Generation
 
-要求分析結果に基づいて、並列実行可能なタスクに分割してください。
+要求分析結果に基づいて、並列実行可能なタスクに分割して、ファイルに保存してください。
 
 ## 要求分析結果
-${requirementsResult}
+${requirementsContent}
 
 ## タスク生成の原則
 1. **独立性**: 各タスクは他のタスクと独立して実行可能
@@ -139,61 +179,76 @@ ${requirementsResult}
 3. **テスト駆動**: 各タスクはテストを含む
 4. **適切な粒度**: 大きすぎず、小さすぎないサイズ
 
-## 出力形式
-JSON配列形式で、以下の構造で出力してください：
+## タスク
+以下を実行してください：
+1. タスクを並列実行可能に分割
+2. 各タスクのメタデータを tasks.json に保存
+3. 各タスクの詳細指示を tasks/{taskId}/instruction.md に保存
+
+## 出力ファイル 1: タスクリスト
+**ファイルパス**: ${tasksFilePath}
+
+**ファイル形式**: JSON配列
+
+**構造**:
 \`\`\`json
 [
   {
     "id": "task-001",
     "title": "タスクタイトル",
-    "description": "詳細な説明",
+    "description": "概要",
     "priority": 10,
-    "dependencies": []
+    "dependencies": [],
+    "status": "pending",
+    "createdAt": "2025-01-07T10:00:00Z",
+    "updatedAt": "2025-01-07T10:00:00Z"
   }
 ]
 \`\`\`
 
-## 重要な注意事項
-- タスクIDは "task-001" のような形式
-- priorityは1-100の数値（高いほど優先度が高い）
-- dependenciesは他のタスクIDの配列
-- 依存関係は循環しないように
+## 出力ファイル 2: 各タスクの詳細指示
+タスクごとに以下のファイルを作成してください：
+**パス形式**: ${kugutsuDir}/tasks/{taskId}/instruction.md
+
+**例**: ${kugutsuDir}/tasks/task-001/instruction.md
+
+**内容**: Markdown形式で以下を含める
+- タスクの目的
+- 実装すべき詳細
+- 技術的制約
+- テスト駆動開発の手順
+- 動作確認方法
+
+**重要**: 必ず Write ツールを使用してすべてのファイルを作成してください。
 `;
 
-    let tasksJson = '';
     for await (const message of provider.execute(taskGenerationPrompt, {
       maxTurns: 10,
       cwd: config.baseRepoPath,
-      allowedTools: ['Read', 'Glob', 'Grep'],
+      allowedTools: ['Read', 'Glob', 'Grep', 'Write'],
       permissionMode: 'acceptEdits',
     })) {
-      if (message.type === 'assistant' && message.content) {
-        tasksJson += JSON.stringify(message.content);
-      }
+      // AI が Write ツールでファイルを作成するのを待つ
     }
 
     console.log('✅ タスク生成完了');
 
-    // Parse tasks from JSON
+    // Read tasks from file
     let tasks: Task[] = [];
     try {
-      // Extract JSON from the response
-      const jsonMatch = tasksJson.match(/\[[\s\S]*\]/);
-      if (jsonMatch) {
-        const parsedTasks = JSON.parse(jsonMatch[0]);
-        tasks = parsedTasks.map((task: any, index: number) => ({
-          id: task.id || `task-${String(index + 1).padStart(3, '0')}`,
-          title: task.title || `Task ${index + 1}`,
-          description: task.description || '',
-          priority: task.priority || 50,
-          dependencies: task.dependencies || [],
-          status: 'pending' as const,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        }));
-      }
+      const tasksData = await fileReader.readJSON<TaskArtifact[]>('.kugutsu/tasks.json');
+      tasks = tasksData.map((task) => ({
+        id: task.id,
+        title: task.title,
+        description: task.description,
+        priority: task.priority,
+        dependencies: task.dependencies,
+        status: task.status as 'pending',
+        createdAt: new Date(task.createdAt),
+        updatedAt: new Date(task.updatedAt),
+      }));
     } catch (error) {
-      console.error('❌ タスクのパースに失敗:', error);
+      console.error('❌ tasks.json の読み込みに失敗:', error);
       // Fallback: Create a single task
       tasks = [
         {
@@ -209,9 +264,12 @@ JSON配列形式で、以下の構造で出力してください：
       ];
     }
 
-    // Return state update
+    // Return state update with file paths
     return {
       tasks,
+      techStackPath: '.kugutsu/tech-stack.json',
+      requirementsPath: '.kugutsu/requirements.json',
+      tasksPath: '.kugutsu/tasks.json',
       logs: [
         {
           timestamp: new Date(),

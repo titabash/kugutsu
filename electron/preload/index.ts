@@ -124,7 +124,11 @@ const electronAPI = {
   },
   onProjectClosed: (callback: () => void) => {
     ipcRenderer.on('project-closed', (_event: IpcRendererEvent) => callback());
-  }
+  },
+
+  // プロンプト実行関連
+  executePrompt: (prompt: string, options: { provider?: string; maxEngineers?: number; maxTurns?: number }) =>
+    ipcRenderer.invoke('execute-prompt', { prompt, options })
 };
 
 // デバッグ情報を追加

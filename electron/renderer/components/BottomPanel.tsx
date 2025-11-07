@@ -15,7 +15,7 @@ export function BottomPanel({
   minHeight = 200,
   maxHeight = 600,
 }: BottomPanelProps) {
-  const [isCollapsed, setIsCollapsed] = useState(false)
+  const [isCollapsed, setIsCollapsed] = useState(true)
   const [height, setHeight] = useState(defaultHeight)
   const [isDragging, setIsDragging] = useState(false)
 

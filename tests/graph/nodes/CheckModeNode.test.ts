@@ -43,6 +43,7 @@ describe('CheckModeNode', () => {
       loadGlobalQueue: jest.fn<any>().mockResolvedValue([]),
       loadAllProjectMetadata: jest.fn<any>().mockResolvedValue(new Map()),
       saveProjectMetadata: jest.fn<any>().mockResolvedValue(undefined),
+      loadRepositoryMetadata: jest.fn<any>().mockResolvedValue(null),
     };
   });
 

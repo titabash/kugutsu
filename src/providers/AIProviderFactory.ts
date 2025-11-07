@@ -24,8 +24,8 @@ export class AIProviderFactory {
 
     switch (provider) {
       case 'mock':
-        // For testing
-        return new MockAIProvider();
+        // Create Mock provider with pre-configured responses for LangGraph workflow testing
+        return AIProviderFactory.createMockProvider();
 
       case 'claude':
         return new ClaudeAgentProvider({
@@ -59,9 +59,9 @@ export class AIProviderFactory {
     // Use 'claude' or 'codex' explicitly when needed
     const provider = (process.env.KUGUTSU_PROVIDER || 'mock') as 'claude' | 'codex' | 'mock';
 
-    // If mock provider is requested, return it immediately
+    // If mock provider is requested, return pre-configured mock provider
     if (provider === 'mock') {
-      return new MockAIProvider();
+      return AIProviderFactory.createMockProvider();
     }
 
     const config: AIProviderConfig = {
@@ -77,6 +77,96 @@ export class AIProviderFactory {
     };
 
     return AIProviderFactory.create(config);
+  }
+
+  /**
+   * Create a pre-configured Mock provider for LangGraph workflow testing
+   *
+   * This configures mock responses for all workflow stages:
+   * - Technology stack analysis
+   * - Requirements analysis
+   * - Task generation
+   * - Code implementation
+   * - Code review
+   *
+   * @returns Configured MockAIProvider instance
+   */
+  private static createMockProvider(): MockAIProvider {
+    const mockProvider = new MockAIProvider();
+
+    // 1. Technology Stack Analysis Response
+    mockProvider.setMockResponse(/Technology Stack Analysis/i, {
+      messages: [{
+        type: 'assistant',
+        content: JSON.stringify({
+          languages: ['TypeScript', 'JavaScript'],
+          frameworks: ['Electron', 'React', 'LangGraph'],
+          tools: ['npm', 'electron-vite'],
+          buildSystem: 'npm'
+        })
+      }]
+    });
+
+    // 2. Requirements Analysis Response
+    mockProvider.setMockResponse(/Requirements Analysis/i, {
+      messages: [{
+        type: 'assistant',
+        content: `要求分析結果:
+- ユーザーの要求を理解しました
+- 実装可能なタスクに分割します
+- 依存関係を考慮した実装順序を決定します`
+      }]
+    });
+
+    // 3. Task Generation Response
+    mockProvider.setMockResponse(/Task Generation/i, {
+      messages: [{
+        type: 'assistant',
+        content: JSON.stringify([
+          {
+            id: 'task-1',
+            title: 'モックタスク1: 基本実装',
+            description: 'テスト用の基本機能を実装します',
+            priority: 1,
+            dependencies: [],
+            estimatedTime: 30
+          },
+          {
+            id: 'task-2',
+            title: 'モックタスク2: UI改善',
+            description: 'ユーザーインターフェースを改善します',
+            priority: 2,
+            dependencies: ['task-1'],
+            estimatedTime: 20
+          }
+        ])
+      }]
+    });
+
+    // 4. Code Implementation Response (Engineer)
+    mockProvider.setMockResponse(/実装|implementation|code/i, {
+      messages: [{
+        type: 'assistant',
+        content: `実装完了:
+- ファイル作成: src/mock-feature.ts
+- テストコード追加: tests/mock-feature.test.ts
+- 正常に動作することを確認しました`
+      }]
+    });
+
+    // 5. Code Review Response
+    mockProvider.setMockResponse(/review|レビュー/i, {
+      messages: [{
+        type: 'assistant',
+        content: JSON.stringify({
+          status: 'approved',
+          comments: '実装内容を確認しました。問題ありません。',
+          suggestions: []
+        })
+      }]
+    });
+
+    return mockProvider;
   }
 
   /**

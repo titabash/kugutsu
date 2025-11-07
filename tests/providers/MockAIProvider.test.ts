@@ -103,4 +103,63 @@ describe('MockAIProvider', () => {
     const systemMsg = createMockMessage.system({ info: 'test' });
     expect(systemMsg.type).toBe('system');
   });
+
+  describe('File-based artifact simulation', () => {
+    test('should simulate Write tool and create actual files', async () => {
+      const fs = await import('fs/promises');
+      const path = await import('path');
+      const { mkdtemp, rm } = await import('fs/promises');
+      const { tmpdir } = await import('os');
+
+      // テスト用の一時ディレクトリを作成
+      const tempDir = await mkdtemp(path.join(tmpdir(), 'mock-test-'));
+
+      try {
+        // MockAIProvider に Write ツールをシミュレートする機能を追加したと仮定
+        const mockResponse = {
+          messages: [
+            createMockMessage.assistant('Creating tech-stack.json file'),
+            createMockMessage.system({
+              toolUse: {
+                tool: 'Write',
+                arguments: {
+                  file_path: path.join(tempDir, 'tech-stack.json'),
+                  content: JSON.stringify({
+                    languages: ['TypeScript', 'JavaScript'],
+                    frameworks: ['Electron', 'React'],
+                  }, null, 2),
+                },
+              },
+            }),
+            createMockMessage.assistant('File created successfully'),
+            createMockMessage.result(true),
+          ],
+          // ツールシミュレーション設定
+          simulateTools: true,
+        };
+
+        provider.setMockResponse(/tech.*stack/i, mockResponse);
+
+        // プロンプトを実行
+        const messages: any[] = [];
+        for await (const message of provider.execute('Analyze tech stack')) {
+          messages.push(message);
+        }
+
+        // ファイルが実際に作成されていることを確認
+        const filePath = path.join(tempDir, 'tech-stack.json');
+        const fileExists = await fs.access(filePath).then(() => true).catch(() => false);
+        expect(fileExists).toBe(true);
+
+        // ファイルの内容を確認
+        const content = await fs.readFile(filePath, 'utf-8');
+        const data = JSON.parse(content);
+        expect(data.languages).toContain('TypeScript');
+        expect(data.frameworks).toContain('Electron');
+      } finally {
+        // クリーンアップ
+        await rm(tempDir, { recursive: true, force: true });
+      }
+    });
+  });
 });

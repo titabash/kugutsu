@@ -29,12 +29,96 @@ import type { StoryMapping } from '../types/scrum.js';
  * - Array data: Custom merge logic to prevent duplicates
  * - Map data: Merge with new entries
  * - Single values: Replace (default)
+ *
+ * **File-Based Artifact Management:**
+ * The state now includes file paths to artifacts stored in `.kugutsu/` directory.
+ * Actual data is persisted in files, not in the state object.
  */
 export const ParallelDevState = Annotation.Root({
   /**
    * Original user request
    */
   userRequest: Annotation<string>,
+
+  /**
+   * File-based artifact paths
+   *
+   * These paths point to JSON/Markdown files in `.kugutsu/` directory.
+   * Nodes should read/write these files instead of storing data in state.
+   */
+
+  /**
+   * Path to tech stack analysis file
+   * File: `.kugutsu/tech-stack.json`
+   * Created by: ProductOwnerNode
+   */
+  techStackPath: Annotation<string | null>({
+    reducer: (state: string | null, update: string | null) => {
+      return update ?? state;
+    },
+    default: () => null,
+  }),
+
+  /**
+   * Path to requirements analysis file
+   * File: `.kugutsu/requirements.json`
+   * Created by: ProductOwnerNode
+   */
+  requirementsPath: Annotation<string | null>({
+    reducer: (state: string | null, update: string | null) => {
+      return update ?? state;
+    },
+    default: () => null,
+  }),
+
+  /**
+   * Path to tasks definition file
+   * File: `.kugutsu/tasks.json`
+   * Created by: ProductOwnerNode
+   * Updated by: EngineerNode, ReviewNode, MergeCoordinatorNode
+   */
+  tasksPath: Annotation<string | null>({
+    reducer: (state: string | null, update: string | null) => {
+      return update ?? state;
+    },
+    default: () => null,
+  }),
+
+  /**
+   * Path to story mapping file (Scrum mode)
+   * File: `.kugutsu/story-map.json`
+   * Created by: DirectorNode
+   */
+  storyMapPath: Annotation<string | null>({
+    reducer: (state: string | null, update: string | null) => {
+      return update ?? state;
+    },
+    default: () => null,
+  }),
+
+  /**
+   * Path to sprint plan file (Scrum mode)
+   * File: `.kugutsu/sprint-plan.json`
+   * Created by: SprintPlanningNode
+   */
+  sprintPlanPath: Annotation<string | null>({
+    reducer: (state: string | null, update: string | null) => {
+      return update ?? state;
+    },
+    default: () => null,
+  }),
+
+  /**
+   * Path to workflow metadata file
+   * File: `.kugutsu/metadata.json`
+   * Created by: Orchestrator
+   */
+  metadataPath: Annotation<string | null>({
+    reducer: (state: string | null, update: string | null) => {
+      return update ?? state;
+    },
+    default: () => null,
+  }),
 
   /**
    * All tasks in the workflow
@@ -418,6 +502,14 @@ export function createInitialState(
 ): ParallelDevStateType {
   return {
     userRequest,
+    // File-based artifact paths
+    techStackPath: null,
+    requirementsPath: null,
+    tasksPath: null,
+    storyMapPath: null,
+    sprintPlanPath: null,
+    metadataPath: null,
+    // Existing fields (for backward compatibility)
     tasks: [],
     completedTasks: [],
     failedTasks: [],

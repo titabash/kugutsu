@@ -2,12 +2,19 @@
  * Review Node
  *
  * Performs code review for completed tasks
+ *
+ * **File-based Artifact Management:**
+ * - Reads tasks from `.kugutsu/tasks.json`
+ * - Writes review result to `.kugutsu/tasks/{taskId}/review.json`
+ * - Updates task status to `reviewed` in tasks.json (only if approved)
  */
 
 import type { ParallelDevStateType, ParallelDevStateUpdate } from '../state.js';
-import type { Review } from '../types.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 import type { AIProviderConfig } from '../../providers/IAIProvider.js';
+import { FileReader } from '../../utils/FileReader.js';
+import { FileWriter } from '../../utils/FileWriter.js';
+import type { TaskArtifact, Review as ReviewArtifact, ReviewComment } from '../../types/artifacts.js';
 
 /**
  * Review Node
@@ -23,10 +30,35 @@ export async function reviewNode(
   state: ParallelDevStateType,
   taskId: string
 ): Promise<ParallelDevStateUpdate> {
-  // Find the task
-  const task = state.tasks.find((t) => t.id === taskId);
+  const { config, tasksPath } = state;
 
-  if (!task) {
+  console.log(`🔍 Review: タスク ${taskId} をレビューしています...`);
+
+  // Read tasks from file
+  const fileReader = new FileReader(config.baseRepoPath);
+  const fileWriter = new FileWriter(config.baseRepoPath);
+
+  let tasks: TaskArtifact[];
+  try {
+    tasks = await fileReader.readJSON<TaskArtifact[]>(tasksPath || '.kugutsu/tasks.json');
+  } catch (error) {
+    return {
+      logs: [
+        {
+          timestamp: new Date(),
+          level: 'error',
+          source: 'ReviewNode',
+          message: `tasks.json の読み込みに失敗: ${error instanceof Error ? error.message : String(error)}`,
+          taskId,
+        },
+      ],
+    };
+  }
+
+  // Find the task
+  const taskArtifact = tasks.find((t) => t.id === taskId);
+
+  if (!taskArtifact) {
     return {
       logs: [
         {
@@ -40,7 +72,7 @@ export async function reviewNode(
     };
   }
 
-  if (!task.worktreePath) {
+  if (!taskArtifact.worktreePath) {
     return {
       logs: [
         {
@@ -53,8 +85,6 @@ export async function reviewNode(
       ],
     };
   }
-
-  console.log(`🔍 Review: タスク ${taskId} をレビューしています...`);
 
   try {
     // Create AI provider
@@ -74,13 +104,13 @@ export async function reviewNode(
 以下のタスクのコードレビューを実施してください。
 
 ## タスク情報
-- **ID**: ${task.id}
-- **タイトル**: ${task.title}
-- **説明**: ${task.description}
-- **ブランチ**: ${task.branchName}
+- **ID**: ${taskArtifact.id}
+- **タイトル**: ${taskArtifact.title}
+- **説明**: ${taskArtifact.description}
+- **ブランチ**: ${taskArtifact.branchName}
 
 ## 作業ディレクトリ
-${task.worktreePath}
+${taskArtifact.worktreePath}
 
 ## レビュー観点
 
@@ -125,7 +155,7 @@ REVIEW_STATUS: APPROVED または CHANGES_REQUESTED
 
     for await (const message of provider.execute(reviewPrompt, {
       maxTurns: 10,
-      cwd: task.worktreePath,
+      cwd: taskArtifact.worktreePath,
       allowedTools: ['Read', 'Grep', 'Glob', 'Bash'],
       permissionMode: 'acceptEdits',
     })) {
@@ -159,17 +189,36 @@ REVIEW_STATUS: APPROVED または CHANGES_REQUESTED
 
     console.log(`${finalStatus === 'approved' ? '✅' : '⚠️'} タスク ${taskId} のレビュー: ${finalStatus}`);
 
-    // Create review result
-    const review: Review = {
-      taskId: task.id,
-      reviewer: 'TechLeadAI',
+    // Create review artifact for file
+    const reviewArtifact: ReviewArtifact = {
+      taskId: taskArtifact.id,
       status: finalStatus,
-      comments: reviewComments,
-      timestamp: new Date(),
+      reviewedBy: 'TechLeadAI',
+      reviewedAt: new Date().toISOString(),
+      comments: reviewComments.map((comment) => ({
+        file: '',
+        severity: finalStatus === 'approved' ? 'info' : 'warning',
+        message: comment,
+      } as ReviewComment)),
+      summary: `レビュー結果: ${finalStatus}`,
+      suggestions: [],
     };
 
+    // Write review.json
+    const reviewPath = `.kugutsu/tasks/${taskId}/review.json`;
+    await fileWriter.writeJSON(reviewPath, reviewArtifact);
+
+    console.log(`📝 レビュー結果を保存しました: ${reviewPath}`);
+
+    // Update task status in tasks.json (only if approved)
+    if (finalStatus === 'approved') {
+      taskArtifact.status = 'reviewed';
+      taskArtifact.updatedAt = new Date().toISOString();
+      await fileWriter.writeJSON(tasksPath || '.kugutsu/tasks.json', tasks);
+      console.log(`✅ タスクステータスを updated: reviewed`);
+    }
+
     return {
-      reviews: [review],
       logs: [
         {
           timestamp: new Date(),

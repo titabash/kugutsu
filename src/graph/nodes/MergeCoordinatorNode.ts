@@ -2,11 +2,22 @@
  * Merge Coordinator Node
  *
  * Coordinates merging of completed and approved tasks
+ *
+ * **File-based Artifact Management:**
+ * - Reads tasks from `.kugutsu/tasks.json` (status === 'reviewed')
+ * - Reads review from `.kugutsu/tasks/{taskId}/review.json` (status === 'approved')
+ * - Writes merge result to `.kugutsu/tasks/{taskId}/merge-result.json`
+ * - Updates tasks.json status to 'completed' on success
+ * - Creates `.kugutsu/tasks/{taskId}/conflicts.json` on conflict
+ * - Updates tasks.json status to 'conflict_detected' on conflict
  */
 
 import type { ParallelDevStateType, ParallelDevStateUpdate } from '../state.js';
 import type { MergeTask } from '../types.js';
 import { GitWorktreeManager } from '../../managers/GitWorktreeManager.js';
+import { FileReader } from '../../utils/FileReader.js';
+import { FileWriter } from '../../utils/FileWriter.js';
+import type { TaskArtifact, Review, MergeResult, Conflicts, ConflictFile } from '../../types/artifacts.js';
 
 /**
  * Merge Coordinator Node
@@ -20,9 +31,29 @@ import { GitWorktreeManager } from '../../managers/GitWorktreeManager.js';
 export async function mergeCoordinatorNode(
   state: ParallelDevStateType
 ): Promise<ParallelDevStateUpdate> {
-  const { reviews, tasks, config, mergeQueue } = state;
+  const { config, tasksPath } = state;
 
   console.log('🔄 Merge Coordinator: マージを調整しています...');
+
+  // Read tasks from file
+  const fileReader = new FileReader(config.baseRepoPath);
+  const fileWriter = new FileWriter(config.baseRepoPath);
+
+  let tasks: TaskArtifact[];
+  try {
+    tasks = await fileReader.readJSON<TaskArtifact[]>(tasksPath || '.kugutsu/tasks.json');
+  } catch (error) {
+    return {
+      logs: [
+        {
+          timestamp: new Date(),
+          level: 'error',
+          source: 'MergeCoordinatorNode',
+          message: `tasks.json の読み込みに失敗: ${error instanceof Error ? error.message : String(error)}`,
+        },
+      ],
+    };
+  }
 
   try {
     // Initialize Git Worktree Manager
@@ -32,21 +63,10 @@ export async function mergeCoordinatorNode(
       config.baseBranch
     );
 
-    // Identify approved tasks
-    const approvedReviews = reviews.filter((r) => r.status === 'approved');
-    const approvedTaskIds = new Set(approvedReviews.map((r) => r.taskId));
+    // Find tasks with status 'reviewed'
+    const reviewedTasks = tasks.filter((t) => t.status === 'reviewed' && t.branchName);
 
-    // Find tasks ready to merge (completed + approved + not in queue)
-    const existingMergeTaskIds = new Set(mergeQueue.map((m) => m.taskId));
-    const tasksToMerge = tasks.filter(
-      (t) =>
-        t.status === 'completed' &&
-        approvedTaskIds.has(t.id) &&
-        !existingMergeTaskIds.has(t.id) &&
-        t.branchName
-    );
-
-    if (tasksToMerge.length === 0) {
+    if (reviewedTasks.length === 0) {
       console.log('⏸️ マージ可能なタスクがありません');
       return {
         logs: [
@@ -55,6 +75,33 @@ export async function mergeCoordinatorNode(
             level: 'info',
             source: 'MergeCoordinatorNode',
             message: 'マージ可能なタスクがありません',
+          },
+        ],
+      };
+    }
+
+    // Filter tasks with approved reviews
+    const tasksToMerge: TaskArtifact[] = [];
+    for (const task of reviewedTasks) {
+      try {
+        const review = await fileReader.readJSON<Review>(`.kugutsu/tasks/${task.id}/review.json`);
+        if (review.status === 'approved') {
+          tasksToMerge.push(task);
+        }
+      } catch (error) {
+        console.warn(`⚠️ review.json の読み込みに失敗: ${task.id}`);
+      }
+    }
+
+    if (tasksToMerge.length === 0) {
+      console.log('⏸️ 承認されたタスクがありません');
+      return {
+        logs: [
+          {
+            timestamp: new Date(),
+            level: 'info',
+            source: 'MergeCoordinatorNode',
+            message: '承認されたタスクがありません',
           },
         ],
       };
@@ -91,11 +138,36 @@ export async function mergeCoordinatorNode(
 
         // Try to merge
         try {
-          execSync(`git merge ${mergeTask.sourceBranch} --no-ff -m "Merge ${mergeTask.taskId}"`, {
-            stdio: 'pipe',
+          const mergeOutput = execSync(`git merge ${mergeTask.sourceBranch} --no-ff -m "Merge ${mergeTask.taskId}"`, {
+            encoding: 'utf-8',
           });
 
-          // Merge succeeded
+          // Get commit hash
+          const commitHash = execSync('git rev-parse HEAD', { encoding: 'utf-8' }).trim();
+
+          // Merge succeeded - Create merge-result.json
+          const mergeResult: MergeResult = {
+            taskId: mergeTask.taskId,
+            branch: mergeTask.sourceBranch,
+            targetBranch: mergeTask.targetBranch,
+            status: 'success',
+            mergedAt: new Date().toISOString(),
+            commitHash,
+            message: 'Merge successful',
+          };
+
+          await fileWriter.writeJSON(`.kugutsu/tasks/${mergeTask.taskId}/merge-result.json`, mergeResult);
+          console.log(`📝 merge-result.json を作成しました: ${mergeTask.taskId}`);
+
+          // Update tasks.json status to 'completed'
+          const taskToUpdate = tasks.find((t) => t.id === mergeTask.taskId);
+          if (taskToUpdate) {
+            taskToUpdate.status = 'completed';
+            taskToUpdate.updatedAt = new Date().toISOString();
+            await fileWriter.writeJSON(tasksPath || '.kugutsu/tasks.json', tasks);
+            console.log(`✅ タスクステータスを更新しました: completed`);
+          }
+
           updatedMergeTasks.push({
             ...mergeTask,
             status: 'completed',
@@ -121,17 +193,62 @@ export async function mergeCoordinatorNode(
             const conflictFilesOutput = execSync('git diff --name-only --diff-filter=U', {
               encoding: 'utf-8',
             });
-            const conflictFiles = conflictFilesOutput
+            const conflictFileNames = conflictFilesOutput
               .split('\n')
               .filter((f) => f.trim().length > 0);
 
             // Abort merge to clean up
             execSync('git merge --abort', { stdio: 'pipe' });
 
+            // Create merge-result.json with conflict status
+            const mergeResult: MergeResult = {
+              taskId: mergeTask.taskId,
+              branch: mergeTask.sourceBranch,
+              targetBranch: mergeTask.targetBranch,
+              status: 'conflict',
+              mergedAt: new Date().toISOString(),
+              conflictFiles: conflictFileNames,
+              message: 'Merge conflict detected',
+            };
+
+            await fileWriter.writeJSON(`.kugutsu/tasks/${mergeTask.taskId}/merge-result.json`, mergeResult);
+            console.log(`📝 merge-result.json を作成しました (conflict): ${mergeTask.taskId}`);
+
+            // Create conflicts.json
+            const conflictFilesData: ConflictFile[] = conflictFileNames.map((filePath) => ({
+              path: filePath,
+              conflicts: [
+                {
+                  line: 0,
+                  ours: '',
+                  theirs: '',
+                  resolved: '',
+                },
+              ],
+            }));
+
+            const conflicts: Conflicts = {
+              taskId: mergeTask.taskId,
+              conflictFiles: conflictFilesData,
+              resolution: 'pending',
+            };
+
+            await fileWriter.writeJSON(`.kugutsu/tasks/${mergeTask.taskId}/conflicts.json`, conflicts);
+            console.log(`📝 conflicts.json を作成しました: ${mergeTask.taskId}`);
+
+            // Update tasks.json status to 'conflict_detected'
+            const taskToUpdate = tasks.find((t) => t.id === mergeTask.taskId);
+            if (taskToUpdate) {
+              taskToUpdate.status = 'conflict_detected';
+              taskToUpdate.updatedAt = new Date().toISOString();
+              await fileWriter.writeJSON(tasksPath || '.kugutsu/tasks.json', tasks);
+              console.log(`⚠️ タスクステータスを更新しました: conflict_detected`);
+            }
+
             updatedMergeTasks.push({
               ...mergeTask,
               status: 'conflict',
-              conflictFiles,
+              conflictFiles: conflictFileNames,
             });
 
             logs.push({
@@ -141,7 +258,7 @@ export async function mergeCoordinatorNode(
               message: `タスク ${mergeTask.taskId} でコンフリクト検出`,
               data: {
                 taskId: mergeTask.taskId,
-                conflictFiles,
+                conflictFiles: conflictFileNames,
               },
               taskId: mergeTask.taskId,
             });

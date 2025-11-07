@@ -33,16 +33,28 @@ describe('ConflictResolverNode', () => {
   });
 
   test('should handle no conflicts', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const { mkdtempSync, mkdirSync, writeFileSync } = await import('fs');
+    const { tmpdir } = await import('os');
+
+    // Create temp directory for test
+    const tempDir = mkdtempSync(path.join(tmpdir(), 'conflict-resolver-empty-'));
+    const kugutsuDir = path.join(tempDir, '.kugutsu');
+    mkdirSync(kugutsuDir, { recursive: true });
+
+    // Create empty tasks.json (no tasks at all)
+    const tasksPath = path.join(kugutsuDir, 'tasks.json');
+    writeFileSync(tasksPath, JSON.stringify([], null, 2));
+
     // Create initial state with no conflicts
     const initialState = createInitialState('Test request', {
       maxEngineers: 1,
       maxTurns: 30,
       baseBranch: 'main',
-      baseRepoPath: '/test/repo',
-      worktreeBasePath: '/test/worktrees',
+      baseRepoPath: tempDir,
+      worktreeBasePath: path.join(tempDir, 'worktrees'),
     });
-
-    initialState.mergeQueue = [];
 
     // Execute node
     const result = await conflictResolverNode(initialState);
@@ -397,5 +409,157 @@ describe('ConflictResolverNode', () => {
       // Expected in test environment
       expect(error).toBeDefined();
     }
+  });
+
+  describe('File-based Artifact Management', () => {
+    test('should read conflicts.json and resolve conflicts successfully', async () => {
+      // Setup mock provider for successful conflict resolution
+      mockProvider.setDefaultResponse({
+        messages: [
+          createMockMessage.assistant('コンフリクトを解決しました'),
+          createMockMessage.result(true),
+        ],
+      });
+
+      const fs = await import('fs');
+      const path = await import('path');
+      const { mkdtempSync, mkdirSync, writeFileSync } = await import('fs');
+      const { tmpdir } = await import('os');
+
+      // Create temp directory for test
+      const tempDir = mkdtempSync(path.join(tmpdir(), 'conflict-resolver-test-'));
+      const kugutsuDir = path.join(tempDir, '.kugutsu');
+      const taskDir = path.join(kugutsuDir, 'tasks', 'task-007');
+      const worktreesDir = path.join(tempDir, 'worktrees', 'task-007');
+      mkdirSync(taskDir, { recursive: true });
+      mkdirSync(worktreesDir, { recursive: true });
+
+      // Create tasks.json with a task in 'conflict_detected' status
+      const tasksPath = path.join(kugutsuDir, 'tasks.json');
+      const tasks = [
+        {
+          id: 'task-007',
+          title: 'Task with conflict',
+          description: 'Has merge conflict',
+          status: 'conflict_detected',
+          priority: 100,
+          dependencies: [],
+          branchName: 'task/task-007',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ];
+      writeFileSync(tasksPath, JSON.stringify(tasks, null, 2));
+
+      // Create conflicts.json with pending resolution
+      const conflictsPath = path.join(taskDir, 'conflicts.json');
+      const conflicts = {
+        taskId: 'task-007',
+        conflictFiles: [
+          {
+            path: 'src/app.ts',
+            conflicts: [
+              {
+                line: 10,
+                ours: 'const x = 1;',
+                theirs: 'const x = 2;',
+                resolved: '',
+              },
+            ],
+          },
+        ],
+        resolution: 'pending',
+      };
+      writeFileSync(conflictsPath, JSON.stringify(conflicts, null, 2));
+
+      // Create initial state
+      const initialState = createInitialState('Test request', {
+        maxEngineers: 1,
+        maxTurns: 30,
+        baseBranch: 'main',
+        baseRepoPath: tempDir,
+        worktreeBasePath: path.join(tempDir, 'worktrees'),
+      });
+
+      // Execute the node - it should read from files
+      // Note: Without git repo, AI resolution will fail, but we want to verify
+      // that the node READ the conflicts.json file first
+      const result = await conflictResolverNode(initialState);
+
+      // The implementation should have:
+      // 1. Read .kugutsu/tasks.json to find tasks with status 'conflict_detected'
+      // 2. Read .kugutsu/tasks/{taskId}/conflicts.json where resolution === 'pending'
+      // 3. Attempted to resolve conflicts with AI
+      // 4. Updated conflicts.json resolution to 'resolved'
+      // 5. Updated tasks.json status back to 'reviewed'
+
+      // Verify that conflicts.json was updated to 'resolved'
+      const updatedConflictsContent = JSON.parse(fs.readFileSync(conflictsPath, 'utf-8'));
+      expect(updatedConflictsContent.resolution).toBe('resolved');
+      expect(updatedConflictsContent.resolvedAt).toBeDefined();
+
+      // Verify that tasks.json status was updated to 'reviewed'
+      const updatedTasksContent = JSON.parse(fs.readFileSync(tasksPath, 'utf-8'));
+      expect(updatedTasksContent[0].status).toBe('reviewed');
+    });
+
+    test('should skip when no pending conflicts exist', async () => {
+      const fs = await import('fs');
+      const path = await import('path');
+      const { mkdtempSync, mkdirSync, writeFileSync } = await import('fs');
+      const { tmpdir } = await import('os');
+
+      // Create temp directory for test
+      const tempDir = mkdtempSync(path.join(tmpdir(), 'conflict-resolver-empty-test-'));
+      const kugutsuDir = path.join(tempDir, '.kugutsu');
+      const taskDir = path.join(kugutsuDir, 'tasks', 'task-008');
+      mkdirSync(taskDir, { recursive: true });
+
+      // Create tasks.json with a task already resolved
+      const tasksPath = path.join(kugutsuDir, 'tasks.json');
+      const tasks = [
+        {
+          id: 'task-008',
+          title: 'Already resolved task',
+          description: 'Conflict was already resolved',
+          status: 'reviewed',
+          priority: 100,
+          dependencies: [],
+          branchName: 'task/task-008',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ];
+      writeFileSync(tasksPath, JSON.stringify(tasks, null, 2));
+
+      // Create conflicts.json with resolution already 'resolved'
+      const conflictsPath = path.join(taskDir, 'conflicts.json');
+      const conflicts = {
+        taskId: 'task-008',
+        conflictFiles: [],
+        resolution: 'resolved',
+        resolvedAt: new Date().toISOString(),
+      };
+      writeFileSync(conflictsPath, JSON.stringify(conflicts, null, 2));
+
+      // Create initial state
+      const initialState = createInitialState('Test request', {
+        maxEngineers: 1,
+        maxTurns: 30,
+        baseBranch: 'main',
+        baseRepoPath: tempDir,
+        worktreeBasePath: path.join(tempDir, 'worktrees'),
+      });
+
+      // Execute node
+      const result = await conflictResolverNode(initialState);
+
+      // Verify that no conflicts were processed
+      expect(result.logs).toBeDefined();
+      expect(result.logs!.some((log) => log.message.includes('コンフリクトはありません'))).toBe(true);
+
+      // Verify AI was not called
+      expect(mockProvider.getCallCount()).toBe(0);
+    });
   });
 });

@@ -107,6 +107,49 @@ export class MockAIProvider implements IAIProvider {
       await new Promise((resolve) => setTimeout(resolve, response.delay));
     }
 
+    // TASK-014: Detect output file pattern in prompt and create file
+    const filePathMatch = prompt.match(/\*\*出力ファイル\*\*:\s*(.+?)(?:\n|$)/);
+    if (filePathMatch && options.allowedTools?.includes('Write')) {
+      const filePath = filePathMatch[1].trim();
+
+      // Extract content from mock response messages
+      let contentToWrite: string | null = null;
+
+      for (const message of response.messages) {
+        if (message.type === 'assistant' && message.content) {
+          const content = typeof message.content === 'string' ? message.content : '';
+
+          // Check if file is JSON
+          if (filePath.endsWith('.json')) {
+            // Extract JSON from code block
+            const jsonMatch = content.match(/```json\n([\s\S]*?)\n```/);
+            if (jsonMatch) {
+              contentToWrite = jsonMatch[1];
+              break;
+            }
+          } else if (filePath.endsWith('.md')) {
+            // For Markdown files, use the entire content (excluding code block markers if present)
+            // Remove JSON code blocks, keep only markdown
+            const cleanedContent = content.replace(/```json[\s\S]*?```/g, '').trim();
+            if (cleanedContent) {
+              contentToWrite = cleanedContent;
+              break;
+            }
+          }
+        }
+      }
+
+      // Write file if content was found
+      if (contentToWrite) {
+        const fs = await import('fs/promises');
+        const path = await import('path');
+
+        const dir = path.dirname(filePath);
+        await fs.mkdir(dir, { recursive: true });
+        await fs.writeFile(filePath, contentToWrite, 'utf-8');
+      }
+    }
+
     // Yield messages and simulate tools if enabled
     for (const message of response.messages) {
       // Simulate tool execution if enabled

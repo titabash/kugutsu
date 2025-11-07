@@ -2,11 +2,20 @@
  * Conflict Resolver Node
  *
  * Resolves merge conflicts using AI
+ *
+ * **File-based Artifact Management:**
+ * - Reads tasks from `.kugutsu/tasks.json` (status === 'conflict_detected')
+ * - Reads conflicts from `.kugutsu/tasks/{taskId}/conflicts.json` (resolution === 'pending')
+ * - After AI resolution, updates conflicts.json resolution to 'resolved'
+ * - Updates tasks.json status back to 'reviewed' to re-queue for merge
  */
 
 import type { ParallelDevStateType, ParallelDevStateUpdate } from '../state.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 import type { AIProviderConfig } from '../../providers/IAIProvider.js';
+import { FileReader } from '../../utils/FileReader.js';
+import { FileWriter } from '../../utils/FileWriter.js';
+import type { TaskArtifact, Conflicts } from '../../types/artifacts.js';
 
 /**
  * Conflict Resolver Node
@@ -20,15 +29,35 @@ import type { AIProviderConfig } from '../../providers/IAIProvider.js';
 export async function conflictResolverNode(
   state: ParallelDevStateType
 ): Promise<ParallelDevStateUpdate> {
-  const { mergeQueue, tasks } = state;
+  const { config, tasksPath } = state;
 
   console.log('🔧 Conflict Resolver: コンフリクトを解消しています...');
 
-  try {
-    // Find tasks with conflicts
-    const conflictMergeTasks = mergeQueue.filter((m) => m.status === 'conflict');
+  // Read tasks from file
+  const fileReader = new FileReader(config.baseRepoPath);
+  const fileWriter = new FileWriter(config.baseRepoPath);
 
-    if (conflictMergeTasks.length === 0) {
+  let tasks: TaskArtifact[];
+  try {
+    tasks = await fileReader.readJSON<TaskArtifact[]>(tasksPath || '.kugutsu/tasks.json');
+  } catch (error) {
+    return {
+      logs: [
+        {
+          timestamp: new Date(),
+          level: 'error',
+          source: 'ConflictResolverNode',
+          message: `tasks.json の読み込みに失敗: ${error instanceof Error ? error.message : String(error)}`,
+        },
+      ],
+    };
+  }
+
+  try {
+    // Find tasks with status 'conflict_detected'
+    const conflictTasks = tasks.filter((t) => t.status === 'conflict_detected');
+
+    if (conflictTasks.length === 0) {
       console.log('✅ コンフリクトはありません');
       return {
         logs: [
@@ -42,7 +71,37 @@ export async function conflictResolverNode(
       };
     }
 
-    console.log(`⚠️ ${conflictMergeTasks.length}個のコンフリクトを処理します`);
+    // Filter tasks with pending conflicts
+    const tasksToResolve: TaskArtifact[] = [];
+    const conflictsMap = new Map<string, Conflicts>();
+
+    for (const task of conflictTasks) {
+      try {
+        const conflicts = await fileReader.readJSON<Conflicts>(`.kugutsu/tasks/${task.id}/conflicts.json`);
+        if (conflicts.resolution === 'pending') {
+          tasksToResolve.push(task);
+          conflictsMap.set(task.id, conflicts);
+        }
+      } catch (error) {
+        console.warn(`⚠️ conflicts.json の読み込みに失敗: ${task.id}`);
+      }
+    }
+
+    if (tasksToResolve.length === 0) {
+      console.log('✅ 解決待ちのコンフリクトはありません');
+      return {
+        logs: [
+          {
+            timestamp: new Date(),
+            level: 'info',
+            source: 'ConflictResolverNode',
+            message: '解決待ちのコンフリクトはありません',
+          },
+        ],
+      };
+    }
+
+    console.log(`⚠️ ${tasksToResolve.length}個のコンフリクトを処理します`);
 
     // Create AI provider
     const providerConfig: AIProviderConfig = {
@@ -54,17 +113,18 @@ export async function conflictResolverNode(
 
     const provider = AIProviderFactory.create(providerConfig);
 
-    const updatedMergeTasks: any[] = [];
     const logs: any[] = [];
 
-    for (const mergeTask of conflictMergeTasks) {
-      const originalTask = tasks.find((t) => t.id === mergeTask.taskId);
-      if (!originalTask || !originalTask.worktreePath) {
-        console.log(`⏭️ タスク ${mergeTask.taskId} をスキップ（情報不足）`);
+    for (const task of tasksToResolve) {
+      if (!task.branchName) {
+        console.log(`⏭️ タスク ${task.id} をスキップ（ブランチ情報なし）`);
         continue;
       }
 
-      console.log(`🔧 コンフリクト解消中: ${mergeTask.taskId}`);
+      const conflictInfo = conflictsMap.get(task.id)!;
+      const conflictFiles = conflictInfo.conflictFiles.map((cf) => cf.path);
+
+      console.log(`🔧 コンフリクト解消中: ${task.id}`);
 
       try {
         // Build conflict resolution prompt
@@ -74,17 +134,17 @@ export async function conflictResolverNode(
 以下のマージコンフリクトを解消してください。
 
 ## タスク情報
-- **ID**: ${originalTask.id}
-- **タイトル**: ${originalTask.title}
-- **説明**: ${originalTask.description}
-- **ブランチ**: ${mergeTask.sourceBranch}
+- **ID**: ${task.id}
+- **タイトル**: ${task.title}
+- **説明**: ${task.description}
+- **ブランチ**: ${task.branchName}
 
 ## コンフリクト情報
-- **ターゲットブランチ**: ${mergeTask.targetBranch}
-- **コンフリクトファイル**: ${mergeTask.conflictFiles?.join(', ') || '不明'}
+- **ターゲットブランチ**: ${config.baseBranch}
+- **コンフリクトファイル**: ${conflictFiles.join(', ')}
 
 ## 作業ディレクトリ
-${originalTask.worktreePath}
+${config.worktreeBasePath}/${task.id}
 
 ## 解決手順
 
@@ -113,89 +173,65 @@ ${originalTask.worktreePath}
 `;
 
         // Execute conflict resolution
+        const worktreePath = `${config.worktreeBasePath}/${task.id}`;
         for await (const message of provider.execute(conflictResolutionPrompt, {
           maxTurns: 20,
-          cwd: originalTask.worktreePath,
+          cwd: worktreePath,
           permissionMode: 'acceptEdits',
           allowedTools: ['Read', 'Write', 'Edit', 'Bash', 'Grep', 'Glob'],
-          resume: originalTask.sessionId, // Resume original engineer's session
         })) {
           if (message.type === 'assistant' && message.content) {
             console.log(`  💬 ${JSON.stringify(message.content).substring(0, 80)}...`);
           }
         }
 
-        // Retry merge
-        const { execSync } = await import('child_process');
-        process.chdir(state.config.baseRepoPath);
+        // Update conflicts.json - mark as resolved
+        conflictInfo.resolution = 'resolved';
+        conflictInfo.resolvedAt = new Date().toISOString();
+        await fileWriter.writeJSON(`.kugutsu/tasks/${task.id}/conflicts.json`, conflictInfo);
+        console.log(`📝 conflicts.json を更新しました (resolved): ${task.id}`);
 
-        try {
-          // Ensure we're on target branch
-          execSync(`git checkout ${mergeTask.targetBranch}`, { stdio: 'pipe' });
-
-          // Retry merge
-          execSync(`git merge ${mergeTask.sourceBranch} --no-ff -m "Merge ${mergeTask.taskId} (conflict resolved)"`, {
-            stdio: 'pipe',
-          });
-
-          // Success!
-          updatedMergeTasks.push({
-            ...mergeTask,
-            status: 'completed',
-            completedAt: new Date(),
-          });
-
-          logs.push({
-            timestamp: new Date(),
-            level: 'info',
-            source: 'ConflictResolverNode',
-            message: `タスク ${mergeTask.taskId} のコンフリクト解消成功`,
-            data: { taskId: mergeTask.taskId },
-            taskId: mergeTask.taskId,
-          });
-
-          console.log(`✅ コンフリクト解消成功: ${mergeTask.taskId}`);
-        } catch (retryError) {
-          // Still has conflicts or other error
-          console.error(`❌ コンフリクト解消失敗: ${mergeTask.taskId}`, retryError);
-
-          // Abort merge if needed
-          try {
-            execSync('git merge --abort', { stdio: 'pipe' });
-          } catch {}
-
-          logs.push({
-            timestamp: new Date(),
-            level: 'error',
-            source: 'ConflictResolverNode',
-            message: `タスク ${mergeTask.taskId} のコンフリクト解消失敗: ${retryError instanceof Error ? retryError.message : String(retryError)}`,
-            data: {
-              taskId: mergeTask.taskId,
-              error: retryError,
-            },
-            taskId: mergeTask.taskId,
-          });
+        // Update tasks.json - change status back to 'reviewed' for re-merge
+        const taskToUpdate = tasks.find((t) => t.id === task.id);
+        if (taskToUpdate) {
+          taskToUpdate.status = 'reviewed';
+          taskToUpdate.updatedAt = new Date().toISOString();
+          await fileWriter.writeJSON(tasksPath || '.kugutsu/tasks.json', tasks);
+          console.log(`📝 tasks.json を更新しました (reviewed): ${task.id}`);
         }
+
+        logs.push({
+          timestamp: new Date(),
+          level: 'info',
+          source: 'ConflictResolverNode',
+          message: `タスク ${task.id} のコンフリクト解消成功`,
+          data: { taskId: task.id },
+          taskId: task.id,
+        });
+
+        console.log(`✅ コンフリクト解消成功: ${task.id}`);
       } catch (error) {
-        console.error(`❌ コンフリクト解消エラー: ${mergeTask.taskId}`, error);
+        console.error(`❌ コンフリクト解消エラー: ${task.id}`, error);
 
         logs.push({
           timestamp: new Date(),
           level: 'error',
           source: 'ConflictResolverNode',
-          message: `タスク ${mergeTask.taskId} の処理エラー: ${error instanceof Error ? error.message : String(error)}`,
+          message: `タスク ${task.id} の処理エラー: ${error instanceof Error ? error.message : String(error)}`,
           data: {
-            taskId: mergeTask.taskId,
+            taskId: task.id,
             error,
           },
-          taskId: mergeTask.taskId,
+          taskId: task.id,
         });
       }
     }
 
     return {
-      mergeQueue: updatedMergeTasks,
       logs,
+      metadata: {
+        phase: 'merge',
+      },
     };
   } catch (error) {
     console.error('❌ Conflict Resolver Node エラー:', error);

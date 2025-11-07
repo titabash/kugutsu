@@ -162,4 +162,177 @@ describe('MockAIProvider', () => {
       }
     });
   });
+
+  describe('File Creation from Prompt Pattern (TASK-014)', () => {
+    test('should detect output file pattern in prompt and create JSON file', async () => {
+      const fs = await import('fs/promises');
+      const path = await import('path');
+      const { mkdtempSync } = await import('fs');
+      const { tmpdir } = await import('os');
+      const { rm } = await import('fs/promises');
+
+      const tempDir = mkdtempSync(path.join(tmpdir(), 'mock-provider-file-test-'));
+
+      try {
+        const outputPath = path.join(tempDir, '.kugutsu', 'test-output.json');
+
+        // Set up mock response with JSON code block
+        const mockResponse = {
+          messages: [
+            createMockMessage.assistant(`
+生成したJSONを出力します:
+
+\`\`\`json
+{
+  "taskId": "test-task-001",
+  "title": "Test Task",
+  "description": "This is a test task",
+  "status": "pending"
+}
+\`\`\`
+
+ファイルを作成しました: ${outputPath}
+            `),
+            createMockMessage.result(true),
+          ],
+        };
+
+        provider.setDefaultResponse(mockResponse);
+
+        // Execute with prompt containing output file pattern
+        const prompt = `
+テストタスクのJSONを生成してください。
+
+**出力ファイル**: ${outputPath}
+        `;
+
+        const messages: any[] = [];
+        for await (const message of provider.execute(prompt, {
+          allowedTools: ['Write'],
+          cwd: tempDir
+        })) {
+          messages.push(message);
+        }
+
+        // Verify file was created
+        const fileExists = await fs.access(outputPath).then(() => true).catch(() => false);
+        expect(fileExists).toBe(true);
+
+        // Verify file content
+        const content = await fs.readFile(outputPath, 'utf-8');
+        const data = JSON.parse(content);
+        expect(data.taskId).toBe('test-task-001');
+        expect(data.title).toBe('Test Task');
+        expect(data.status).toBe('pending');
+      } finally {
+        await rm(tempDir, { recursive: true, force: true });
+      }
+    });
+
+    test('should detect output file pattern and create Markdown file', async () => {
+      const fs = await import('fs/promises');
+      const path = await import('path');
+      const { mkdtempSync } = await import('fs');
+      const { tmpdir } = await import('os');
+      const { rm } = await import('fs/promises');
+
+      const tempDir = mkdtempSync(path.join(tmpdir(), 'mock-provider-md-test-'));
+
+      try {
+        const outputPath = path.join(tempDir, '.kugutsu', 'design-doc.md');
+
+        // Set up mock response with Markdown content
+        const mockResponse = {
+          messages: [
+            createMockMessage.assistant(`
+# Design Document
+
+## Architecture
+Layered architecture with clean separation of concerns.
+
+## Components
+- Frontend: React + TypeScript
+- Backend: Node.js + Express
+- Database: PostgreSQL
+
+ファイルを作成しました: ${outputPath}
+            `),
+            createMockMessage.result(true),
+          ],
+        };
+
+        provider.setDefaultResponse(mockResponse);
+
+        // Execute with prompt containing output file pattern
+        const prompt = `
+設計書を作成してください。
+
+**出力ファイル**: ${outputPath}
+        `;
+
+        const messages: any[] = [];
+        for await (const message of provider.execute(prompt, {
+          allowedTools: ['Write'],
+          cwd: tempDir
+        })) {
+          messages.push(message);
+        }
+
+        // Verify file was created
+        const fileExists = await fs.access(outputPath).then(() => true).catch(() => false);
+        expect(fileExists).toBe(true);
+
+        // Verify file content
+        const content = await fs.readFile(outputPath, 'utf-8');
+        expect(content).toContain('# Design Document');
+        expect(content).toContain('## Architecture');
+        expect(content).toContain('React + TypeScript');
+      } finally {
+        await rm(tempDir, { recursive: true, force: true });
+      }
+    });
+
+    test('should skip file creation when allowedTools does not include Write', async () => {
+      const fs = await import('fs/promises');
+      const path = await import('path');
+      const { mkdtempSync } = await import('fs');
+      const { tmpdir } = await import('os');
+      const { rm } = await import('fs/promises');
+
+      const tempDir = mkdtempSync(path.join(tmpdir(), 'mock-provider-nowrite-test-'));
+
+      try {
+        const outputPath = path.join(tempDir, '.kugutsu', 'test-output.json');
+
+        const mockResponse = {
+          messages: [
+            createMockMessage.assistant(`
+\`\`\`json
+{"test": "data"}
+\`\`\`
+            `),
+            createMockMessage.result(true),
+          ],
+        };
+
+        provider.setDefaultResponse(mockResponse);
+
+        const prompt = `**出力ファイル**: ${outputPath}`;
+
+        const messages: any[] = [];
+        for await (const message of provider.execute(prompt, {
+          allowedTools: ['Read'], // Write is NOT allowed
+          cwd: tempDir
+        })) {
+          messages.push(message);
+        }
+
+        // Verify file was NOT created
+        const fileExists = await fs.access(outputPath).then(() => true).catch(() => false);
+        expect(fileExists).toBe(false);
+      } finally {
+        await rm(tempDir, { recursive: true, force: true });
+      }
+    });
+  });
 });

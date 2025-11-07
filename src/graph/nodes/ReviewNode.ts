@@ -17,6 +17,8 @@ import { FileReader } from '../../utils/FileReader.js';
 import { FileWriter } from '../../utils/FileWriter.js';
 import { TaskStateMachine } from '../../utils/TaskStateMachine.js';
 import type { TaskArtifact, Review as ReviewArtifact, ReviewComment } from '../../types/artifacts.js';
+import { RetryManager } from '../../utils/RetryManager.js';
+import { ErrorClassifier } from '../../utils/ErrorClassifier.js';
 
 /**
  * Review Node
@@ -152,26 +154,77 @@ REVIEW_STATUS: APPROVED または CHANGES_REQUESTED
 そして、コメントを箇条書きで記載してください。
 `;
 
-    // Execute review
+    // Execute review with retry mechanism
     const reviewComments: string[] = [];
     let reviewStatus: 'approved' | 'changes_requested' = 'approved';
 
-    for await (const message of provider.execute(reviewPrompt, {
-      maxTurns: 10,
-      cwd: taskArtifact.worktreePath,
-      allowedTools: ['Read', 'Grep', 'Glob', 'Bash'],
-      permissionMode: 'acceptEdits',
-    })) {
-      if (message.type === 'assistant' && message.content) {
-        const content = JSON.stringify(message.content);
-        reviewComments.push(content);
+    const reviewResult = await RetryManager.executeWithRetry(
+      async () => {
+        const comments: string[] = [];
+        let status: 'approved' | 'changes_requested' = 'approved';
 
-        // Check for review status
-        if (content.includes('CHANGES_REQUESTED')) {
-          reviewStatus = 'changes_requested';
+        for await (const message of provider.execute(reviewPrompt, {
+          maxTurns: 10,
+          cwd: taskArtifact.worktreePath,
+          allowedTools: ['Read', 'Grep', 'Glob', 'Bash'],
+          permissionMode: 'acceptEdits',
+        })) {
+          if (message.type === 'assistant' && message.content) {
+            const content = JSON.stringify(message.content);
+            comments.push(content);
+
+            // Check for review status
+            if (content.includes('CHANGES_REQUESTED')) {
+              status = 'changes_requested';
+            }
+          }
         }
+
+        return { comments, status };
+      },
+      {
+        maxRetries: 3,
+        initialDelayMs: 2000,
+        maxDelayMs: 30000,
+        backoffMultiplier: 2,
+        retryableErrors: ['ETIMEDOUT', 'ECONNRESET', 'rate_limit', 'Rate limit', 'timeout', 'network'],
       }
+    );
+
+    if (!reviewResult.success) {
+      // レビュー実行失敗 - エラーを分類
+      const classifiedError = ErrorClassifier.classify(reviewResult.error!);
+
+      console.error(`❌ タスク ${taskId} のレビューに失敗 (${reviewResult.attempts}回試行): ${reviewResult.error?.message}`);
+
+      return {
+        logs: [
+          {
+            timestamp: new Date(),
+            level: 'error',
+            source: 'ReviewNode',
+            message: `タスク ${taskId} のレビューに失敗: ${classifiedError.message}`,
+            taskId,
+            data: {
+              error: reviewResult.error?.message,
+              severity: classifiedError.severity,
+              attempts: reviewResult.attempts,
+            },
+          },
+        ],
+        metadata: {
+          hasErrors: true,
+          errors: [
+            ...(state.metadata.errors || []),
+            `Review ${taskId}: ${reviewResult.error?.message || 'Unknown error'}`,
+          ],
+        },
+      };
     }
+
+    // レビュー成功 - 結果を取得
+    reviewComments.push(...reviewResult.data!.comments);
+    reviewStatus = reviewResult.data!.status;
 
     // Check for issues in comments
     const hasIssues =

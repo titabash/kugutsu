@@ -166,12 +166,20 @@ describe('EngineerDispatchNode', () => {
     // Execute node
     const result = await engineerDispatchNode(initialState);
 
-    // Verify only 1 task was dispatched
+    // Verify all tasks that changed state are returned
     expect(result.tasks).toBeDefined();
-    expect(result.tasks!.length).toBe(1); // Only maxEngineers tasks
+    expect(result.tasks!.length).toBe(3); // All 3 tasks changed state (pending → ready or ready → in_progress)
 
-    // Verify it was the highest priority task
-    expect(result.tasks![0].id).toBe('task-001');
+    // Verify task-001 (highest priority) was dispatched to in_progress
+    const task001 = result.tasks!.find((t) => t.id === 'task-001');
+    expect(task001?.status).toBe('in_progress');
+    expect(task001?.worktreePath).toBeDefined();
+
+    // Verify task-002 and task-003 moved to ready but not dispatched
+    const task002 = result.tasks!.find((t) => t.id === 'task-002');
+    const task003 = result.tasks!.find((t) => t.id === 'task-003');
+    expect(task002?.status).toBe('ready');
+    expect(task003?.status).toBe('ready');
   });
 
   test('should skip tasks with unsatisfied dependencies', async () => {

@@ -17,6 +17,8 @@ import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 import type { AIProviderConfig } from '../../providers/IAIProvider.js';
 import { FileReader } from '../../utils/FileReader.js';
 import type { TechStack, Requirements, TaskArtifact } from '../../types/artifacts.js';
+import { RetryManager } from '../../utils/RetryManager.js';
+import { ErrorClassifier } from '../../utils/ErrorClassifier.js';
 
 /**
  * Product Owner Node
@@ -85,13 +87,51 @@ ${config.baseRepoPath}
 **重要**: 必ず Write ツールを使用してファイルを作成してください。
 `;
 
-    for await (const message of provider.execute(techStackAnalysisPrompt, {
-      maxTurns: 5,
-      cwd: config.baseRepoPath,
-      allowedTools: ['Read', 'Glob', 'Grep', 'Write'],
-      permissionMode: 'acceptEdits',
-    })) {
-      // AI が Write ツールでファイルを作成するのを待つ
+    // Phase 1: Tech stack analysis with retry
+    const techStackResult = await RetryManager.executeWithRetry(
+      async () => {
+        for await (const message of provider.execute(techStackAnalysisPrompt, {
+          maxTurns: 5,
+          cwd: config.baseRepoPath,
+          allowedTools: ['Read', 'Glob', 'Grep', 'Write'],
+          permissionMode: 'acceptEdits',
+        })) {
+          // AI が Write ツールでファイルを作成するのを待つ
+        }
+        return true;
+      },
+      {
+        maxRetries: 3,
+        initialDelayMs: 2000,
+        maxDelayMs: 30000,
+        backoffMultiplier: 2,
+        retryableErrors: ['ETIMEDOUT', 'ECONNRESET', 'rate_limit', 'Rate limit', 'timeout', 'network'],
+      }
+    );
+
+    if (!techStackResult.success) {
+      const classifiedError = ErrorClassifier.classify(techStackResult.error!);
+      console.error(`❌ 技術スタック分析に失敗 (${techStackResult.attempts}回試行): ${techStackResult.error?.message}`);
+
+      return {
+        logs: [
+          {
+            timestamp: new Date(),
+            level: 'error',
+            source: 'ProductOwnerNode',
+            message: `技術スタック分析に失敗: ${classifiedError.message}`,
+            data: {
+              error: techStackResult.error?.message,
+              severity: classifiedError.severity,
+              attempts: techStackResult.attempts,
+            },
+          },
+        ],
+        metadata: {
+          hasErrors: true,
+          errors: [techStackResult.error?.message || 'Unknown error'],
+        },
+      };
     }
 
     console.log('✅ 技術スタック分析完了');
@@ -143,13 +183,51 @@ MECE原則（漏れなく、重複なく）に基づいて要求を分析し、�
 **重要**: 必ず Write ツールを使用してファイルを作成してください。
 `;
 
-    for await (const message of provider.execute(requirementsAnalysisPrompt, {
-      maxTurns: 5,
-      cwd: config.baseRepoPath,
-      allowedTools: ['Read', 'Glob', 'Grep', 'Write'],
-      permissionMode: 'acceptEdits',
-    })) {
-      // AI が Write ツールでファイルを作成するのを待つ
+    // Phase 2: Requirements analysis with retry
+    const requirementsResult = await RetryManager.executeWithRetry(
+      async () => {
+        for await (const message of provider.execute(requirementsAnalysisPrompt, {
+          maxTurns: 5,
+          cwd: config.baseRepoPath,
+          allowedTools: ['Read', 'Glob', 'Grep', 'Write'],
+          permissionMode: 'acceptEdits',
+        })) {
+          // AI が Write ツールでファイルを作成するのを待つ
+        }
+        return true;
+      },
+      {
+        maxRetries: 3,
+        initialDelayMs: 2000,
+        maxDelayMs: 30000,
+        backoffMultiplier: 2,
+        retryableErrors: ['ETIMEDOUT', 'ECONNRESET', 'rate_limit', 'Rate limit', 'timeout', 'network'],
+      }
+    );
+
+    if (!requirementsResult.success) {
+      const classifiedError = ErrorClassifier.classify(requirementsResult.error!);
+      console.error(`❌ 要求分析に失敗 (${requirementsResult.attempts}回試行): ${requirementsResult.error?.message}`);
+
+      return {
+        logs: [
+          {
+            timestamp: new Date(),
+            level: 'error',
+            source: 'ProductOwnerNode',
+            message: `要求分析に失敗: ${classifiedError.message}`,
+            data: {
+              error: requirementsResult.error?.message,
+              severity: classifiedError.severity,
+              attempts: requirementsResult.attempts,
+            },
+          },
+        ],
+        metadata: {
+          hasErrors: true,
+          errors: [requirementsResult.error?.message || 'Unknown error'],
+        },
+      };
     }
 
     console.log('✅ 要求分析完了');
@@ -222,13 +300,51 @@ ${requirementsContent}
 **重要**: 必ず Write ツールを使用してすべてのファイルを作成してください。
 `;
 
-    for await (const message of provider.execute(taskGenerationPrompt, {
-      maxTurns: 10,
-      cwd: config.baseRepoPath,
-      allowedTools: ['Read', 'Glob', 'Grep', 'Write'],
-      permissionMode: 'acceptEdits',
-    })) {
-      // AI が Write ツールでファイルを作成するのを待つ
+    // Phase 3: Task generation with retry
+    const taskGenerationResult = await RetryManager.executeWithRetry(
+      async () => {
+        for await (const message of provider.execute(taskGenerationPrompt, {
+          maxTurns: 10,
+          cwd: config.baseRepoPath,
+          allowedTools: ['Read', 'Glob', 'Grep', 'Write'],
+          permissionMode: 'acceptEdits',
+        })) {
+          // AI が Write ツールでファイルを作成するのを待つ
+        }
+        return true;
+      },
+      {
+        maxRetries: 3,
+        initialDelayMs: 2000,
+        maxDelayMs: 30000,
+        backoffMultiplier: 2,
+        retryableErrors: ['ETIMEDOUT', 'ECONNRESET', 'rate_limit', 'Rate limit', 'timeout', 'network'],
+      }
+    );
+
+    if (!taskGenerationResult.success) {
+      const classifiedError = ErrorClassifier.classify(taskGenerationResult.error!);
+      console.error(`❌ タスク生成に失敗 (${taskGenerationResult.attempts}回試行): ${taskGenerationResult.error?.message}`);
+
+      return {
+        logs: [
+          {
+            timestamp: new Date(),
+            level: 'error',
+            source: 'ProductOwnerNode',
+            message: `タスク生成に失敗: ${classifiedError.message}`,
+            data: {
+              error: taskGenerationResult.error?.message,
+              severity: classifiedError.severity,
+              attempts: taskGenerationResult.attempts,
+            },
+          },
+        ],
+        metadata: {
+          hasErrors: true,
+          errors: [taskGenerationResult.error?.message || 'Unknown error'],
+        },
+      };
     }
 
     console.log('✅ タスク生成完了');
@@ -236,7 +352,9 @@ ${requirementsContent}
     // Read tasks from file
     let tasks: Task[] = [];
     try {
+      console.log(`🔍 Reading tasks from .kugutsu/tasks.json...`);
       const tasksData = await fileReader.readJSON<TaskArtifact[]>('.kugutsu/tasks.json');
+      console.log(`🔍 Found ${tasksData.length} tasks in file`);
       tasks = tasksData.map((task) => ({
         id: task.id,
         title: task.title,
@@ -265,7 +383,7 @@ ${requirementsContent}
     }
 
     // Return state update with file paths
-    return {
+    const result = {
       tasks,
       techStackPath: '.kugutsu/tech-stack.json',
       requirementsPath: '.kugutsu/requirements.json',
@@ -287,6 +405,9 @@ ${requirementsContent}
         totalTasks: tasks.length,
       },
     };
+    console.log(`🔍 ProductOwner returning tasksPath: ${result.tasksPath}`);
+    console.log(`🔍 ProductOwner returning ${result.tasks.length} tasks`);
+    return result as any;
   } catch (error) {
     console.error('❌ Product Owner Node エラー:', error);
 

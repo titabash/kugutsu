@@ -117,6 +117,10 @@ function mergeState(
     metadata,
     // config is replaced (not merged)
     config: update.config !== undefined ? update.config : state.config,
+    // File paths (replace if provided)
+    tasksPath: update.tasksPath !== undefined ? update.tasksPath : state.tasksPath,
+    techStackPath: update.techStackPath !== undefined ? update.techStackPath : state.techStackPath,
+    requirementsPath: update.requirementsPath !== undefined ? update.requirementsPath : state.requirementsPath,
   };
 }
 
@@ -137,48 +141,112 @@ describe('Basic Workflow Integration', () => {
   });
 
   test('should complete simple workflow: generate → implement → review → merge', async () => {
-    // Step 1: ProductOwner generates tasks
-    const techStackResponse = {
-      languages: ['TypeScript'],
-      frameworks: ['Node.js'],
-      buildTools: ['npm'],
-    };
+    const fs = await import('fs/promises');
+    const path = await import('path');
+    const { mkdtemp, rm } = await import('fs/promises');
+    const { tmpdir } = await import('os');
 
-    const requirementResponse = {
-      requirements: ['User authentication', 'Login page'],
-      constraints: ['Use JWT tokens'],
-    };
+    const originalCwd = process.cwd();
+    const tempDir = await mkdtemp(path.join(tmpdir(), 'workflow-test-'));
+    const kugutsuDir = path.join(tempDir, '.kugutsu');
 
-    const tasksResponse = [
-      {
-        title: 'Implement JWT authentication',
-        description: 'Create JWT token generation and validation',
-        priority: 100,
-        dependencies: [],
-      },
-    ];
+    try {
+      // Step 1: ProductOwner generates tasks
+      const techStackData = {
+        languages: ['TypeScript'],
+        frameworks: ['Node.js'],
+        buildTools: ['npm'],
+        testingFrameworks: ['Jest'],
+        projectType: 'web-app',
+      };
 
-    // Setup separate responses for each ProductOwner phase
-    mockProvider.setMockResponse(/Technology Stack Analysis/, {
-      messages: [createMockMessage.assistant(techStackResponse)],
-    });
-    mockProvider.setMockResponse(/Requirements Analysis/, {
-      messages: [createMockMessage.assistant(requirementResponse)],
-    });
-    mockProvider.setMockResponse(/Task Generation/, {
-      messages: [
-        createMockMessage.assistant(tasksResponse),
-        createMockMessage.result(true),
-      ],
-    });
+      const requirementsData = {
+        functional: ['User authentication', 'Login page'],
+        nonFunctional: ['Security: JWT tokens'],
+        constraints: ['Use TypeScript'],
+      };
 
-    let state = createInitialState('Implement user authentication', {
-      maxEngineers: 1,
-      maxTurns: 30,
-      baseBranch: 'main',
-      baseRepoPath: '/test/repo',
-      worktreeBasePath: '/test/worktrees',
-    });
+      const tasksData = [
+        {
+          id: 'task-001',
+          title: 'Implement JWT authentication',
+          description: 'Create JWT token generation and validation',
+          priority: 100,
+          dependencies: [],
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ];
+
+      // Setup separate responses for each ProductOwner phase with Write tool simulation
+      mockProvider.setMockResponse(/tech.*stack/i, {
+        messages: [
+          createMockMessage.assistant('Analyzing tech stack...'),
+          createMockMessage.system({
+            toolUse: {
+              tool: 'Write',
+              arguments: {
+                file_path: path.join(kugutsuDir, 'tech-stack.json'),
+                content: JSON.stringify(techStackData, null, 2),
+              },
+            },
+          }),
+          createMockMessage.result(true),
+        ],
+        simulateTools: true,
+      });
+
+      mockProvider.setMockResponse(/requirements/i, {
+        messages: [
+          createMockMessage.assistant('Analyzing requirements...'),
+          createMockMessage.system({
+            toolUse: {
+              tool: 'Write',
+              arguments: {
+                file_path: path.join(kugutsuDir, 'requirements.json'),
+                content: JSON.stringify(requirementsData, null, 2),
+              },
+            },
+          }),
+          createMockMessage.result(true),
+        ],
+        simulateTools: true,
+      });
+
+      mockProvider.setMockResponse(/task.*generation/i, {
+        messages: [
+          createMockMessage.assistant('Generating tasks...'),
+          createMockMessage.system({
+            toolUse: {
+              tool: 'Write',
+              arguments: {
+                file_path: path.join(kugutsuDir, 'tasks.json'),
+                content: JSON.stringify(tasksData, null, 2),
+              },
+            },
+          }),
+          createMockMessage.system({
+            toolUse: {
+              tool: 'Write',
+              arguments: {
+                file_path: path.join(kugutsuDir, 'tasks/task-001/instruction.md'),
+                content: '# Task: Implement JWT authentication\n\n## Requirements\n- Create JWT token generation\n- Implement token validation\n',
+              },
+            },
+          }),
+          createMockMessage.result(true),
+        ],
+        simulateTools: true,
+      });
+
+      let state = createInitialState('Implement user authentication', {
+        maxEngineers: 1,
+        maxTurns: 30,
+        baseBranch: 'main',
+        baseRepoPath: tempDir,
+        worktreeBasePath: path.join(tempDir, 'worktrees'),
+      });
 
     const poResult = await productOwnerNode(state);
     state = mergeState(state, poResult);
@@ -219,12 +287,12 @@ describe('Basic Workflow Integration', () => {
       ],
     });
 
-    const engineerResult = await engineerNode(state, task.id);
-    state = mergeState(state, engineerResult);
+      const engineerResult = await engineerNode(state, task.id);
+      state = mergeState(state, engineerResult);
 
-    // Verify task was completed
-    const completedTask = state.tasks!.find((t) => t.id === task.id);
-    expect(completedTask?.status).toBe('completed');
+      // Verify task was implemented and moved to in_review
+      const inReviewTask = state.tasks!.find((t) => t.id === task.id);
+      expect(inReviewTask?.status).toBe('in_review');
 
     // Step 4: Review the completed task
     mockProvider.setDefaultResponse({
@@ -248,62 +316,144 @@ describe('Basic Workflow Integration', () => {
     const mergeCoordResult = await mergeCoordinatorNode(state);
     state = mergeState(state, mergeCoordResult);
 
-    // Verify task was added to merge queue
-    expect(state.mergeQueue).toBeDefined();
-    expect(state.mergeQueue!.length).toBe(1);
-    expect(state.mergeQueue![0].taskId).toBe(task.id);
-    expect(state.mergeQueue![0].status).toBe('pending');
+      // Verify task was added to merge queue
+      expect(state.mergeQueue).toBeDefined();
+      expect(state.mergeQueue!.length).toBe(1);
+      expect(state.mergeQueue![0].taskId).toBe(task.id);
+      expect(state.mergeQueue![0].status).toBe('pending');
+    } finally {
+      // Cleanup: restore original directory before removing tempDir
+      process.chdir(originalCwd);
+      await rm(tempDir, { recursive: true, force: true });
+    }
   });
 
   test('should handle multiple tasks in parallel', async () => {
-    // Generate multiple tasks
-    const techStackResponse = {
-      languages: ['TypeScript'],
-      frameworks: ['Node.js'],
-      buildTools: ['npm'],
-    };
+    const fs = await import('fs/promises');
+    const path = await import('path');
+    const { mkdtemp, rm } = await import('fs/promises');
+    const { tmpdir } = await import('os');
 
-    const requirementResponse = {
-      requirements: ['Feature A', 'Feature B'],
-      constraints: [],
-    };
+    const originalCwd = process.cwd();
+    const tempDir = await mkdtemp(path.join(tmpdir(), 'workflow-parallel-test-'));
+    const kugutsuDir = path.join(tempDir, '.kugutsu');
 
-    const tasksResponse = [
-      {
-        title: 'Implement Feature A',
-        description: 'Feature A implementation',
-        priority: 100,
-        dependencies: [],
-      },
-      {
-        title: 'Implement Feature B',
-        description: 'Feature B implementation',
-        priority: 90,
-        dependencies: [],
-      },
-    ];
+    try {
+      // Generate multiple tasks
+      const techStackData = {
+        languages: ['TypeScript'],
+        frameworks: ['Node.js'],
+        buildTools: ['npm'],
+        testingFrameworks: ['Jest'],
+        projectType: 'web-app',
+      };
 
-    // Setup separate responses for each ProductOwner phase
-    mockProvider.setMockResponse(/Technology Stack Analysis/, {
-      messages: [createMockMessage.assistant(techStackResponse)],
-    });
-    mockProvider.setMockResponse(/Requirements Analysis/, {
-      messages: [createMockMessage.assistant(requirementResponse)],
-    });
-    mockProvider.setMockResponse(/Task Generation/, {
-      messages: [
-        createMockMessage.assistant(tasksResponse),
-        createMockMessage.result(true),
-      ],
-    });
+      const requirementsData = {
+        functional: ['Feature A', 'Feature B'],
+        nonFunctional: [],
+        constraints: [],
+      };
 
-    let state = createInitialState('Implement features A and B', {
-      maxEngineers: 2,
-      maxTurns: 30,
-      baseBranch: 'main',
-      baseRepoPath: '/test/repo',
-      worktreeBasePath: '/test/worktrees',
-    });
+      const tasksData = [
+        {
+          id: 'task-001',
+          title: 'Implement Feature A',
+          description: 'Feature A implementation',
+          priority: 100,
+          dependencies: [],
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        {
+          id: 'task-002',
+          title: 'Implement Feature B',
+          description: 'Feature B implementation',
+          priority: 90,
+          dependencies: [],
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ];
+
+      // Setup separate responses for each ProductOwner phase with Write tool simulation
+      mockProvider.setMockResponse(/tech.*stack/i, {
+        messages: [
+          createMockMessage.assistant('Analyzing tech stack...'),
+          createMockMessage.system({
+            toolUse: {
+              tool: 'Write',
+              arguments: {
+                file_path: path.join(kugutsuDir, 'tech-stack.json'),
+                content: JSON.stringify(techStackData, null, 2),
+              },
+            },
+          }),
+          createMockMessage.result(true),
+        ],
+        simulateTools: true,
+      });
+
+      mockProvider.setMockResponse(/requirements/i, {
+        messages: [
+          createMockMessage.assistant('Analyzing requirements...'),
+          createMockMessage.system({
+            toolUse: {
+              tool: 'Write',
+              arguments: {
+                file_path: path.join(kugutsuDir, 'requirements.json'),
+                content: JSON.stringify(requirementsData, null, 2),
+              },
+            },
+          }),
+          createMockMessage.result(true),
+        ],
+        simulateTools: true,
+      });
+
+      mockProvider.setMockResponse(/task.*generation/i, {
+        messages: [
+          createMockMessage.assistant('Generating tasks...'),
+          createMockMessage.system({
+            toolUse: {
+              tool: 'Write',
+              arguments: {
+                file_path: path.join(kugutsuDir, 'tasks.json'),
+                content: JSON.stringify(tasksData, null, 2),
+              },
+            },
+          }),
+          createMockMessage.system({
+            toolUse: {
+              tool: 'Write',
+              arguments: {
+                file_path: path.join(kugutsuDir, 'tasks/task-001/instruction.md'),
+                content: '# Task: Implement Feature A\n\n## Requirements\n- Implement Feature A\n',
+              },
+            },
+          }),
+          createMockMessage.system({
+            toolUse: {
+              tool: 'Write',
+              arguments: {
+                file_path: path.join(kugutsuDir, 'tasks/task-002/instruction.md'),
+                content: '# Task: Implement Feature B\n\n## Requirements\n- Implement Feature B\n',
+              },
+            },
+          }),
+          createMockMessage.result(true),
+        ],
+        simulateTools: true,
+      });
+
+      let state = createInitialState('Implement features A and B', {
+        maxEngineers: 2,
+        maxTurns: 30,
+        baseBranch: 'main',
+        baseRepoPath: tempDir,
+        worktreeBasePath: path.join(tempDir, 'worktrees'),
+      });
 
     // Generate tasks
     const poResult = await productOwnerNode(state);
@@ -363,63 +513,145 @@ describe('Basic Workflow Integration', () => {
       ],
     });
 
-    const eng2Result = await engineerNode(state, state.tasks![1].id);
-    state = mergeState(state, eng2Result);
+      const eng2Result = await engineerNode(state, state.tasks![1].id);
+      state = mergeState(state, eng2Result);
 
-    // Verify both tasks completed
-    const completed = state.tasks!.filter((t) => t.status === 'completed');
-    expect(completed.length).toBe(2);
+      // Verify both tasks are in review
+      const inReview = state.tasks!.filter((t) => t.status === 'in_review');
+      expect(inReview.length).toBe(2);
+    } finally {
+      // Cleanup: restore original directory before removing tempDir
+      process.chdir(originalCwd);
+      await rm(tempDir, { recursive: true, force: true });
+    }
   });
 
   test('should handle task dependencies correctly', async () => {
-    // Generate tasks with dependencies
-    const techStackResponse = {
-      languages: ['TypeScript'],
-      frameworks: ['Node.js'],
-      buildTools: ['npm'],
-    };
+    const fs = await import('fs/promises');
+    const path = await import('path');
+    const { mkdtemp, rm } = await import('fs/promises');
+    const { tmpdir } = await import('os');
 
-    const requirementResponse = {
-      requirements: ['Database setup', 'User model'],
-      constraints: [],
-    };
+    const originalCwd = process.cwd();
+    const tempDir = await mkdtemp(path.join(tmpdir(), 'workflow-dep-test-'));
+    const kugutsuDir = path.join(tempDir, '.kugutsu');
 
-    const tasksResponse = [
-      {
-        title: 'Setup database',
-        description: 'Initialize database',
-        priority: 100,
-        dependencies: [],
-      },
-      {
-        title: 'Create user model',
-        description: 'User model depends on database',
-        priority: 90,
-        dependencies: ['task-001'], // Depends on first task (ID is task-001, not task-1)
-      },
-    ];
+    try {
+      // Generate tasks with dependencies
+      const techStackData = {
+        languages: ['TypeScript'],
+        frameworks: ['Node.js'],
+        buildTools: ['npm'],
+        testingFrameworks: ['Jest'],
+        projectType: 'web-app',
+      };
 
-    // Setup separate responses for each ProductOwner phase
-    mockProvider.setMockResponse(/Technology Stack Analysis/, {
-      messages: [createMockMessage.assistant(techStackResponse)],
-    });
-    mockProvider.setMockResponse(/Requirements Analysis/, {
-      messages: [createMockMessage.assistant(requirementResponse)],
-    });
-    mockProvider.setMockResponse(/Task Generation/, {
-      messages: [
-        createMockMessage.assistant(tasksResponse),
-        createMockMessage.result(true),
-      ],
-    });
+      const requirementsData = {
+        functional: ['Database setup', 'User model'],
+        nonFunctional: [],
+        constraints: [],
+      };
 
-    let state = createInitialState('Setup database and user model', {
-      maxEngineers: 2,
-      maxTurns: 30,
-      baseBranch: 'main',
-      baseRepoPath: '/test/repo',
-      worktreeBasePath: '/test/worktrees',
-    });
+      const tasksData = [
+        {
+          id: 'task-001',
+          title: 'Setup database',
+          description: 'Initialize database',
+          priority: 100,
+          dependencies: [],
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        {
+          id: 'task-002',
+          title: 'Create user model',
+          description: 'User model depends on database',
+          priority: 90,
+          dependencies: ['task-001'],
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ];
+
+      // Setup separate responses for each ProductOwner phase with Write tool simulation
+      mockProvider.setMockResponse(/tech.*stack/i, {
+        messages: [
+          createMockMessage.assistant('Analyzing tech stack...'),
+          createMockMessage.system({
+            toolUse: {
+              tool: 'Write',
+              arguments: {
+                file_path: path.join(kugutsuDir, 'tech-stack.json'),
+                content: JSON.stringify(techStackData, null, 2),
+              },
+            },
+          }),
+          createMockMessage.result(true),
+        ],
+        simulateTools: true,
+      });
+
+      mockProvider.setMockResponse(/requirements/i, {
+        messages: [
+          createMockMessage.assistant('Analyzing requirements...'),
+          createMockMessage.system({
+            toolUse: {
+              tool: 'Write',
+              arguments: {
+                file_path: path.join(kugutsuDir, 'requirements.json'),
+                content: JSON.stringify(requirementsData, null, 2),
+              },
+            },
+          }),
+          createMockMessage.result(true),
+        ],
+        simulateTools: true,
+      });
+
+      mockProvider.setMockResponse(/task.*generation/i, {
+        messages: [
+          createMockMessage.assistant('Generating tasks...'),
+          createMockMessage.system({
+            toolUse: {
+              tool: 'Write',
+              arguments: {
+                file_path: path.join(kugutsuDir, 'tasks.json'),
+                content: JSON.stringify(tasksData, null, 2),
+              },
+            },
+          }),
+          createMockMessage.system({
+            toolUse: {
+              tool: 'Write',
+              arguments: {
+                file_path: path.join(kugutsuDir, 'tasks/task-001/instruction.md'),
+                content: '# Task: Setup database\n\n## Requirements\n- Initialize database\n',
+              },
+            },
+          }),
+          createMockMessage.system({
+            toolUse: {
+              tool: 'Write',
+              arguments: {
+                file_path: path.join(kugutsuDir, 'tasks/task-002/instruction.md'),
+                content: '# Task: Create user model\n\n## Requirements\n- User model depends on database\n',
+              },
+            },
+          }),
+          createMockMessage.result(true),
+        ],
+        simulateTools: true,
+      });
+
+      let state = createInitialState('Setup database and user model', {
+        maxEngineers: 2,
+        maxTurns: 30,
+        baseBranch: 'main',
+        baseRepoPath: tempDir,
+        worktreeBasePath: path.join(tempDir, 'worktrees'),
+      });
 
     // Generate tasks
     const poResult = await productOwnerNode(state);
@@ -461,14 +693,31 @@ describe('Basic Workflow Integration', () => {
       ],
     });
 
-    const eng1Result = await engineerNode(state, state.tasks![0].id);
-    state = mergeState(state, eng1Result);
+      const eng1Result = await engineerNode(state, state.tasks![0].id);
+      state = mergeState(state, eng1Result);
 
-    // Now dispatch again - second task should be available
-    const dispatch2Result = await engineerDispatchNode(state);
-    state = mergeState(state, dispatch2Result);
+      // Review and complete the first task
+      mockProvider.setDefaultResponse({
+        messages: [
+          createMockMessage.assistant('コードを確認しています...'),
+          createMockMessage.assistant('REVIEW_STATUS: APPROVED\n\n良好なコード品質です。'),
+          createMockMessage.result(true),
+        ],
+      });
 
-    // Second task should now have worktree
-    expect(state.tasks![1].worktreePath).toBeDefined();
+      const review1Result = await reviewNode(state, state.tasks![0].id);
+      state = mergeState(state, review1Result);
+
+      // Now dispatch again - second task should be available (dependency met)
+      const dispatch2Result = await engineerDispatchNode(state);
+      state = mergeState(state, dispatch2Result);
+
+      // Second task should now have worktree
+      expect(state.tasks![1].worktreePath).toBeDefined();
+    } finally {
+      // Cleanup: restore original directory before removing tempDir
+      process.chdir(originalCwd);
+      await rm(tempDir, { recursive: true, force: true });
+    }
   });
 });

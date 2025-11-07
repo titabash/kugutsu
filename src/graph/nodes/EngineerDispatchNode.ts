@@ -8,6 +8,9 @@ import type { ParallelDevStateType, ParallelDevStateUpdate } from '../state.js';
 import type { Task, WorktreeInfo } from '../types.js';
 import { GitWorktreeManager } from '../../managers/GitWorktreeManager.js';
 import { TaskStateMachine } from '../../utils/TaskStateMachine.js';
+import { FileReader } from '../../utils/FileReader.js';
+import { FileWriter } from '../../utils/FileWriter.js';
+import type { TaskArtifact } from '../../types/artifacts.js';
 
 /**
  * Engineer Dispatch Node
@@ -21,9 +24,14 @@ import { TaskStateMachine } from '../../utils/TaskStateMachine.js';
 export async function engineerDispatchNode(
   state: ParallelDevStateType
 ): Promise<ParallelDevStateUpdate> {
-  const { tasks, config } = state;
+  const { tasks, config, tasksPath } = state;
 
   console.log('🚀 Engineer Dispatch: タスクを割り当てています...');
+  console.log(`📝 tasksPath: ${tasksPath}`);
+  console.log(`📝 Received ${tasks.length} tasks from state`);
+
+  // Fallback to default path if tasksPath is undefined
+  const actualTasksPath = tasksPath || '.kugutsu/tasks.json';
 
   try {
     // Initialize Git Worktree Manager
@@ -32,6 +40,10 @@ export async function engineerDispatchNode(
       config.worktreeBasePath,
       config.baseBranch
     );
+
+    // Initialize File Reader/Writer for tasks.json
+    const fileReader = new FileReader(config.baseRepoPath);
+    const fileWriter = new FileWriter(config.baseRepoPath);
 
     const updatedTasks: Task[] = [];
     const newWorktrees = new Map<string, WorktreeInfo>();
@@ -44,7 +56,14 @@ export async function engineerDispatchNode(
 
     for (const task of tasksToMarkReady) {
       const readyTask = TaskStateMachine.transition(task, 'ready');
-      updatedTasks.push(readyTask);
+
+      // Replace if exists, otherwise add
+      const existingIndex = updatedTasks.findIndex((t) => t.id === readyTask.id);
+      if (existingIndex >= 0) {
+        updatedTasks[existingIndex] = readyTask;
+      } else {
+        updatedTasks.push(readyTask);
+      }
 
       logs.push({
         timestamp: new Date(),
@@ -105,7 +124,13 @@ export async function engineerDispatchNode(
           'in_progress'
         );
 
-        updatedTasks.push(inProgressTask);
+        // Replace if exists, otherwise add
+        const existingIndex = updatedTasks.findIndex((t) => t.id === inProgressTask.id);
+        if (existingIndex >= 0) {
+          updatedTasks[existingIndex] = inProgressTask;
+        } else {
+          updatedTasks.push(inProgressTask);
+        }
 
         // Add worktree info
         newWorktrees.set(task.id, {
@@ -145,6 +170,34 @@ export async function engineerDispatchNode(
         });
 
         console.error(`❌ タスク ${task.id} の作成失敗:`, error);
+      }
+    }
+
+    // Update tasks.json with worktree information
+    if (updatedTasks.length > 0) {
+      try {
+        const taskArtifacts = await fileReader.readJSON<TaskArtifact[]>(actualTasksPath);
+
+        // Update TaskArtifacts with worktree info from updatedTasks
+        const updatedArtifacts = taskArtifacts.map((artifact) => {
+          const updatedTask = updatedTasks.find((t) => t.id === artifact.id);
+          if (updatedTask && updatedTask.worktreePath && updatedTask.branchName) {
+            return {
+              ...artifact,
+              worktreePath: updatedTask.worktreePath,
+              branchName: updatedTask.branchName,
+              status: updatedTask.status as any, // TaskArtifact status
+              updatedAt: new Date().toISOString(),
+            };
+          }
+          return artifact;
+        });
+
+        await fileWriter.writeJSON(actualTasksPath, updatedArtifacts);
+        console.log(`📝 tasks.json を更新しました (${updatedTasks.filter((t) => t.worktreePath).length}個のworktree)`);
+      } catch (error) {
+        console.warn('⚠️ tasks.json の更新に失敗:', error);
+        // Non-fatal error - continue with state update
       }
     }
 

@@ -72,40 +72,108 @@ describe('Graph Execution Integration', () => {
   });
 
   test('should execute complete workflow from start to end', async () => {
-    // Setup mock responses
-    const techStackResponse = {
-      languages: ['TypeScript'],
-      frameworks: ['Node.js'],
-      buildTools: ['npm'],
-    };
+    const fs = await import('fs/promises');
+    const path = await import('path');
+    const { mkdtemp, rm } = await import('fs/promises');
+    const { tmpdir } = await import('os');
 
-    const requirementResponse = {
-      requirements: ['Add user authentication'],
-      constraints: [],
-    };
+    const originalCwd = process.cwd();
+    const tempDir = await mkdtemp(path.join(tmpdir(), 'graph-exec-test-'));
+    const kugutsuDir = path.join(tempDir, '.kugutsu');
 
-    const tasksResponse = [
-      {
-        title: 'Implement authentication',
-        description: 'Create auth system',
-        priority: 100,
-        dependencies: [],
-      },
-    ];
+    try {
+      // Create .kugutsu directory structure
+      await fs.mkdir(kugutsuDir, { recursive: true });
+      await fs.mkdir(path.join(kugutsuDir, 'tasks/task-001'), { recursive: true });
 
-    // Setup separate responses for each ProductOwner phase
-    mockProvider.setMockResponse(/Technology Stack Analysis/, {
-      messages: [createMockMessage.assistant(techStackResponse)],
-    });
-    mockProvider.setMockResponse(/Requirements Analysis/, {
-      messages: [createMockMessage.assistant(requirementResponse)],
-    });
-    mockProvider.setMockResponse(/Task Generation/, {
-      messages: [
-        createMockMessage.assistant(tasksResponse),
-        createMockMessage.result(true),
-      ],
-    });
+      // Setup mock responses with Write tool simulation
+      const techStackData = {
+        languages: ['TypeScript'],
+        frameworks: ['Node.js'],
+        buildTools: ['npm'],
+        testingFrameworks: ['Jest'],
+        projectType: 'web-app',
+      };
+
+      const requirementsData = {
+        functional: ['Add user authentication'],
+        nonFunctional: [],
+        constraints: [],
+      };
+
+      const tasksData = [
+        {
+          id: 'task-001',
+          title: 'Implement authentication',
+          description: 'Create auth system',
+          priority: 100,
+          dependencies: [],
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ];
+
+      // Setup ProductOwner phases with Write tool simulation
+      mockProvider.setMockResponse(/tech.*stack/i, {
+        messages: [
+          createMockMessage.assistant('Analyzing tech stack...'),
+          createMockMessage.system({
+            toolUse: {
+              tool: 'Write',
+              arguments: {
+                file_path: path.join(kugutsuDir, 'tech-stack.json'),
+                content: JSON.stringify(techStackData, null, 2),
+              },
+            },
+          }),
+          createMockMessage.result(true),
+        ],
+        simulateTools: true,
+      });
+
+      mockProvider.setMockResponse(/requirements/i, {
+        messages: [
+          createMockMessage.assistant('Analyzing requirements...'),
+          createMockMessage.system({
+            toolUse: {
+              tool: 'Write',
+              arguments: {
+                file_path: path.join(kugutsuDir, 'requirements.json'),
+                content: JSON.stringify(requirementsData, null, 2),
+              },
+            },
+          }),
+          createMockMessage.result(true),
+        ],
+        simulateTools: true,
+      });
+
+      mockProvider.setMockResponse(/task.*generation/i, {
+        messages: [
+          createMockMessage.assistant('Generating tasks...'),
+          createMockMessage.system({
+            toolUse: {
+              tool: 'Write',
+              arguments: {
+                file_path: path.join(kugutsuDir, 'tasks.json'),
+                content: JSON.stringify(tasksData, null, 2),
+              },
+            },
+          }),
+          createMockMessage.system({
+            toolUse: {
+              tool: 'Write',
+              arguments: {
+                file_path: path.join(kugutsuDir, 'tasks/task-001/instruction.md'),
+                content: '# Task: Implement authentication\n\nCreate auth system with tests.',
+              },
+            },
+          }),
+          createMockMessage.result(true),
+        ],
+        simulateTools: true,
+      });
 
     // Setup Engineer implementation response
     const SESSION_ID = 'session-graph-test';
@@ -127,30 +195,48 @@ describe('Graph Execution Integration', () => {
       ],
     });
 
-    // Setup Review response
-    mockProvider.setMockResponse(/Review/, {
-      messages: [
-        createMockMessage.assistant('レビュー: 承認'),
-        createMockMessage.result(true),
-      ],
-    });
+      // Setup Review response with Write tool simulation
+      mockProvider.setMockResponse(/Review/i, {
+        messages: [
+          createMockMessage.assistant('REVIEW_STATUS: APPROVED\n\nコードは良好です。'),
+          createMockMessage.system({
+            toolUse: {
+              tool: 'Write',
+              arguments: {
+                file_path: path.join(kugutsuDir, 'tasks/task-001/review.json'),
+                content: JSON.stringify({
+                  taskId: 'task-001',
+                  status: 'approved',
+                  reviewedBy: 'TechLeadAI',
+                  reviewedAt: new Date().toISOString(),
+                  comments: [],
+                  summary: 'レビュー結果: approved',
+                  suggestions: [],
+                }, null, 2),
+              },
+            },
+          }),
+          createMockMessage.result(true),
+        ],
+        simulateTools: true,
+      });
 
-    // Create initial state
-    const initialState = createInitialState('Implement user authentication', {
-      maxEngineers: 1,
-      maxTurns: 30,
-      baseBranch: 'main',
-      baseRepoPath: '/test/repo',
-      worktreeBasePath: '/test/worktrees',
-      provider: 'claude',
-    });
+      // Create initial state
+      const initialState = createInitialState('Implement user authentication', {
+        maxEngineers: 1,
+        maxTurns: 30,
+        baseBranch: 'main',
+        baseRepoPath: tempDir,
+        worktreeBasePath: path.join(tempDir, 'worktrees'),
+        provider: 'claude',
+      });
 
-    // Compile graph
-    const graph = compileParallelDevGraph();
+      // Compile graph
+      const graph = compileParallelDevGraph();
 
-    // Execute graph and collect all states
-    const states: any[] = [];
-    const stream = await graph.stream(initialState);
+      // Execute graph and collect all states
+      const states: any[] = [];
+      const stream = await graph.stream(initialState);
 
     for await (const event of stream) {
       states.push(event);
@@ -183,175 +269,369 @@ describe('Graph Execution Integration', () => {
     expect(mergeCoordinatorEvent!.merge_coordinator.mergeQueue).toBeDefined();
 
     // Verify completion check was executed
-    const checkCompletionEvent = states.find((s) => 'check_completion' in s);
-    expect(checkCompletionEvent).toBeDefined();
-    expect(checkCompletionEvent!.check_completion.logs).toBeDefined();
+      const checkCompletionEvent = states.find((s) => 'check_completion' in s);
+      expect(checkCompletionEvent).toBeDefined();
+      expect(checkCompletionEvent!.check_completion.logs).toBeDefined();
+    } finally {
+      // Cleanup: restore original directory before removing tempDir
+      process.chdir(originalCwd);
+      await rm(tempDir, { recursive: true, force: true });
+    }
   }, 30000); // 30 second timeout
 
   test('should handle multiple tasks in graph execution', async () => {
-    // Setup mock responses for 2 tasks
-    const techStackResponse = {
-      languages: ['TypeScript'],
-      frameworks: ['Node.js'],
-      buildTools: ['npm'],
-    };
+    const fs = await import('fs/promises');
+    const path = await import('path');
+    const { mkdtemp, rm } = await import('fs/promises');
+    const { tmpdir } = await import('os');
 
-    const requirementResponse = {
-      requirements: ['Feature A', 'Feature B'],
-      constraints: [],
-    };
+    const originalCwd = process.cwd();
+    const tempDir = await mkdtemp(path.join(tmpdir(), 'graph-multi-test-'));
+    const kugutsuDir = path.join(tempDir, '.kugutsu');
 
-    const tasksResponse = [
-      {
-        title: 'Feature A',
-        description: 'Implement Feature A',
-        priority: 100,
-        dependencies: [],
-      },
-      {
-        title: 'Feature B',
-        description: 'Implement Feature B',
-        priority: 90,
-        dependencies: [],
-      },
-    ];
+    try {
+      // Create .kugutsu directory structure for 2 tasks
+      await fs.mkdir(kugutsuDir, { recursive: true });
+      await fs.mkdir(path.join(kugutsuDir, 'tasks/task-001'), { recursive: true });
+      await fs.mkdir(path.join(kugutsuDir, 'tasks/task-002'), { recursive: true });
 
-    // Setup separate responses for each ProductOwner phase
-    mockProvider.setMockResponse(/Technology Stack Analysis/, {
-      messages: [createMockMessage.assistant(techStackResponse)],
-    });
-    mockProvider.setMockResponse(/Requirements Analysis/, {
-      messages: [createMockMessage.assistant(requirementResponse)],
-    });
-    mockProvider.setMockResponse(/Task Generation/, {
-      messages: [
-        createMockMessage.assistant(tasksResponse),
-        createMockMessage.result(true),
-      ],
-    });
+      // Setup mock responses for 2 tasks
+      const techStackData = {
+        languages: ['TypeScript'],
+        frameworks: ['Node.js'],
+        buildTools: ['npm'],
+        testingFrameworks: ['Jest'],
+        projectType: 'web-app',
+      };
 
-    // Setup Engineer implementation response
-    const SESSION_ID = 'session-multi-task';
-    mockProvider.setDefaultResponse({
-      messages: [
-        createMockMessage.assistant('実装完了', SESSION_ID),
-        createMockMessage.result(true),
-      ],
-    });
+      const requirementsData = {
+        functional: ['Feature A', 'Feature B'],
+        nonFunctional: [],
+        constraints: [],
+      };
 
-    // Setup Review response
-    mockProvider.setMockResponse(/Review/, {
-      messages: [
-        createMockMessage.assistant('承認'),
-        createMockMessage.result(true),
-      ],
-    });
+      const tasksData = [
+        {
+          id: 'task-001',
+          title: 'Feature A',
+          description: 'Implement Feature A',
+          priority: 100,
+          dependencies: [],
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        {
+          id: 'task-002',
+          title: 'Feature B',
+          description: 'Implement Feature B',
+          priority: 90,
+          dependencies: [],
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ];
 
-    // Create initial state with maxEngineers = 2
-    const initialState = createInitialState('Implement features A and B', {
-      maxEngineers: 2,
-      maxTurns: 30,
-      baseBranch: 'main',
-      baseRepoPath: '/test/repo',
-      worktreeBasePath: '/test/worktrees',
-      provider: 'claude',
-    });
+      // Setup ProductOwner phases with Write tool simulation
+      mockProvider.setMockResponse(/tech.*stack/i, {
+        messages: [
+          createMockMessage.assistant('Analyzing tech stack...'),
+          createMockMessage.system({
+            toolUse: {
+              tool: 'Write',
+              arguments: {
+                file_path: path.join(kugutsuDir, 'tech-stack.json'),
+                content: JSON.stringify(techStackData, null, 2),
+              },
+            },
+          }),
+          createMockMessage.result(true),
+        ],
+        simulateTools: true,
+      });
 
-    // Compile graph
-    const graph = compileParallelDevGraph();
+      mockProvider.setMockResponse(/requirements/i, {
+        messages: [
+          createMockMessage.assistant('Analyzing requirements...'),
+          createMockMessage.system({
+            toolUse: {
+              tool: 'Write',
+              arguments: {
+                file_path: path.join(kugutsuDir, 'requirements.json'),
+                content: JSON.stringify(requirementsData, null, 2),
+              },
+            },
+          }),
+          createMockMessage.result(true),
+        ],
+        simulateTools: true,
+      });
 
-    // Execute graph
-    const states: any[] = [];
-    const stream = await graph.stream(initialState);
+      mockProvider.setMockResponse(/task.*generation/i, {
+        messages: [
+          createMockMessage.assistant('Generating tasks...'),
+          createMockMessage.system({
+            toolUse: {
+              tool: 'Write',
+              arguments: {
+                file_path: path.join(kugutsuDir, 'tasks.json'),
+                content: JSON.stringify(tasksData, null, 2),
+              },
+            },
+          }),
+          createMockMessage.system({
+            toolUse: {
+              tool: 'Write',
+              arguments: {
+                file_path: path.join(kugutsuDir, 'tasks/task-001/instruction.md'),
+                content: '# Task: Feature A\n\nImplement Feature A.',
+              },
+            },
+          }),
+          createMockMessage.system({
+            toolUse: {
+              tool: 'Write',
+              arguments: {
+                file_path: path.join(kugutsuDir, 'tasks/task-002/instruction.md'),
+                content: '# Task: Feature B\n\nImplement Feature B.',
+              },
+            },
+          }),
+          createMockMessage.result(true),
+        ],
+        simulateTools: true,
+      });
 
-    for await (const event of stream) {
-      states.push(event);
+      // Setup Engineer implementation response
+      const SESSION_ID = 'session-multi-task';
+      mockProvider.setDefaultResponse({
+        messages: [
+          createMockMessage.assistant('実装中...', SESSION_ID),
+          {
+            type: 'result' as const,
+            content: {
+              duration: 100,
+              tokenUsage: { input: 10, output: 20, total: 30 },
+              cost: 0.001,
+              permissionDenials: 0,
+              success: true,
+            },
+            session_id: SESSION_ID,
+            timestamp: new Date(),
+          },
+        ],
+      });
+
+      // Setup Review response with Write tool simulation
+      mockProvider.setMockResponse(/Review/i, {
+        messages: [
+          createMockMessage.assistant('REVIEW_STATUS: APPROVED\n\nコードは良好です。'),
+          createMockMessage.system({
+            toolUse: {
+              tool: 'Write',
+              arguments: {
+                file_path: path.join(kugutsuDir, 'tasks/task-001/review.json'),
+                content: JSON.stringify({
+                  taskId: 'task-001',
+                  status: 'approved',
+                  reviewedBy: 'TechLeadAI',
+                  reviewedAt: new Date().toISOString(),
+                  comments: [],
+                  summary: 'レビュー結果: approved',
+                  suggestions: [],
+                }, null, 2),
+              },
+            },
+          }),
+          createMockMessage.result(true),
+        ],
+        simulateTools: true,
+      });
+
+      // Create initial state with maxEngineers = 2
+      const initialState = createInitialState('Implement features A and B', {
+        maxEngineers: 2,
+        maxTurns: 30,
+        baseBranch: 'main',
+        baseRepoPath: tempDir,
+        worktreeBasePath: path.join(tempDir, 'worktrees'),
+        provider: 'claude',
+      });
+
+      // Compile graph
+      const graph = compileParallelDevGraph();
+
+      // Execute graph
+      const states: any[] = [];
+      const stream = await graph.stream(initialState);
+
+      for await (const event of stream) {
+        states.push(event);
+      }
+
+      // Verify both tasks were processed
+      expect(states.length).toBeGreaterThan(0);
+
+      // Extract node names
+      const nodeNames = states.flatMap((state) => Object.keys(state));
+
+      // Should have executed engineer and review at least once
+      expect(nodeNames.filter((n) => n === 'engineer').length).toBeGreaterThan(0);
+      expect(nodeNames.filter((n) => n === 'review').length).toBeGreaterThan(0);
+    } finally {
+      // Cleanup: restore original directory before removing tempDir
+      process.chdir(originalCwd);
+      await rm(tempDir, { recursive: true, force: true });
     }
-
-    // Verify both tasks were processed
-    expect(states.length).toBeGreaterThan(0);
-
-    // Extract node names
-    const nodeNames = states.flatMap((state) => Object.keys(state));
-
-    // Should have executed engineer and review at least once
-    expect(nodeNames.filter((n) => n === 'engineer').length).toBeGreaterThan(0);
-    expect(nodeNames.filter((n) => n === 'review').length).toBeGreaterThan(0);
   }, 30000); // 30 second timeout
 
   test('should handle task failure in graph execution', async () => {
-    // Setup mock responses
-    const techStackResponse = {
-      languages: ['TypeScript'],
-      frameworks: ['Node.js'],
-      buildTools: ['npm'],
-    };
+    const fs = await import('fs/promises');
+    const path = await import('path');
+    const { mkdtemp, rm } = await import('fs/promises');
+    const { tmpdir } = await import('os');
 
-    const requirementResponse = {
-      requirements: ['Failing task'],
-      constraints: [],
-    };
+    const originalCwd = process.cwd();
+    const tempDir = await mkdtemp(path.join(tmpdir(), 'graph-fail-test-'));
+    const kugutsuDir = path.join(tempDir, '.kugutsu');
 
-    const tasksResponse = [
-      {
-        title: 'Failing task',
-        description: 'This task will fail',
-        priority: 100,
-        dependencies: [],
-      },
-    ];
+    try {
+      // Create .kugutsu directory structure
+      await fs.mkdir(kugutsuDir, { recursive: true });
+      await fs.mkdir(path.join(kugutsuDir, 'tasks/task-001'), { recursive: true });
 
-    // Setup separate responses for each ProductOwner phase
-    mockProvider.setMockResponse(/Technology Stack Analysis/, {
-      messages: [createMockMessage.assistant(techStackResponse)],
-    });
-    mockProvider.setMockResponse(/Requirements Analysis/, {
-      messages: [createMockMessage.assistant(requirementResponse)],
-    });
-    mockProvider.setMockResponse(/Task Generation/, {
-      messages: [
-        createMockMessage.assistant(tasksResponse),
-        createMockMessage.result(true),
-      ],
-    });
+      // Setup mock responses
+      const techStackData = {
+        languages: ['TypeScript'],
+        frameworks: ['Node.js'],
+        buildTools: ['npm'],
+        testingFrameworks: ['Jest'],
+        projectType: 'web-app',
+      };
 
-    // Setup Engineer to fail
-    mockProvider.setDefaultResponse({
-      messages: [],
-      shouldThrowError: true,
-      errorMessage: 'Implementation failed',
-    });
+      const requirementsData = {
+        functional: ['Failing task'],
+        nonFunctional: [],
+        constraints: [],
+      };
 
-    // Create initial state
-    const initialState = createInitialState('Implement failing task', {
-      maxEngineers: 1,
-      maxTurns: 30,
-      baseBranch: 'main',
-      baseRepoPath: '/test/repo',
-      worktreeBasePath: '/test/worktrees',
-      provider: 'claude',
-    });
+      const tasksData = [
+        {
+          id: 'task-001',
+          title: 'Failing task',
+          description: 'This task will fail',
+          priority: 100,
+          dependencies: [],
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ];
 
-    // Compile graph
-    const graph = compileParallelDevGraph();
+      // Setup ProductOwner phases with Write tool simulation
+      mockProvider.setMockResponse(/tech.*stack/i, {
+        messages: [
+          createMockMessage.assistant('Analyzing tech stack...'),
+          createMockMessage.system({
+            toolUse: {
+              tool: 'Write',
+              arguments: {
+                file_path: path.join(kugutsuDir, 'tech-stack.json'),
+                content: JSON.stringify(techStackData, null, 2),
+              },
+            },
+          }),
+          createMockMessage.result(true),
+        ],
+        simulateTools: true,
+      });
 
-    // Execute graph
-    const states: any[] = [];
-    const stream = await graph.stream(initialState);
+      mockProvider.setMockResponse(/requirements/i, {
+        messages: [
+          createMockMessage.assistant('Analyzing requirements...'),
+          createMockMessage.system({
+            toolUse: {
+              tool: 'Write',
+              arguments: {
+                file_path: path.join(kugutsuDir, 'requirements.json'),
+                content: JSON.stringify(requirementsData, null, 2),
+              },
+            },
+          }),
+          createMockMessage.result(true),
+        ],
+        simulateTools: true,
+      });
 
-    for await (const event of stream) {
-      states.push(event);
+      mockProvider.setMockResponse(/task.*generation/i, {
+        messages: [
+          createMockMessage.assistant('Generating tasks...'),
+          createMockMessage.system({
+            toolUse: {
+              tool: 'Write',
+              arguments: {
+                file_path: path.join(kugutsuDir, 'tasks.json'),
+                content: JSON.stringify(tasksData, null, 2),
+              },
+            },
+          }),
+          createMockMessage.system({
+            toolUse: {
+              tool: 'Write',
+              arguments: {
+                file_path: path.join(kugutsuDir, 'tasks/task-001/instruction.md'),
+                content: '# Task: Failing task\n\nThis will fail.',
+              },
+            },
+          }),
+          createMockMessage.result(true),
+        ],
+        simulateTools: true,
+      });
+
+      // Setup Engineer to fail
+      mockProvider.setDefaultResponse({
+        messages: [],
+        shouldThrowError: true,
+        errorMessage: 'Implementation failed',
+      });
+
+      // Create initial state
+      const initialState = createInitialState('Implement failing task', {
+        maxEngineers: 1,
+        maxTurns: 30,
+        baseBranch: 'main',
+        baseRepoPath: tempDir,
+        worktreeBasePath: path.join(tempDir, 'worktrees'),
+        provider: 'claude',
+      });
+
+      // Compile graph
+      const graph = compileParallelDevGraph();
+
+      // Execute graph
+      const states: any[] = [];
+      const stream = await graph.stream(initialState);
+
+      for await (const event of stream) {
+        states.push(event);
+      }
+
+      // Verify workflow handled failure
+      expect(states.length).toBeGreaterThan(0);
+
+      const nodeNames = states.flatMap((state) => Object.keys(state));
+
+      // Should have executed up to engineer and check_completion
+      expect(nodeNames).toContain('product_owner');
+      expect(nodeNames).toContain('engineer_dispatch');
+      expect(nodeNames).toContain('engineer');
+      expect(nodeNames).toContain('check_completion');
+    } finally {
+      // Cleanup
+      process.chdir(originalCwd);
+      await rm(tempDir, { recursive: true, force: true });
     }
-
-    // Verify workflow handled failure
-    expect(states.length).toBeGreaterThan(0);
-
-    const nodeNames = states.flatMap((state) => Object.keys(state));
-
-    // Should have executed up to engineer and check_completion
-    expect(nodeNames).toContain('product_owner');
-    expect(nodeNames).toContain('engineer_dispatch');
-    expect(nodeNames).toContain('engineer');
-    expect(nodeNames).toContain('check_completion');
   }, 30000); // 30 second timeout
 });

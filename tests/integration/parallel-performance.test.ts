@@ -72,60 +72,170 @@ describe('Parallel Execution Performance', () => {
   });
 
   test('should execute multiple tasks in parallel with improved performance', async () => {
-    // Setup mock responses with artificial delay to simulate real work
-    const TASK_DELAY_MS = 100; // Simulate 100ms per task
+    const fs = await import('fs/promises');
+    const path = await import('path');
+    const { mkdtemp, rm } = await import('fs/promises');
+    const { tmpdir } = await import('os');
 
-    const techStackResponse = {
-      languages: ['TypeScript'],
-      frameworks: ['Node.js'],
-      buildTools: ['npm'],
-    };
+    const originalCwd = process.cwd();
+    const tempDir = await mkdtemp(path.join(tmpdir(), 'perf-test-'));
+    const kugutsuDir = path.join(tempDir, '.kugutsu');
 
-    const requirementResponse = {
-      requirements: ['Feature 1', 'Feature 2', 'Feature 3', 'Feature 4'],
-      constraints: [],
-    };
+    try {
+      // Create .kugutsu directory structure for 4 tasks
+      await fs.mkdir(kugutsuDir, { recursive: true });
+      await fs.mkdir(path.join(kugutsuDir, 'tasks/task-001'), { recursive: true });
+      await fs.mkdir(path.join(kugutsuDir, 'tasks/task-002'), { recursive: true });
+      await fs.mkdir(path.join(kugutsuDir, 'tasks/task-003'), { recursive: true });
+      await fs.mkdir(path.join(kugutsuDir, 'tasks/task-004'), { recursive: true });
 
-    const tasksResponse = [
-      {
-        title: 'Feature 1',
-        description: 'Implement Feature 1',
-        priority: 100,
-        dependencies: [],
-      },
-      {
-        title: 'Feature 2',
-        description: 'Implement Feature 2',
-        priority: 90,
-        dependencies: [],
-      },
-      {
-        title: 'Feature 3',
-        description: 'Implement Feature 3',
-        priority: 80,
-        dependencies: [],
-      },
-      {
-        title: 'Feature 4',
-        description: 'Implement Feature 4',
-        priority: 70,
-        dependencies: [],
-      },
-    ];
+      // Setup mock responses with artificial delay to simulate real work
+      const TASK_DELAY_MS = 100; // Simulate 100ms per task
 
-    // Setup separate responses for each ProductOwner phase
-    mockProvider.setMockResponse(/Technology Stack Analysis/, {
-      messages: [createMockMessage.assistant(techStackResponse)],
-    });
-    mockProvider.setMockResponse(/Requirements Analysis/, {
-      messages: [createMockMessage.assistant(requirementResponse)],
-    });
-    mockProvider.setMockResponse(/Task Generation/, {
-      messages: [
-        createMockMessage.assistant(tasksResponse),
-        createMockMessage.result(true),
-      ],
-    });
+      const techStackData = {
+        languages: ['TypeScript'],
+        frameworks: ['Node.js'],
+        buildTools: ['npm'],
+        testingFrameworks: ['Jest'],
+        projectType: 'web-app',
+      };
+
+      const requirementsData = {
+        functional: ['Feature 1', 'Feature 2', 'Feature 3', 'Feature 4'],
+        nonFunctional: [],
+        constraints: [],
+      };
+
+      const tasksData = [
+        {
+          id: 'task-001',
+          title: 'Feature 1',
+          description: 'Implement Feature 1',
+          priority: 100,
+          dependencies: [],
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        {
+          id: 'task-002',
+          title: 'Feature 2',
+          description: 'Implement Feature 2',
+          priority: 90,
+          dependencies: [],
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        {
+          id: 'task-003',
+          title: 'Feature 3',
+          description: 'Implement Feature 3',
+          priority: 80,
+          dependencies: [],
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        {
+          id: 'task-004',
+          title: 'Feature 4',
+          description: 'Implement Feature 4',
+          priority: 70,
+          dependencies: [],
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ];
+
+      // Setup ProductOwner phases with Write tool simulation
+      mockProvider.setMockResponse(/tech.*stack/i, {
+        messages: [
+          createMockMessage.assistant('Analyzing tech stack...'),
+          createMockMessage.system({
+            toolUse: {
+              tool: 'Write',
+              arguments: {
+                file_path: path.join(kugutsuDir, 'tech-stack.json'),
+                content: JSON.stringify(techStackData, null, 2),
+              },
+            },
+          }),
+          createMockMessage.result(true),
+        ],
+        simulateTools: true,
+      });
+
+      mockProvider.setMockResponse(/requirements/i, {
+        messages: [
+          createMockMessage.assistant('Analyzing requirements...'),
+          createMockMessage.system({
+            toolUse: {
+              tool: 'Write',
+              arguments: {
+                file_path: path.join(kugutsuDir, 'requirements.json'),
+                content: JSON.stringify(requirementsData, null, 2),
+              },
+            },
+          }),
+          createMockMessage.result(true),
+        ],
+        simulateTools: true,
+      });
+
+      mockProvider.setMockResponse(/task.*generation/i, {
+        messages: [
+          createMockMessage.assistant('Generating tasks...'),
+          createMockMessage.system({
+            toolUse: {
+              tool: 'Write',
+              arguments: {
+                file_path: path.join(kugutsuDir, 'tasks.json'),
+                content: JSON.stringify(tasksData, null, 2),
+              },
+            },
+          }),
+          createMockMessage.system({
+            toolUse: {
+              tool: 'Write',
+              arguments: {
+                file_path: path.join(kugutsuDir, 'tasks/task-001/instruction.md'),
+                content: '# Task: Feature 1\n\nImplement Feature 1.',
+              },
+            },
+          }),
+          createMockMessage.system({
+            toolUse: {
+              tool: 'Write',
+              arguments: {
+                file_path: path.join(kugutsuDir, 'tasks/task-002/instruction.md'),
+                content: '# Task: Feature 2\n\nImplement Feature 2.',
+              },
+            },
+          }),
+          createMockMessage.system({
+            toolUse: {
+              tool: 'Write',
+              arguments: {
+                file_path: path.join(kugutsuDir, 'tasks/task-003/instruction.md'),
+                content: '# Task: Feature 3\n\nImplement Feature 3.',
+              },
+            },
+          }),
+          createMockMessage.system({
+            toolUse: {
+              tool: 'Write',
+              arguments: {
+                file_path: path.join(kugutsuDir, 'tasks/task-004/instruction.md'),
+                content: '# Task: Feature 4\n\nImplement Feature 4.',
+              },
+            },
+          }),
+          createMockMessage.result(true),
+        ],
+        simulateTools: true,
+      });
 
     // Setup Engineer implementation response with delay
     const SESSION_ID = 'session-perf-test';
@@ -148,23 +258,41 @@ describe('Parallel Execution Performance', () => {
       delay: TASK_DELAY_MS, // Add artificial delay to simulate real work
     });
 
-    // Setup Review response
-    mockProvider.setMockResponse(/Review/, {
-      messages: [
-        createMockMessage.assistant('承認'),
-        createMockMessage.result(true),
-      ],
-    });
+      // Setup Review response with Write tool simulation
+      mockProvider.setMockResponse(/Review/i, {
+        messages: [
+          createMockMessage.assistant('REVIEW_STATUS: APPROVED\n\nコードは良好です。'),
+          createMockMessage.system({
+            toolUse: {
+              tool: 'Write',
+              arguments: {
+                file_path: path.join(kugutsuDir, 'tasks/task-001/review.json'),
+                content: JSON.stringify({
+                  taskId: 'task-001',
+                  status: 'approved',
+                  reviewedBy: 'TechLeadAI',
+                  reviewedAt: new Date().toISOString(),
+                  comments: [],
+                  summary: 'レビュー結果: approved',
+                  suggestions: [],
+                }, null, 2),
+              },
+            },
+          }),
+          createMockMessage.result(true),
+        ],
+        simulateTools: true,
+      });
 
-    // Create initial state with multiple engineers
-    const initialState = createInitialState('Implement 4 features', {
-      maxEngineers: 4,
-      maxTurns: 30,
-      baseBranch: 'main',
-      baseRepoPath: '/test/repo',
-      worktreeBasePath: '/test/worktrees',
-      provider: 'claude',
-    });
+      // Create initial state with multiple engineers
+      const initialState = createInitialState('Implement 4 features', {
+        maxEngineers: 4,
+        maxTurns: 30,
+        baseBranch: 'main',
+        baseRepoPath: tempDir,
+        worktreeBasePath: path.join(tempDir, 'worktrees'),
+        provider: 'claude',
+      });
 
     // Compile graph
     const graph = compileParallelDevGraph();
@@ -220,5 +348,10 @@ describe('Parallel Execution Performance', () => {
     // Verify all tasks were processed
     const productOwnerEvent = states.find((s) => 'product_owner' in s);
     expect(productOwnerEvent!.product_owner.tasks.length).toBe(4);
+  } finally {
+    // Restore original directory and cleanup
+    process.chdir(originalCwd);
+    await rm(tempDir, { recursive: true, force: true });
+  }
   }, 60000); // 60 second timeout
 });

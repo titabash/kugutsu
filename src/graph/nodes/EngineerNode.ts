@@ -17,6 +17,8 @@ import { FileReader } from '../../utils/FileReader.js';
 import { FileWriter } from '../../utils/FileWriter.js';
 import { TaskStateMachine } from '../../utils/TaskStateMachine.js';
 import type { TaskArtifact } from '../../types/artifacts.js';
+import { RetryManager } from '../../utils/RetryManager.js';
+import { ErrorClassifier } from '../../utils/ErrorClassifier.js';
 
 /**
  * Engineer Node
@@ -76,6 +78,36 @@ export async function engineerNode(
   }
 
   if (!taskArtifact.worktreePath) {
+    console.error(`❌ タスク ${taskId} のworktreeが設定されていません`);
+
+    // タスクをfailedに遷移
+    const task = tasks.find((t) => t.id === taskId);
+    if (task) {
+      const failedTask = TaskStateMachine.transition(task, 'failed');
+
+      return {
+        tasks: [failedTask],
+        failedTasks: [failedTask],
+        logs: [
+          {
+            timestamp: new Date(),
+            level: 'error',
+            source: 'EngineerNode',
+            message: `タスク ${taskId} のworktreeが設定されていません`,
+            taskId,
+          },
+        ],
+        metadata: {
+          tasksFailed: (state.metadata.tasksFailed || 0) + 1,
+          hasErrors: true,
+          errors: [
+            ...(state.metadata.errors || []),
+            `Task ${taskId}: worktree not set`,
+          ],
+        },
+      };
+    }
+
     return {
       logs: [
         {
@@ -95,6 +127,36 @@ export async function engineerNode(
   try {
     instruction = await fileReader.readMarkdown(instructionPath);
   } catch (error) {
+    console.error(`❌ instruction.md の読み込みに失敗: ${error instanceof Error ? error.message : String(error)}`);
+
+    // タスクをfailedに遷移
+    const task = tasks.find((t) => t.id === taskId);
+    if (task) {
+      const failedTask = TaskStateMachine.transition(task, 'failed');
+
+      return {
+        tasks: [failedTask],
+        failedTasks: [failedTask],
+        logs: [
+          {
+            timestamp: new Date(),
+            level: 'error',
+            source: 'EngineerNode',
+            message: `instruction.md の読み込みに失敗: ${error instanceof Error ? error.message : String(error)}`,
+            taskId,
+          },
+        ],
+        metadata: {
+          tasksFailed: (state.metadata.tasksFailed || 0) + 1,
+          hasErrors: true,
+          errors: [
+            ...(state.metadata.errors || []),
+            `Task ${taskId}: instruction.md load failed`,
+          ],
+        },
+      };
+    }
+
     return {
       logs: [
         {
@@ -174,29 +236,94 @@ ${dependenciesSection}
 - ただし、**git push は実行しないでください**（レビュー後にマージします）
 `;
 
-    // Execute implementation
+    // Execute implementation with retry mechanism
     const messages: any[] = [];
     let sessionId: string | undefined = taskArtifact.sessionId;
 
-    for await (const message of provider.execute(implementationPrompt, {
-      maxTurns: state.config.maxTurns,
-      cwd: taskArtifact.worktreePath,
-      permissionMode: 'acceptEdits',
-      allowedTools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
-      resume: taskArtifact.sessionId,
-    })) {
-      messages.push(message);
+    const executionResult = await RetryManager.executeWithRetry(
+      async () => {
+        const collectedMessages: any[] = [];
+        let capturedSessionId: string | undefined = taskArtifact.sessionId;
 
-      // Capture session ID for potential conflict resolution
-      if (message.session_id) {
-        sessionId = message.session_id;
+        for await (const message of provider.execute(implementationPrompt, {
+          maxTurns: state.config.maxTurns,
+          cwd: taskArtifact.worktreePath,
+          permissionMode: 'acceptEdits',
+          allowedTools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
+          resume: taskArtifact.sessionId,
+        })) {
+          collectedMessages.push(message);
+
+          // Capture session ID for potential conflict resolution
+          if (message.session_id) {
+            capturedSessionId = message.session_id;
+          }
+
+          // Log progress
+          if (message.type === 'assistant' && message.content) {
+            console.log(`  💬 ${JSON.stringify(message.content).substring(0, 100)}...`);
+          }
+        }
+
+        return { messages: collectedMessages, sessionId: capturedSessionId };
+      },
+      {
+        maxRetries: 3,
+        initialDelayMs: 2000,
+        maxDelayMs: 30000,
+        backoffMultiplier: 2,
+        retryableErrors: ['ETIMEDOUT', 'ECONNRESET', 'rate_limit', 'Rate limit', 'timeout', 'network'],
       }
+    );
 
-      // Log progress
-      if (message.type === 'assistant' && message.content) {
-        console.log(`  💬 ${JSON.stringify(message.content).substring(0, 100)}...`);
+    if (!executionResult.success) {
+      // AI実行失敗 - エラーを分類して適切に処理
+      const classifiedError = ErrorClassifier.classify(executionResult.error!);
+
+      console.error(`❌ タスク ${taskId} の実装に失敗 (${executionResult.attempts}回試行): ${executionResult.error?.message}`);
+
+      // タスクをfailedに遷移
+      const task = tasks.find((t) => t.id === taskId);
+      if (task) {
+        const failedTask = TaskStateMachine.transition(task, 'failed');
+
+        // tasks.jsonを更新
+        const updatedTaskArtifact: TaskArtifact = {
+          ...taskArtifact,
+          status: 'failed',
+          updatedAt: new Date().toISOString(),
+        };
+
+        const updatedTaskArtifacts = taskArtifacts.map((t) =>
+          t.id === taskId ? updatedTaskArtifact : t
+        );
+
+        await fileWriter.writeJSON(tasksPath || '.kugutsu/tasks.json', updatedTaskArtifacts);
+
+        return {
+          tasks: [failedTask],
+          failedTasks: [failedTask],
+          logs: [
+            {
+              timestamp: new Date(),
+              level: 'error',
+              source: 'EngineerNode',
+              message: `タスク ${taskId} の実装に失敗: ${classifiedError.message}`,
+              taskId,
+              data: {
+                error: executionResult.error?.message,
+                severity: classifiedError.severity,
+                attempts: executionResult.attempts,
+              },
+            },
+          ],
+        };
       }
     }
+
+    // AI実行成功 - 結果を取得
+    messages.push(...executionResult.data!.messages);
+    sessionId = executionResult.data!.sessionId;
 
     console.log(`✅ タスク ${taskId} の実装が完了しました`);
 
@@ -248,13 +375,14 @@ ${dependenciesSection}
       logs: [
         {
           timestamp: new Date(),
-          level: 'warn',
+          level: 'info',
           source: 'EngineerNode',
-          message: `タスク ${taskId} の実装が完了しましたが、State内にタスクが見つかりません`,
+          message: `タスク ${taskId} の実装が完了しました (レビュー待ち)`,
           data: {
             taskId,
             messageCount: messages.length,
             sessionId,
+            warning: 'State内にタスクが見つかりませんでした',
           },
           taskId,
           sessionId,

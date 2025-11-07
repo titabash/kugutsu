@@ -94,11 +94,11 @@ export function createParallelDevGraph() {
 
       return results;
     })
-    // Review wrapper node: reviews all completed tasks
+    // Review wrapper node: reviews all in_review tasks
     .addNode('review', async (state: ParallelDevStateType) => {
       const completedTasks = state.tasks.filter(
         (t) =>
-          t.status === 'completed' &&
+          t.status === 'in_review' &&
           !state.reviews.some((r) => r.taskId === t.id)
       );
 
@@ -122,8 +122,10 @@ export function createParallelDevGraph() {
         completedTasks.map((task) => reviewNode(state, task.id))
       );
 
-      // Accumulate all results
+      // Accumulate all results (including tasks!)
       const results = {
+        tasks: [] as any[],
+        completedTasks: [] as any[],
         reviews: [] as any[],
         logs: [] as any[],
       };
@@ -132,6 +134,8 @@ export function createParallelDevGraph() {
         if (settledResult.status === 'fulfilled') {
           // レビュー成功
           const result = settledResult.value;
+          if (result.tasks) results.tasks.push(...result.tasks);
+          if (result.completedTasks) results.completedTasks.push(...result.completedTasks);
           if (result.reviews) results.reviews.push(...result.reviews);
           if (result.logs) results.logs.push(...result.logs);
         } else {
@@ -152,6 +156,9 @@ export function createParallelDevGraph() {
     .addNode('conflict_resolver', conflictResolverNode)
     // Add check_completion node
     .addNode('check_completion', (state: ParallelDevStateType) => {
+      console.log(`🔍 check_completion: state.tasks.length = ${state.tasks.length}`);
+      state.tasks.forEach((t) => console.log(`  Task ${t.id}: status = ${t.status}`));
+
       const allTasksSettled = state.tasks.every(
         (t) => t.status === 'completed' || t.status === 'failed'
       );
@@ -384,8 +391,10 @@ export function createSprintDrivenGraph() {
         completedTasks.map((task) => reviewNode(state, task.id))
       );
 
-      // Accumulate all results
+      // Accumulate all results (including tasks!)
       const results = {
+        tasks: [] as any[],
+        completedTasks: [] as any[],
         reviews: [] as any[],
         logs: [] as any[],
       };
@@ -394,6 +403,8 @@ export function createSprintDrivenGraph() {
         if (settledResult.status === 'fulfilled') {
           // レビュー成功
           const result = settledResult.value;
+          if (result.tasks) results.tasks.push(...result.tasks);
+          if (result.completedTasks) results.completedTasks.push(...result.completedTasks);
           if (result.reviews) results.reviews.push(...result.reviews);
           if (result.logs) results.logs.push(...result.logs);
         } else {

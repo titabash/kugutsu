@@ -5,7 +5,6 @@
     "moduleResolution": "node",
     "lib": ["ES2022"],
     "outDir": "./dist",
-    "rootDir": "./src",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -17,7 +16,7 @@
     "allowSyntheticDefaultImports": true,
     "noImplicitAny": false
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "tests/**/*"],
   "exclude": ["node_modules", "dist"],
   "ts-node": {
     "esm": true

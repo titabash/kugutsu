@@ -159,4 +159,96 @@ describe('FileWriter', () => {
       ).rejects.toThrow(/Failed to delete file/);
     });
   });
+
+  describe('concurrent writes with Mutex protection', () => {
+    test('should handle concurrent JSON writes without data corruption', async () => {
+      const filePath = 'concurrent-test.json';
+      const numWrites = 10;
+
+      // 並列で同じファイルに異なるデータを書き込む
+      const writes = Array.from({ length: numWrites }, (_, i) => ({
+        id: i,
+        value: `data-${i}`,
+        timestamp: Date.now(),
+      }));
+
+      const writePromises = writes.map(data =>
+        writer.writeJSON(filePath, data)
+      );
+
+      // すべての書き込みが完了するまで待機
+      await Promise.all(writePromises);
+
+      // ファイルの内容を確認
+      const content = await fs.readFile(
+        path.join(tempDir, filePath),
+        'utf-8'
+      );
+
+      // JSON として正しくパースできることを確認（データ破損がない）
+      const parsed = JSON.parse(content);
+      expect(parsed).toHaveProperty('id');
+      expect(parsed).toHaveProperty('value');
+      expect(parsed).toHaveProperty('timestamp');
+
+      // いずれかの書き込みデータが保存されていることを確認
+      expect(writes.some(w =>
+        w.id === parsed.id && w.value === parsed.value
+      )).toBe(true);
+    });
+
+    test('should handle concurrent writes to different files', async () => {
+      const numFiles = 5;
+
+      // 異なるファイルに並列書き込み
+      const writes = Array.from({ length: numFiles }, (_, i) => ({
+        file: `file-${i}.json`,
+        data: { id: i, content: `content-${i}` },
+      }));
+
+      const writePromises = writes.map(({ file, data }) =>
+        writer.writeJSON(file, data)
+      );
+
+      await Promise.all(writePromises);
+
+      // すべてのファイルが正しく作成されていることを確認
+      for (const { file, data } of writes) {
+        const content = await fs.readFile(
+          path.join(tempDir, file),
+          'utf-8'
+        );
+        const parsed = JSON.parse(content);
+        expect(parsed).toEqual(data);
+      }
+    });
+
+    test('should handle high concurrency without race conditions', async () => {
+      const filePath = 'high-concurrency.json';
+      const numWrites = 50;
+
+      // 高並列度でのテスト
+      const writePromises = Array.from({ length: numWrites }, (_, i) =>
+        writer.writeJSON(filePath, {
+          index: i,
+          data: `write-${i}`,
+          timestamp: Date.now() + i
+        })
+      );
+
+      // すべての書き込みが成功することを確認
+      await expect(Promise.all(writePromises)).resolves.toBeDefined();
+
+      // ファイルが正しいJSON形式であることを確認
+      const content = await fs.readFile(
+        path.join(tempDir, filePath),
+        'utf-8'
+      );
+      const parsed = JSON.parse(content);
+
+      expect(parsed).toHaveProperty('index');
+      expect(parsed).toHaveProperty('data');
+      expect(parsed).toHaveProperty('timestamp');
+    });
+  });
 });

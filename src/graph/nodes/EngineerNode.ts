@@ -10,10 +10,12 @@
  */
 
 import type { ParallelDevStateType, ParallelDevStateUpdate } from '../state.js';
+import type { Task } from '../types.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 import type { AIProviderConfig } from '../../providers/IAIProvider.js';
 import { FileReader } from '../../utils/FileReader.js';
 import { FileWriter } from '../../utils/FileWriter.js';
+import { TaskStateMachine } from '../../utils/TaskStateMachine.js';
 import type { TaskArtifact } from '../../types/artifacts.js';
 
 /**
@@ -25,12 +27,13 @@ import type { TaskArtifact } from '../../types/artifacts.js';
  * 3. Create appropriate commits
  * 4. Handle errors
  * 5. Preserve session for conflict resolution
+ * 6. Transition task: in_progress → in_review (success) or failed (error)
  */
 export async function engineerNode(
   state: ParallelDevStateType,
   taskId: string
 ): Promise<ParallelDevStateUpdate> {
-  const { config, tasksPath } = state;
+  const { config, tasks, tasksPath } = state;
 
   console.log(`👷 Engineer: タスク ${taskId} を実装しています...`);
 
@@ -38,9 +41,9 @@ export async function engineerNode(
   const fileReader = new FileReader(config.baseRepoPath);
   const fileWriter = new FileWriter(config.baseRepoPath);
 
-  let tasks: TaskArtifact[];
+  let taskArtifacts: TaskArtifact[];
   try {
-    tasks = await fileReader.readJSON<TaskArtifact[]>(tasksPath || '.kugutsu/tasks.json');
+    taskArtifacts = await fileReader.readJSON<TaskArtifact[]>(tasksPath || '.kugutsu/tasks.json');
   } catch (error) {
     return {
       logs: [
@@ -56,7 +59,7 @@ export async function engineerNode(
   }
 
   // Find the task
-  const taskArtifact = tasks.find((t) => t.id === taskId);
+  const taskArtifact = taskArtifacts.find((t) => t.id === taskId);
 
   if (!taskArtifact) {
     return {
@@ -197,21 +200,57 @@ ${dependenciesSection}
 
     console.log(`✅ タスク ${taskId} の実装が完了しました`);
 
-    // Update task status to 'implemented' and save to file
-    taskArtifact.status = 'implemented';
+    // Update task status in file artifact
+    taskArtifact.status = 'implemented' as any; // TaskArtifact has different status values
     taskArtifact.sessionId = sessionId;
     taskArtifact.updatedAt = new Date().toISOString();
 
-    await fileWriter.writeJSON(tasksPath || '.kugutsu/tasks.json', tasks);
-    console.log(`📝 タスクステータスを更新しました: implemented`);
+    await fileWriter.writeJSON(tasksPath || '.kugutsu/tasks.json', taskArtifacts);
+    console.log(`📝 タスクステータス(ファイル)を更新しました: implemented`);
+
+    // Update State task: in_progress → in_review
+    const stateTask = state.tasks.find((t) => t.id === taskId);
+    if (stateTask) {
+      const taskWithSession: Task = {
+        ...stateTask,
+        sessionId,
+      };
+
+      // Use TaskStateMachine for state transition
+      const inReviewTask = TaskStateMachine.transition(taskWithSession, 'in_review');
+
+      console.log(`📝 タスクステータス(State)を更新しました: in_progress → in_review`);
+
+      return {
+        tasks: [inReviewTask],
+        logs: [
+          {
+            timestamp: new Date(),
+            level: 'info',
+            source: 'EngineerNode',
+            message: `タスク ${taskId} の実装が完了しました (レビュー待ち)`,
+            data: {
+              taskId,
+              messageCount: messages.length,
+              sessionId,
+            },
+            taskId,
+            sessionId,
+          },
+        ],
+        metadata: {
+          tasksCompleted: (state.metadata.tasksCompleted || 0) + 1,
+        },
+      };
+    }
 
     return {
       logs: [
         {
           timestamp: new Date(),
-          level: 'info',
+          level: 'warn',
           source: 'EngineerNode',
-          message: `タスク ${taskId} の実装が完了しました`,
+          message: `タスク ${taskId} の実装が完了しましたが、State内にタスクが見つかりません`,
           data: {
             taskId,
             messageCount: messages.length,
@@ -228,24 +267,42 @@ ${dependenciesSection}
   } catch (error) {
     console.error(`❌ タスク ${taskId} の実装に失敗:`, error);
 
-    // Try to update task status to 'failed' in tasks.json
+    // Update task status to 'failed' in tasks.json
     try {
       const fileReader = new FileReader(config.baseRepoPath);
       const fileWriter = new FileWriter(config.baseRepoPath);
-      const tasks = await fileReader.readJSON<TaskArtifact[]>(tasksPath || '.kugutsu/tasks.json');
-      const taskArtifact = tasks.find((t) => t.id === taskId);
+      const taskArtifacts = await fileReader.readJSON<TaskArtifact[]>(tasksPath || '.kugutsu/tasks.json');
+      const taskArtifact = taskArtifacts.find((t) => t.id === taskId);
 
       if (taskArtifact) {
-        taskArtifact.status = 'failed';
+        taskArtifact.status = 'failed' as any; // TaskArtifact has different status values
         taskArtifact.updatedAt = new Date().toISOString();
-        await fileWriter.writeJSON(tasksPath || '.kugutsu/tasks.json', tasks);
-        console.log(`📝 タスクステータスを更新しました: failed`);
+        await fileWriter.writeJSON(tasksPath || '.kugutsu/tasks.json', taskArtifacts);
+        console.log(`📝 タスクステータス(ファイル)を更新しました: failed`);
       }
     } catch (fileError) {
       console.error(`❌ tasks.json の更新に失敗:`, fileError);
     }
 
+    // Update State task: in_progress → failed
+    const stateTask = state.tasks.find((t) => t.id === taskId);
+    let failedTask: Task | undefined;
+
+    if (stateTask) {
+      const taskWithError: Task = {
+        ...stateTask,
+        error: error instanceof Error ? error.message : String(error),
+      };
+
+      // Use TaskStateMachine for state transition
+      failedTask = TaskStateMachine.transition(taskWithError, 'failed');
+
+      console.log(`📝 タスクステータス(State)を更新しました: in_progress → failed`);
+    }
+
     return {
+      tasks: failedTask ? [failedTask] : [],
+      failedTasks: failedTask ? [failedTask] : [],
       logs: [
         {
           timestamp: new Date(),

@@ -7,20 +7,21 @@
 import type { ParallelDevStateType, ParallelDevStateUpdate } from '../state.js';
 import type { Task, WorktreeInfo } from '../types.js';
 import { GitWorktreeManager } from '../../managers/GitWorktreeManager.js';
+import { TaskStateMachine } from '../../utils/TaskStateMachine.js';
 
 /**
  * Engineer Dispatch Node
  *
  * Responsibilities:
- * 1. Identify executable tasks (dependencies satisfied)
- * 2. Limit concurrent tasks to maxEngineers
- * 3. Create worktrees for each task
- * 4. Mark tasks as in_progress
+ * 1. Transition pending tasks to ready (when dependencies satisfied)
+ * 2. Transition ready tasks to in_progress (create worktrees)
+ * 3. Limit concurrent tasks to maxEngineers
+ * 4. Use TaskStateMachine for all state transitions
  */
 export async function engineerDispatchNode(
   state: ParallelDevStateType
 ): Promise<ParallelDevStateUpdate> {
-  const { tasks, completedTasks, config } = state;
+  const { tasks, config } = state;
 
   console.log('🚀 Engineer Dispatch: タスクを割り当てています...');
 
@@ -32,21 +33,42 @@ export async function engineerDispatchNode(
       config.baseBranch
     );
 
-    // Identify completed task IDs
-    const completedIds = new Set(completedTasks.map((t) => t.id));
+    const updatedTasks: Task[] = [];
+    const newWorktrees = new Map<string, WorktreeInfo>();
+    const logs: any[] = [];
 
-    // Find executable tasks (pending + dependencies satisfied)
-    const executableTasks = tasks.filter((task) => {
-      if (task.status !== 'pending') return false;
+    // Phase 1: pending → ready (依存関係解決)
+    const tasksToMarkReady = tasks.filter((task) =>
+      TaskStateMachine.canMoveToReady(task, tasks)
+    );
 
-      // Check if all dependencies are completed
-      return task.dependencies.every((depId) => completedIds.has(depId));
-    });
+    for (const task of tasksToMarkReady) {
+      const readyTask = TaskStateMachine.transition(task, 'ready');
+      updatedTasks.push(readyTask);
 
-    if (executableTasks.length === 0) {
+      logs.push({
+        timestamp: new Date(),
+        level: 'info',
+        source: 'EngineerDispatchNode',
+        message: `タスク ${task.id} が準備完了 (ready) になりました`,
+        data: { taskId: task.id },
+        taskId: task.id,
+      });
+
+      console.log(`✅ タスク ${task.id} → ready`);
+    }
+
+    // Phase 2: ready → in_progress (worktree作成)
+    const readyTasks = tasks
+      .filter((t) => t.status === 'ready')
+      .concat(updatedTasks.filter((t) => t.status === 'ready'));
+
+    if (readyTasks.length === 0) {
       console.log('⏸️ 実行可能なタスクがありません');
       return {
+        tasks: updatedTasks,
         logs: [
+          ...logs,
           {
             timestamp: new Date(),
             level: 'info',
@@ -58,33 +80,32 @@ export async function engineerDispatchNode(
     }
 
     // Sort by priority (highest first)
-    executableTasks.sort((a, b) => b.priority - a.priority);
+    readyTasks.sort((a, b) => b.priority - a.priority);
 
     // Limit to maxEngineers
-    const tasksToDispatch = executableTasks.slice(0, config.maxEngineers);
+    const tasksToDispatch = readyTasks.slice(0, config.maxEngineers);
 
     console.log(`📋 ${tasksToDispatch.length}個のタスクをディスパッチします`);
-
-    // Create worktrees and update tasks
-    const updatedTasks: Task[] = [];
-    const newWorktrees = new Map<string, WorktreeInfo>();
-    const logs: any[] = [];
 
     for (const task of tasksToDispatch) {
       try {
         // Create worktree for this task
         const result = await gitWorktreeManager.createWorktree(task.id);
 
-        // Update task
-        const updatedTask: Task = {
+        // Set worktree info before transition
+        const taskWithWorktree: Task = {
           ...task,
-          status: 'in_progress',
           worktreePath: result.path,
           branchName: result.branchName,
-          updatedAt: new Date(),
         };
 
-        updatedTasks.push(updatedTask);
+        // ready → in_progress (TaskStateMachine validates worktreePath/branchName)
+        const inProgressTask = TaskStateMachine.transition(
+          taskWithWorktree,
+          'in_progress'
+        );
+
+        updatedTasks.push(inProgressTask);
 
         // Add worktree info
         newWorktrees.set(task.id, {
@@ -108,7 +129,7 @@ export async function engineerDispatchNode(
           taskId: task.id,
         });
 
-        console.log(`✅ タスク ${task.id}: ${result.path}`);
+        console.log(`✅ タスク ${task.id} → in_progress: ${result.path}`);
       } catch (error) {
         // Failed to create worktree
         logs.push({

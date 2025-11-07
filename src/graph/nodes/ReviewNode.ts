@@ -10,10 +10,12 @@
  */
 
 import type { ParallelDevStateType, ParallelDevStateUpdate } from '../state.js';
+import type { Task, Review } from '../types.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 import type { AIProviderConfig } from '../../providers/IAIProvider.js';
 import { FileReader } from '../../utils/FileReader.js';
 import { FileWriter } from '../../utils/FileWriter.js';
+import { TaskStateMachine } from '../../utils/TaskStateMachine.js';
 import type { TaskArtifact, Review as ReviewArtifact, ReviewComment } from '../../types/artifacts.js';
 
 /**
@@ -25,12 +27,13 @@ import type { TaskArtifact, Review as ReviewArtifact, ReviewComment } from '../.
  * 3. Verify test coverage
  * 4. Check for security issues
  * 5. Approve or request changes
+ * 6. Transition task: in_review → completed (approved) or in_progress (changes requested)
  */
 export async function reviewNode(
   state: ParallelDevStateType,
   taskId: string
 ): Promise<ParallelDevStateUpdate> {
-  const { config, tasksPath } = state;
+  const { config, tasks, tasksPath } = state;
 
   console.log(`🔍 Review: タスク ${taskId} をレビューしています...`);
 
@@ -38,9 +41,9 @@ export async function reviewNode(
   const fileReader = new FileReader(config.baseRepoPath);
   const fileWriter = new FileWriter(config.baseRepoPath);
 
-  let tasks: TaskArtifact[];
+  let taskArtifacts: TaskArtifact[];
   try {
-    tasks = await fileReader.readJSON<TaskArtifact[]>(tasksPath || '.kugutsu/tasks.json');
+    taskArtifacts = await fileReader.readJSON<TaskArtifact[]>(tasksPath || '.kugutsu/tasks.json');
   } catch (error) {
     return {
       logs: [
@@ -56,7 +59,7 @@ export async function reviewNode(
   }
 
   // Find the task
-  const taskArtifact = tasks.find((t) => t.id === taskId);
+  const taskArtifact = taskArtifacts.find((t) => t.id === taskId);
 
   if (!taskArtifact) {
     return {
@@ -212,13 +215,47 @@ REVIEW_STATUS: APPROVED または CHANGES_REQUESTED
 
     // Update task status in tasks.json (only if approved)
     if (finalStatus === 'approved') {
-      taskArtifact.status = 'reviewed';
+      taskArtifact.status = 'reviewed' as any; // TaskArtifact has different status values
       taskArtifact.updatedAt = new Date().toISOString();
-      await fileWriter.writeJSON(tasksPath || '.kugutsu/tasks.json', tasks);
-      console.log(`✅ タスクステータスを updated: reviewed`);
+      await fileWriter.writeJSON(tasksPath || '.kugutsu/tasks.json', taskArtifacts);
+      console.log(`✅ タスクステータス(ファイル)を更新しました: reviewed`);
+    }
+
+    // Create State Review object
+    const stateReview: Review = {
+      taskId: taskArtifact.id,
+      reviewer: 'TechLeadAI',
+      status: finalStatus === 'approved' ? 'approved' : 'changes_requested',
+      comments: reviewComments,
+      timestamp: new Date(),
+      issues: reviewComments
+        .filter((c) => finalStatus === 'changes_requested')
+        .map((c) => ({
+          severity: 'medium' as const,
+          description: c,
+        })),
+    };
+
+    // Update State task: in_review → completed or in_progress
+    const stateTask = state.tasks.find((t) => t.id === taskId);
+    let updatedTask: Task | undefined;
+
+    if (stateTask) {
+      if (finalStatus === 'approved') {
+        // in_review → completed
+        updatedTask = TaskStateMachine.transition(stateTask, 'completed');
+        console.log(`📝 タスクステータス(State)を更新しました: in_review → completed`);
+      } else {
+        // in_review → in_progress (changes requested)
+        updatedTask = TaskStateMachine.transition(stateTask, 'in_progress');
+        console.log(`📝 タスクステータス(State)を更新しました: in_review → in_progress (変更要求)`);
+      }
     }
 
     return {
+      tasks: updatedTask ? [updatedTask] : [],
+      completedTasks: finalStatus === 'approved' && updatedTask ? [updatedTask] : [],
+      reviews: [stateReview],
       logs: [
         {
           timestamp: new Date(),

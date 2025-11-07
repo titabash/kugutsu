@@ -57,8 +57,8 @@ export function createParallelDevGraph() {
 
       console.log(`👷 ${inProgressTasks.length}個のタスクを並列実装中...`);
 
-      // Execute all in-progress tasks in parallel
-      const taskResults = await Promise.all(
+      // Execute all in-progress tasks in parallel (with allSettled to continue on failures)
+      const taskResults = await Promise.allSettled(
         inProgressTasks.map((task) => engineerNode(state, task.id))
       );
 
@@ -71,12 +71,25 @@ export function createParallelDevGraph() {
         metadata: {},
       };
 
-      for (const result of taskResults) {
-        if (result.tasks) results.tasks.push(...result.tasks);
-        if (result.completedTasks) results.completedTasks.push(...result.completedTasks);
-        if (result.failedTasks) results.failedTasks.push(...result.failedTasks);
-        if (result.logs) results.logs.push(...result.logs);
-        if (result.metadata) results.metadata = { ...results.metadata, ...result.metadata };
+      for (const settledResult of taskResults) {
+        if (settledResult.status === 'fulfilled') {
+          // タスク実行成功
+          const result = settledResult.value;
+          if (result.tasks) results.tasks.push(...result.tasks);
+          if (result.completedTasks) results.completedTasks.push(...result.completedTasks);
+          if (result.failedTasks) results.failedTasks.push(...result.failedTasks);
+          if (result.logs) results.logs.push(...result.logs);
+          if (result.metadata) results.metadata = { ...results.metadata, ...result.metadata };
+        } else {
+          // タスク実行失敗
+          results.logs.push({
+            timestamp: new Date(),
+            level: 'error' as const,
+            source: 'EngineerWrapper',
+            message: `タスク実行エラー: ${settledResult.reason?.message || settledResult.reason}`,
+            data: { error: settledResult.reason },
+          });
+        }
       }
 
       return results;
@@ -104,8 +117,8 @@ export function createParallelDevGraph() {
 
       console.log(`🔍 ${completedTasks.length}個のタスクを並列レビュー中...`);
 
-      // Review all completed tasks in parallel
-      const reviewResults = await Promise.all(
+      // Review all completed tasks in parallel (with allSettled to continue on failures)
+      const reviewResults = await Promise.allSettled(
         completedTasks.map((task) => reviewNode(state, task.id))
       );
 
@@ -115,9 +128,22 @@ export function createParallelDevGraph() {
         logs: [] as any[],
       };
 
-      for (const result of reviewResults) {
-        if (result.reviews) results.reviews.push(...result.reviews);
-        if (result.logs) results.logs.push(...result.logs);
+      for (const settledResult of reviewResults) {
+        if (settledResult.status === 'fulfilled') {
+          // レビュー成功
+          const result = settledResult.value;
+          if (result.reviews) results.reviews.push(...result.reviews);
+          if (result.logs) results.logs.push(...result.logs);
+        } else {
+          // レビュー失敗
+          results.logs.push({
+            timestamp: new Date(),
+            level: 'error' as const,
+            source: 'ReviewWrapper',
+            message: `レビュー実行エラー: ${settledResult.reason?.message || settledResult.reason}`,
+            data: { error: settledResult.reason },
+          });
+        }
       }
 
       return results;
@@ -292,8 +318,8 @@ export function createSprintDrivenGraph() {
 
       console.log(`👷 ${inProgressTasks.length}個のタスクを並列実装中...`);
 
-      // Execute all in-progress tasks in parallel
-      const taskResults = await Promise.all(
+      // Execute all in-progress tasks in parallel (with allSettled to continue on failures)
+      const taskResults = await Promise.allSettled(
         inProgressTasks.map((task) => engineerNode(state, task.id))
       );
 
@@ -306,12 +332,25 @@ export function createSprintDrivenGraph() {
         metadata: {},
       };
 
-      for (const result of taskResults) {
-        if (result.tasks) results.tasks.push(...result.tasks);
-        if (result.completedTasks) results.completedTasks.push(...result.completedTasks);
-        if (result.failedTasks) results.failedTasks.push(...result.failedTasks);
-        if (result.logs) results.logs.push(...result.logs);
-        if (result.metadata) results.metadata = { ...results.metadata, ...result.metadata };
+      for (const settledResult of taskResults) {
+        if (settledResult.status === 'fulfilled') {
+          // タスク実行成功
+          const result = settledResult.value;
+          if (result.tasks) results.tasks.push(...result.tasks);
+          if (result.completedTasks) results.completedTasks.push(...result.completedTasks);
+          if (result.failedTasks) results.failedTasks.push(...result.failedTasks);
+          if (result.logs) results.logs.push(...result.logs);
+          if (result.metadata) results.metadata = { ...results.metadata, ...result.metadata };
+        } else {
+          // タスク実行失敗
+          results.logs.push({
+            timestamp: new Date(),
+            level: 'error' as const,
+            source: 'EngineerWrapper',
+            message: `タスク実行エラー: ${settledResult.reason?.message || settledResult.reason}`,
+            data: { error: settledResult.reason },
+          });
+        }
       }
 
       return results;
@@ -340,8 +379,8 @@ export function createSprintDrivenGraph() {
 
       console.log(`🔍 ${completedTasks.length}個のタスクを並列レビュー中...`);
 
-      // Review all completed tasks in parallel
-      const reviewResults = await Promise.all(
+      // Review all completed tasks in parallel (with allSettled to continue on failures)
+      const reviewResults = await Promise.allSettled(
         completedTasks.map((task) => reviewNode(state, task.id))
       );
 
@@ -351,9 +390,22 @@ export function createSprintDrivenGraph() {
         logs: [] as any[],
       };
 
-      for (const result of reviewResults) {
-        if (result.reviews) results.reviews.push(...result.reviews);
-        if (result.logs) results.logs.push(...result.logs);
+      for (const settledResult of reviewResults) {
+        if (settledResult.status === 'fulfilled') {
+          // レビュー成功
+          const result = settledResult.value;
+          if (result.reviews) results.reviews.push(...result.reviews);
+          if (result.logs) results.logs.push(...result.logs);
+        } else {
+          // レビュー失敗
+          results.logs.push({
+            timestamp: new Date(),
+            level: 'error' as const,
+            source: 'ReviewWrapper',
+            message: `レビュー実行エラー: ${settledResult.reason?.message || settledResult.reason}`,
+            data: { error: settledResult.reason },
+          });
+        }
       }
 
       return results;

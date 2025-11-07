@@ -1,5 +1,6 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { Mutex } from 'async-mutex';
 
 /**
  * FileWriter
@@ -11,15 +12,36 @@ import * as path from 'path';
  * - Markdown ファイルの書き込み
  * - ディレクトリの自動作成
  * - エラーハンドリング
+ * - Mutex による並列書き込み保護（データ破損防止）
  */
 export class FileWriter {
+  /**
+   * ファイルパスごとのMutexマップ（並列書き込み保護）
+   */
+  private static mutexMap = new Map<string, Mutex>();
+
   /**
    * @param baseDir ベースディレクトリ（通常は `.kugutsu/` またはプロジェクトルート）
    */
   constructor(private baseDir: string) {}
 
   /**
+   * 指定されたファイルパスのMutexを取得する
+   * 同じファイルへの並列書き込みを防ぐために使用
+   *
+   * @param filePath ファイルパス
+   * @returns Mutex インスタンス
+   */
+  private getMutex(filePath: string): Mutex {
+    if (!FileWriter.mutexMap.has(filePath)) {
+      FileWriter.mutexMap.set(filePath, new Mutex());
+    }
+    return FileWriter.mutexMap.get(filePath)!;
+  }
+
+  /**
    * JSON ファイルを書き込む
+   * Mutex により並列書き込みから保護され、データ破損を防ぎます
    *
    * @param relativePath ベースディレクトリからの相対パス
    * @param data 書き込むJSONデータ
@@ -27,26 +49,31 @@ export class FileWriter {
    */
   async writeJSON(relativePath: string, data: any): Promise<string> {
     const fullPath = path.join(this.baseDir, relativePath);
+    const mutex = this.getMutex(fullPath);
 
-    try {
-      // ディレクトリを自動作成
-      await fs.mkdir(path.dirname(fullPath), { recursive: true });
+    // Mutexで保護された書き込み
+    return await mutex.runExclusive(async () => {
+      try {
+        // ディレクトリを自動作成
+        await fs.mkdir(path.dirname(fullPath), { recursive: true });
 
-      // JSON を pretty print で書き込み（改行コードは LF で統一）
-      const content = JSON.stringify(data, null, 2) + '\n';
-      await fs.writeFile(fullPath, content, 'utf-8');
+        // JSON を pretty print で書き込み（改行コードは LF で統一）
+        const content = JSON.stringify(data, null, 2) + '\n';
+        await fs.writeFile(fullPath, content, 'utf-8');
 
-      return fullPath;
-    } catch (error) {
-      throw new Error(
-        `Failed to write JSON file: ${fullPath}\n` +
-        `Reason: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
+        return fullPath;
+      } catch (error) {
+        throw new Error(
+          `Failed to write JSON file: ${fullPath}\n` +
+          `Reason: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    });
   }
 
   /**
    * Markdown ファイルを書き込む
+   * Mutex により並列書き込みから保護され、データ破損を防ぎます
    *
    * @param relativePath ベースディレクトリからの相対パス
    * @param content 書き込むMarkdownコンテンツ
@@ -54,26 +81,31 @@ export class FileWriter {
    */
   async writeMarkdown(relativePath: string, content: string): Promise<string> {
     const fullPath = path.join(this.baseDir, relativePath);
+    const mutex = this.getMutex(fullPath);
 
-    try {
-      // ディレクトリを自動作成
-      await fs.mkdir(path.dirname(fullPath), { recursive: true });
+    // Mutexで保護された書き込み
+    return await mutex.runExclusive(async () => {
+      try {
+        // ディレクトリを自動作成
+        await fs.mkdir(path.dirname(fullPath), { recursive: true });
 
-      // Markdown を書き込み（末尾に改行を追加）
-      const normalizedContent = content.endsWith('\n') ? content : content + '\n';
-      await fs.writeFile(fullPath, normalizedContent, 'utf-8');
+        // Markdown を書き込み（末尾に改行を追加）
+        const normalizedContent = content.endsWith('\n') ? content : content + '\n';
+        await fs.writeFile(fullPath, normalizedContent, 'utf-8');
 
-      return fullPath;
-    } catch (error) {
-      throw new Error(
-        `Failed to write Markdown file: ${fullPath}\n` +
-        `Reason: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
+        return fullPath;
+      } catch (error) {
+        throw new Error(
+          `Failed to write Markdown file: ${fullPath}\n` +
+          `Reason: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    });
   }
 
   /**
    * 任意のテキストファイルを書き込む
+   * Mutex により並列書き込みから保護され、データ破損を防ぎます
    *
    * @param relativePath ベースディレクトリからの相対パス
    * @param content 書き込むコンテンツ
@@ -81,20 +113,24 @@ export class FileWriter {
    */
   async writeFile(relativePath: string, content: string): Promise<string> {
     const fullPath = path.join(this.baseDir, relativePath);
+    const mutex = this.getMutex(fullPath);
 
-    try {
-      // ディレクトリを自動作成
-      await fs.mkdir(path.dirname(fullPath), { recursive: true });
+    // Mutexで保護された書き込み
+    return await mutex.runExclusive(async () => {
+      try {
+        // ディレクトリを自動作成
+        await fs.mkdir(path.dirname(fullPath), { recursive: true });
 
-      await fs.writeFile(fullPath, content, 'utf-8');
+        await fs.writeFile(fullPath, content, 'utf-8');
 
-      return fullPath;
-    } catch (error) {
-      throw new Error(
-        `Failed to write file: ${fullPath}\n` +
-        `Reason: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
+        return fullPath;
+      } catch (error) {
+        throw new Error(
+          `Failed to write file: ${fullPath}\n` +
+          `Reason: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    });
   }
 
   /**

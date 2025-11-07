@@ -16,16 +16,30 @@ const COLUMNS: Array<{
   {
     status: 'pending',
     label: '待機中',
-    color: 'text-amber-700 dark:text-amber-400',
-    bgColor: 'bg-amber-50 dark:bg-amber-950/20',
+    color: 'text-gray-700 dark:text-gray-400',
+    bgColor: 'bg-gray-50 dark:bg-gray-950/20',
     icon: '⏳',
   },
   {
+    status: 'ready',
+    label: '準備完了',
+    color: 'text-cyan-700 dark:text-cyan-400',
+    bgColor: 'bg-cyan-50 dark:bg-cyan-950/20',
+    icon: '✨',
+  },
+  {
     status: 'in_progress',
-    label: '進行中',
+    label: '実装中',
     color: 'text-blue-700 dark:text-blue-400',
     bgColor: 'bg-blue-50 dark:bg-blue-950/20',
     icon: '🚀',
+  },
+  {
+    status: 'in_review',
+    label: 'レビュー中',
+    color: 'text-orange-700 dark:text-orange-400',
+    bgColor: 'bg-orange-50 dark:bg-orange-950/20',
+    icon: '🔍',
   },
   {
     status: 'completed',
@@ -60,7 +74,7 @@ export function TaskKanbanBoard() {
   }, [tasks])
 
   return (
-    <div className="grid h-full grid-cols-4 gap-3 p-4">
+    <div className="grid h-full grid-cols-6 gap-2 p-4">
       {COLUMNS.map((column) => {
         const columnTasks = tasksByStatus[column.status]
         const taskCount = columnTasks.length

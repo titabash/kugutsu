@@ -4,8 +4,16 @@
 
 /**
  * Task status enum
+ *
+ * 6-column Kanban board statuses:
+ * - pending: 待機中 (依存関係未解決)
+ * - ready: 準備完了 (依存関係解決済み、実行可能)
+ * - in_progress: 実装中 (EngineerAI実装作業中)
+ * - in_review: レビュー中 (TechLeadAIコードレビュー中)
+ * - completed: 完了 (レビュー承認済み、終端状態)
+ * - failed: 失敗 (実装失敗または致命的エラー)
  */
-export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'failed'
+export type TaskStatus = 'pending' | 'ready' | 'in_progress' | 'in_review' | 'completed' | 'failed'
 
 /**
  * Review status enum

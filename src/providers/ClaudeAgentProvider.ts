@@ -47,9 +47,6 @@ export class ClaudeAgentProvider implements IAIProvider {
 
     // Note: API key is optional when running in Claude Code environment
     // The SDK will use the logged-in session if no API key is provided
-    if (!this.apiKey) {
-      console.log('⚠️  No API key provided - using Claude Code logged-in session (if available)');
-    }
 
     this.ready = true;
   }
@@ -122,12 +119,22 @@ export class ClaudeAgentProvider implements IAIProvider {
         yield aiMessage;
       }
     } catch (error) {
+      // Check if this is an authentication error
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const isAuthError = errorMessage.toLowerCase().includes('auth') ||
+                         errorMessage.toLowerCase().includes('api key');
+
+      // Log authentication warning if API key is not provided and error is auth-related
+      if (isAuthError && !this.apiKey) {
+        console.error('⚠️  Authentication failed - No API key provided. Please set ANTHROPIC_API_KEY environment variable or ensure you are logged in to Claude Code.');
+      }
+
       // Yield error message
       yield {
         type: 'result',
         content: {
           success: false,
-          error: error instanceof Error ? error.message : String(error),
+          error: errorMessage,
         },
         timestamp: new Date(),
       };

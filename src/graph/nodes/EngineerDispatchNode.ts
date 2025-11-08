@@ -9,7 +9,9 @@ import type { Task, WorktreeInfo } from '../types.js';
 import { GitWorktreeManager } from '../../managers/GitWorktreeManager.js';
 import { TaskStateMachine } from '../../utils/TaskStateMachine.js';
 import { FileReader } from '../../utils/FileReader.js';
-import { FileWriter } from '../../utils/FileWriter.js';
+import { AIFileWriter } from '../../utils/AIFileWriter.js';
+import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
+import type { AIProviderConfig } from '../../providers/IAIProvider.js';
 import type { TaskArtifact } from '../../types/artifacts.js';
 
 /**
@@ -41,9 +43,17 @@ export async function engineerDispatchNode(
       config.baseBranch
     );
 
-    // Initialize File Reader/Writer for tasks.json
+    // Initialize File Reader for tasks.json
     const fileReader = new FileReader(config.baseRepoPath);
-    const fileWriter = new FileWriter(config.baseRepoPath);
+
+    // Create AI provider
+    const providerConfig: AIProviderConfig = {
+      provider: state.config.provider || 'claude',
+      claude: {
+        model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-5-20250929',
+      },
+    };
+    const provider = AIProviderFactory.create(providerConfig);
 
     const updatedTasks: Task[] = [];
     const newWorktrees = new Map<string, WorktreeInfo>();
@@ -173,28 +183,32 @@ export async function engineerDispatchNode(
       }
     }
 
-    // Update tasks.json with worktree information
+    // Update tasks.json with worktree information using AI
     if (updatedTasks.length > 0) {
       try {
-        const taskArtifacts = await fileReader.readJSON<TaskArtifact[]>(actualTasksPath);
+        // Build update map for tasks with worktree info
+        const taskUpdates = new Map<string, Record<string, any>>();
 
-        // Update TaskArtifacts with worktree info from updatedTasks
-        const updatedArtifacts = taskArtifacts.map((artifact) => {
-          const updatedTask = updatedTasks.find((t) => t.id === artifact.id);
-          if (updatedTask && updatedTask.worktreePath && updatedTask.branchName) {
-            return {
-              ...artifact,
-              worktreePath: updatedTask.worktreePath,
-              branchName: updatedTask.branchName,
-              status: updatedTask.status as any, // TaskArtifact status
+        for (const task of updatedTasks) {
+          if (task.worktreePath && task.branchName) {
+            taskUpdates.set(task.id, {
+              worktreePath: task.worktreePath,
+              branchName: task.branchName,
+              status: task.status,
               updatedAt: new Date().toISOString(),
-            };
+            });
           }
-          return artifact;
-        });
+        }
 
-        await fileWriter.writeJSON(actualTasksPath, updatedArtifacts);
-        console.log(`📝 tasks.json を更新しました (${updatedTasks.filter((t) => t.worktreePath).length}個のworktree)`);
+        if (taskUpdates.size > 0) {
+          await AIFileWriter.updateMultipleTasksInTasksJson(
+            provider,
+            actualTasksPath,
+            taskUpdates,
+            config.baseRepoPath
+          );
+          console.log(`📝 tasks.json を更新しました (${taskUpdates.size}個のworktree)`);
+        }
       } catch (error) {
         console.warn('⚠️ tasks.json の更新に失敗:', error);
         // Non-fatal error - continue with state update

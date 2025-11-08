@@ -14,7 +14,7 @@ import type { ParallelDevStateType, ParallelDevStateUpdate } from '../state.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 import type { AIProviderConfig } from '../../providers/IAIProvider.js';
 import { FileReader } from '../../utils/FileReader.js';
-import { FileWriter } from '../../utils/FileWriter.js';
+import { AIFileWriter } from '../../utils/AIFileWriter.js';
 import type { TaskArtifact, Conflicts } from '../../types/artifacts.js';
 
 /**
@@ -35,7 +35,6 @@ export async function conflictResolverNode(
 
   // Read tasks from file
   const fileReader = new FileReader(config.baseRepoPath);
-  const fileWriter = new FileWriter(config.baseRepoPath);
 
   let tasks: TaskArtifact[];
   try {
@@ -196,18 +195,30 @@ ${config.worktreeBasePath}/${task.id}
           }
         }
 
-        // Update conflicts.json - mark as resolved
+        // Update conflicts.json - mark as resolved using AI
         conflictInfo.resolution = 'resolved';
         conflictInfo.resolvedAt = new Date().toISOString();
-        await fileWriter.writeJSON(`.kugutsu/tasks/${task.id}/conflicts.json`, conflictInfo);
+        await AIFileWriter.writeFile(
+          provider,
+          `.kugutsu/tasks/${task.id}/conflicts.json`,
+          conflictInfo,
+          config.baseRepoPath
+        );
         console.log(`📝 conflicts.json を更新しました (resolved): ${task.id}`);
 
-        // Update tasks.json - change status back to 'reviewed' for re-merge
+        // Update tasks.json - change status back to 'reviewed' for re-merge using AI
         const taskToUpdate = tasks.find((t) => t.id === task.id);
         if (taskToUpdate) {
-          taskToUpdate.status = 'reviewed';
-          taskToUpdate.updatedAt = new Date().toISOString();
-          await fileWriter.writeJSON(tasksPath || '.kugutsu/tasks.json', tasks);
+          await AIFileWriter.updateTaskInTasksJson(
+            provider,
+            tasksPath || '.kugutsu/tasks.json',
+            task.id,
+            {
+              status: 'reviewed',
+              updatedAt: new Date().toISOString(),
+            },
+            config.baseRepoPath
+          );
           console.log(`📝 tasks.json を更新しました (reviewed): ${task.id}`);
         }
 

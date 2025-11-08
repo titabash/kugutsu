@@ -20,7 +20,7 @@ Claude Code環境（ログイン済みセッション）でのE2E検証スクリ
 各検証実行時に、`create-next-app`で公式のNext.jsアプリを作成します:
 
 ```bash
-npx create-next-app@latest . --typescript --app --tailwind --eslint --no-git --no-install
+npx create-next-app@latest . --typescript --app --tailwind --eslint --skip-install --yes
 ```
 
 **設定**:
@@ -28,7 +28,9 @@ npx create-next-app@latest . --typescript --app --tailwind --eslint --no-git --n
 - ✅ App Router
 - ✅ Tailwind CSS
 - ✅ ESLint
-- ⚠️ `--no-install`: 依存関係インストールはスキップ（高速化）
+- ✅ Git初期化（create-next-appが自動実行）
+- ⚠️ `--skip-install`: 依存関係インストールはスキップ（高速化）
+- ⚠️ `--yes`: 非対話モード（プロンプトなし）
 
 **初回実行時の注意**:
 - create-next-appのダウンロードに30秒〜1分程度かかります
@@ -36,12 +38,12 @@ npx create-next-app@latest . --typescript --app --tailwind --eslint --no-git --n
 
 ### 2. Git Worktree検証
 
-作成されたNext.jsアプリをGitリポジトリとして初期化し、worktree操作をテストします:
+create-next-appが自動的にGitリポジトリを初期化するので、そのままworktree操作をテストします:
 
-1. **テストワークスペースはGitリポジトリとして初期化されます**
-   - スクリプトが自動的に`git init`を実行
-   - 初期コミットを作成
-   - `main`ブランチを設定
+1. **テストワークスペースはGitリポジトリとして作成されます**
+   - `create-next-app`が自動的に`git init`と初期コミットを実行
+   - スクリプトがユーザー設定（name, email）を追加
+   - デフォルトブランチは`main`
 
 2. **生成されたファイルは.gitignoreで除外されます**
    - `.kugutsu/` - Kugutsuの管理ファイル

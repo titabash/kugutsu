@@ -96,14 +96,8 @@ worktrees/*
 .npmrc
 
 # E2E verification test workspaces - ignore generated files
-test-e2e-minimal/.kugutsu/
-test-e2e-minimal/worktrees/
-test-e2e-minimal/src/
-test-e2e-minimal/tests/
-test-e2e-realistic/.kugutsu/
-test-e2e-realistic/worktrees/
-test-e2e-realistic/src/
-test-e2e-realistic/tests/
+test-e2e-minimal/*
+test-e2e-realistic/*
 test-workspace/
 test-kugutsu-workspace/
 test-e2e-workspace/

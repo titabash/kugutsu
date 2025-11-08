@@ -42,10 +42,10 @@ async function runE2EMinimalVerification() {
     const { execSync } = await import('child_process');
     try {
       execSync(
-        'npx create-next-app@latest . --typescript --app --tailwind --eslint --no-git --no-install',
+        'npx create-next-app@latest . --typescript --app --tailwind --eslint --skip-install --yes',
         {
           cwd: testDir,
-          stdio: 'pipe', // 出力を抑制
+          stdio: 'inherit', // 出力を表示
         }
       );
       console.log('✅ Next.js app created successfully');
@@ -54,22 +54,15 @@ async function runE2EMinimalVerification() {
       throw error;
     }
 
-    // .kugutsuディレクトリを作成
-    await fs.mkdir(kugutsuDir, { recursive: true });
-
     console.log(`✅ Test workspace created: ${testDir}`);
 
-    // Gitリポジトリとして初期化（worktree操作に必要）
+    // Git設定を追加（worktree操作に必要）
     try {
-      execSync('git init', { cwd: testDir, stdio: 'pipe' });
       execSync('git config user.email "test@example.com"', { cwd: testDir, stdio: 'pipe' });
       execSync('git config user.name "Test User"', { cwd: testDir, stdio: 'pipe' });
-      execSync('git add .', { cwd: testDir, stdio: 'pipe' });
-      execSync('git commit -m "Initial commit"', { cwd: testDir, stdio: 'pipe' });
-      execSync('git branch -M main', { cwd: testDir, stdio: 'pipe' });
-      console.log('✅ Git repository initialized (for worktree operations)');
+      console.log('✅ Git user config set (for worktree operations)');
     } catch (error) {
-      console.error('⚠️  Git initialization failed:', error instanceof Error ? error.message : String(error));
+      console.error('⚠️  Git config failed:', error instanceof Error ? error.message : String(error));
       console.log('Continuing anyway (may affect worktree operations)...');
     }
     console.log('');

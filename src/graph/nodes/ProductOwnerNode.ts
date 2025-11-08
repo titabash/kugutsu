@@ -51,7 +51,8 @@ export async function productOwnerNode(
 
   try {
     // Phase 1: Technology Stack Analysis
-    const techStackFilePath = path.join(kugutsuDir, 'tech-stack.json');
+    // Use relative path from baseRepoPath for AI prompts
+    const techStackFilePath = '.kugutsu/tech-stack.json';
     const techStackAnalysisPrompt = `
 # Technology Stack Analysis
 
@@ -136,17 +137,36 @@ ${config.baseRepoPath}
 
     console.log('✅ 技術スタック分析完了');
 
-    // Read tech stack from file
+    // Read tech stack from file (with retry to wait for AI to write the file)
     let techStackContent = '';
     try {
-      const techStack = await fileReader.readJSON<TechStack>('.kugutsu/tech-stack.json');
-      techStackContent = JSON.stringify(techStack, null, 2);
+      // Wait a bit for the file to be written
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Retry reading the file
+      let retries = 3;
+      while (retries > 0) {
+        try {
+          const techStack = await fileReader.readJSON<TechStack>('.kugutsu/tech-stack.json');
+          techStackContent = JSON.stringify(techStack, null, 2);
+          break;
+        } catch (error) {
+          retries--;
+          if (retries > 0) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          } else {
+            throw error;
+          }
+        }
+      }
     } catch (error) {
-      console.warn('⚠️ tech-stack.json の読み込みに失敗しました:', error);
+      console.warn('⚠️ tech-stack.json の読み込みに失敗しました（AI がファイルを作成しなかった可能性があります）');
+      // 空のtechStackContentで続行
     }
 
     // Phase 2: Requirements Analysis
-    const requirementsFilePath = path.join(kugutsuDir, 'requirements.json');
+    // Use relative path from baseRepoPath for AI prompts
+    const requirementsFilePath = '.kugutsu/requirements.json';
     const requirementsAnalysisPrompt = `
 # Requirements Analysis
 
@@ -232,38 +252,63 @@ MECE原則（漏れなく、重複なく）に基づいて要求を分析し、�
 
     console.log('✅ 要求分析完了');
 
-    // Read requirements from file
+    // Read requirements from file (with retry to wait for AI to write the file)
     let requirementsContent = '';
     try {
-      const requirements = await fileReader.readJSON<Requirements>('.kugutsu/requirements.json');
-      requirementsContent = JSON.stringify(requirements, null, 2);
+      // Wait a bit for the file to be written
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Retry reading the file
+      let retries = 3;
+      while (retries > 0) {
+        try {
+          const requirements = await fileReader.readJSON<Requirements>('.kugutsu/requirements.json');
+          requirementsContent = JSON.stringify(requirements, null, 2);
+          break;
+        } catch (error) {
+          retries--;
+          if (retries > 0) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          } else {
+            throw error;
+          }
+        }
+      }
     } catch (error) {
-      console.warn('⚠️ requirements.json の読み込みに失敗しました:', error);
+      console.warn('⚠️ requirements.json の読み込みに失敗しました（AI がファイルを作成しなかった可能性があります）');
+      // 空のrequirementsContentで続行
     }
 
     // Phase 3: Task Generation
-    const tasksFilePath = path.join(kugutsuDir, 'tasks.json');
+    // Use relative path from baseRepoPath for AI prompts
+    const tasksFilePath = '.kugutsu/tasks.json';
     const taskGenerationPrompt = `
 # Task Generation
 
-要求分析結果に基づいて、並列実行可能なタスクに分割して、ファイルに保存してください。
+**重要**: これは既存プロジェクトへの機能追加です。新しいプロジェクトを作成する必要はありません。
+
+## プロジェクト情報
+${techStackContent || 'プロジェクト情報を確認中...'}
+
+## ユーザーリクエスト
+${userRequest}
 
 ## 要求分析結果
-${requirementsContent}
+${requirementsContent || '(要求分析が完了していません)'}
 
 ## タスク生成の原則
-1. **独立性**: 各タスクは他のタスクと独立して実行可能
-2. **明確性**: タスクの目的と成果物が明確
-3. **テスト駆動**: 各タスクはテストを含む
-4. **適切な粒度**: 大きすぎず、小さすぎないサイズ
+1. **既存プロジェクト**: プロジェクトセットアップは不要。既存のコードベースに機能を追加する
+2. **独立性**: 各タスクは他のタスクと独立して実行可能
+3. **明確性**: タスクの目的と成果物が明確
+4. **テスト駆動**: 各タスクはテストを含む
+5. **適切な粒度**: 大きすぎず、小さすぎないサイズ
 
 ## タスク
 以下を実行してください：
 1. タスクを並列実行可能に分割
 2. 各タスクのメタデータを tasks.json に保存
-3. 各タスクの詳細指示を tasks/{taskId}/instruction.md に保存
 
-## 出力ファイル 1: タスクリスト
+## 出力ファイル: タスクリスト
 **ファイルパス**: ${tasksFilePath}
 
 **ファイル形式**: JSON配列
@@ -284,20 +329,7 @@ ${requirementsContent}
 ]
 \`\`\`
 
-## 出力ファイル 2: 各タスクの詳細指示
-タスクごとに以下のファイルを作成してください：
-**パス形式**: ${kugutsuDir}/tasks/{taskId}/instruction.md
-
-**例**: ${kugutsuDir}/tasks/task-001/instruction.md
-
-**内容**: Markdown形式で以下を含める
-- タスクの目的
-- 実装すべき詳細
-- 技術的制約
-- テスト駆動開発の手順
-- 動作確認方法
-
-**重要**: 必ず Write ツールを使用してすべてのファイルを作成してください。
+**重要**: 必ず Write ツールを使用してファイルを作成してください。
 `;
 
     // Phase 3: Task generation with retry
@@ -380,6 +412,69 @@ ${requirementsContent}
           updatedAt: new Date(),
         },
       ];
+    }
+
+    console.log('✅ タスクリスト読み込み完了');
+
+    // Phase 4: Create instruction.md for each task
+    const instructionPrompt = `
+# Task Instructions Generation
+
+以下のタスクそれぞれに対して、詳細な実装指示書（instruction.md）を作成してください。
+
+## タスクリスト
+${JSON.stringify(tasks.map(t => ({ id: t.id, title: t.title, description: t.description })), null, 2)}
+
+## プロジェクト情報
+${techStackContent || 'Next.js TypeScript プロジェクト'}
+
+## ユーザーリクエスト
+${userRequest}
+
+## タスク
+各タスクについて、以下のファイルを作成してください：
+
+**ファイルパス形式**: .kugutsu/tasks/{taskId}/instruction.md
+
+**内容**: Markdown形式で以下を含める
+- タスクの目的
+- **既存のどのファイルを編集/追加するか**（新規プロジェクト作成は不要）
+- 実装すべき詳細
+- 技術的制約
+- テスト駆動開発の手順
+- 動作確認方法
+
+**重要**:
+- 必ず Write ツールを使用してすべてのファイルを作成してください
+- 既存プロジェクトへの機能追加なので、プロジェクトセットアップタスクは作成しないでください
+- 各タスクのinstruction.mdを必ず作成してください
+`;
+
+    const instructionResult = await RetryManager.executeWithRetry(
+      async () => {
+        for await (const message of provider.execute(instructionPrompt, {
+          maxTurns: 15,
+          cwd: config.baseRepoPath,
+          allowedTools: ['Read', 'Glob', 'Write'],
+          permissionMode: 'acceptEdits',
+        })) {
+          // AI が Write ツールでファイルを作成するのを待つ
+        }
+        return true;
+      },
+      {
+        maxRetries: 3,
+        initialDelayMs: 2000,
+        maxDelayMs: 30000,
+        backoffMultiplier: 2,
+        retryableErrors: ['ETIMEDOUT', 'ECONNRESET', 'rate_limit', 'Rate limit', 'timeout', 'network'],
+      }
+    );
+
+    if (!instructionResult.success) {
+      console.warn('⚠️ instruction.md の作成に失敗しました:', instructionResult.error?.message);
+    } else {
+      console.log('✅ instruction.md 作成完了');
     }
 
     // Return state update with file paths

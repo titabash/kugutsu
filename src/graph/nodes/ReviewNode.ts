@@ -14,7 +14,7 @@ import type { Task, Review } from '../types.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 import type { AIProviderConfig } from '../../providers/IAIProvider.js';
 import { FileReader } from '../../utils/FileReader.js';
-import { FileWriter } from '../../utils/FileWriter.js';
+import { AIFileWriter } from '../../utils/AIFileWriter.js';
 import { TaskStateMachine } from '../../utils/TaskStateMachine.js';
 import type { TaskArtifact, Review as ReviewArtifact, ReviewComment } from '../../types/artifacts.js';
 import { RetryManager } from '../../utils/RetryManager.js';
@@ -41,7 +41,6 @@ export async function reviewNode(
 
   // Read tasks from file
   const fileReader = new FileReader(config.baseRepoPath);
-  const fileWriter = new FileWriter(config.baseRepoPath);
 
   let taskArtifacts: TaskArtifact[];
   try {
@@ -260,17 +259,24 @@ REVIEW_STATUS: APPROVED または CHANGES_REQUESTED
       suggestions: [],
     };
 
-    // Write review.json
+    // Write review.json using AI
     const reviewPath = `.kugutsu/tasks/${taskId}/review.json`;
-    await fileWriter.writeJSON(reviewPath, reviewArtifact);
-
+    await AIFileWriter.writeFile(provider, reviewPath, reviewArtifact, config.baseRepoPath);
     console.log(`📝 レビュー結果を保存しました: ${reviewPath}`);
 
-    // Update task status in tasks.json (only if approved)
+    // Update task status in tasks.json (only if approved) using AI
     if (finalStatus === 'approved') {
-      taskArtifact.status = 'reviewed' as any; // TaskArtifact has different status values
-      taskArtifact.updatedAt = new Date().toISOString();
-      await fileWriter.writeJSON(tasksPath || '.kugutsu/tasks.json', taskArtifacts);
+      const updates = {
+        status: 'reviewed',
+        updatedAt: new Date().toISOString(),
+      };
+      await AIFileWriter.updateTaskInTasksJson(
+        provider,
+        tasksPath || '.kugutsu/tasks.json',
+        taskId,
+        updates,
+        config.baseRepoPath
+      );
       console.log(`✅ タスクステータス(ファイル)を更新しました: reviewed`);
     }
 

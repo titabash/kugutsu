@@ -14,7 +14,7 @@ import type { Task } from '../types.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 import type { AIProviderConfig } from '../../providers/IAIProvider.js';
 import { FileReader } from '../../utils/FileReader.js';
-import { FileWriter } from '../../utils/FileWriter.js';
+import { AIFileWriter } from '../../utils/AIFileWriter.js';
 import { TaskStateMachine } from '../../utils/TaskStateMachine.js';
 import type { TaskArtifact } from '../../types/artifacts.js';
 import { RetryManager } from '../../utils/RetryManager.js';
@@ -41,7 +41,6 @@ export async function engineerNode(
 
   // Read tasks from file
   const fileReader = new FileReader(config.baseRepoPath);
-  const fileWriter = new FileWriter(config.baseRepoPath);
 
   let taskArtifacts: TaskArtifact[];
   try {
@@ -287,18 +286,17 @@ ${dependenciesSection}
       if (task) {
         const failedTask = TaskStateMachine.transition(task, 'failed');
 
-        // tasks.jsonを更新
-        const updatedTaskArtifact: TaskArtifact = {
-          ...taskArtifact,
-          status: 'failed',
-          updatedAt: new Date().toISOString(),
-        };
-
-        const updatedTaskArtifacts = taskArtifacts.map((t) =>
-          t.id === taskId ? updatedTaskArtifact : t
+        // tasks.jsonを更新 using AI
+        await AIFileWriter.updateTaskInTasksJson(
+          provider,
+          tasksPath || '.kugutsu/tasks.json',
+          taskId,
+          {
+            status: 'failed',
+            updatedAt: new Date().toISOString(),
+          },
+          config.baseRepoPath
         );
-
-        await fileWriter.writeJSON(tasksPath || '.kugutsu/tasks.json', updatedTaskArtifacts);
 
         return {
           tasks: [failedTask],
@@ -327,12 +325,18 @@ ${dependenciesSection}
 
     console.log(`✅ タスク ${taskId} の実装が完了しました`);
 
-    // Update task status in file artifact
-    taskArtifact.status = 'implemented' as any; // TaskArtifact has different status values
-    taskArtifact.sessionId = sessionId;
-    taskArtifact.updatedAt = new Date().toISOString();
-
-    await fileWriter.writeJSON(tasksPath || '.kugutsu/tasks.json', taskArtifacts);
+    // Update task status in file artifact using AI
+    await AIFileWriter.updateTaskInTasksJson(
+      provider,
+      tasksPath || '.kugutsu/tasks.json',
+      taskId,
+      {
+        status: 'implemented',
+        sessionId,
+        updatedAt: new Date().toISOString(),
+      },
+      config.baseRepoPath
+    );
     console.log(`📝 タスクステータス(ファイル)を更新しました: implemented`);
 
     // Update State task: in_progress → in_review
@@ -395,19 +399,28 @@ ${dependenciesSection}
   } catch (error) {
     console.error(`❌ タスク ${taskId} の実装に失敗:`, error);
 
-    // Update task status to 'failed' in tasks.json
+    // Update task status to 'failed' in tasks.json using AI
     try {
-      const fileReader = new FileReader(config.baseRepoPath);
-      const fileWriter = new FileWriter(config.baseRepoPath);
-      const taskArtifacts = await fileReader.readJSON<TaskArtifact[]>(tasksPath || '.kugutsu/tasks.json');
-      const taskArtifact = taskArtifacts.find((t) => t.id === taskId);
+      // Create AI provider for this error path
+      const providerConfig: AIProviderConfig = {
+        provider: state.config.provider || 'claude',
+        claude: {
+          model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-5-20250929',
+        },
+      };
+      const provider = AIProviderFactory.create(providerConfig);
 
-      if (taskArtifact) {
-        taskArtifact.status = 'failed' as any; // TaskArtifact has different status values
-        taskArtifact.updatedAt = new Date().toISOString();
-        await fileWriter.writeJSON(tasksPath || '.kugutsu/tasks.json', taskArtifacts);
-        console.log(`📝 タスクステータス(ファイル)を更新しました: failed`);
-      }
+      await AIFileWriter.updateTaskInTasksJson(
+        provider,
+        tasksPath || '.kugutsu/tasks.json',
+        taskId,
+        {
+          status: 'failed',
+          updatedAt: new Date().toISOString(),
+        },
+        config.baseRepoPath
+      );
+      console.log(`📝 タスクステータス(ファイル)を更新しました: failed`);
     } catch (fileError) {
       console.error(`❌ tasks.json の更新に失敗:`, fileError);
     }

@@ -16,7 +16,9 @@ import type { ParallelDevStateType, ParallelDevStateUpdate } from '../state.js';
 import type { MergeTask } from '../types.js';
 import { GitWorktreeManager } from '../../managers/GitWorktreeManager.js';
 import { FileReader } from '../../utils/FileReader.js';
-import { FileWriter } from '../../utils/FileWriter.js';
+import { AIFileWriter } from '../../utils/AIFileWriter.js';
+import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
+import type { AIProviderConfig } from '../../providers/IAIProvider.js';
 import type { TaskArtifact, Review, MergeResult, Conflicts, ConflictFile } from '../../types/artifacts.js';
 
 /**
@@ -35,9 +37,17 @@ export async function mergeCoordinatorNode(
 
   console.log('🔄 Merge Coordinator: マージを調整しています...');
 
+  // Create AI provider
+  const providerConfig: AIProviderConfig = {
+    provider: state.config.provider || 'claude',
+    claude: {
+      model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-5-20250929',
+    },
+  };
+  const provider = AIProviderFactory.create(providerConfig);
+
   // Read tasks from file
   const fileReader = new FileReader(config.baseRepoPath);
-  const fileWriter = new FileWriter(config.baseRepoPath);
 
   let tasks: TaskArtifact[];
   try {
@@ -156,15 +166,27 @@ export async function mergeCoordinatorNode(
             message: 'Merge successful',
           };
 
-          await fileWriter.writeJSON(`.kugutsu/tasks/${mergeTask.taskId}/merge-result.json`, mergeResult);
+          await AIFileWriter.writeFile(
+            provider,
+            `.kugutsu/tasks/${mergeTask.taskId}/merge-result.json`,
+            mergeResult,
+            config.baseRepoPath
+          );
           console.log(`📝 merge-result.json を作成しました: ${mergeTask.taskId}`);
 
-          // Update tasks.json status to 'completed'
+          // Update tasks.json status to 'completed' using AI
           const taskToUpdate = tasks.find((t) => t.id === mergeTask.taskId);
           if (taskToUpdate) {
-            taskToUpdate.status = 'completed';
-            taskToUpdate.updatedAt = new Date().toISOString();
-            await fileWriter.writeJSON(tasksPath || '.kugutsu/tasks.json', tasks);
+            await AIFileWriter.updateTaskInTasksJson(
+              provider,
+              tasksPath || '.kugutsu/tasks.json',
+              mergeTask.taskId,
+              {
+                status: 'completed',
+                updatedAt: new Date().toISOString(),
+              },
+              config.baseRepoPath
+            );
             console.log(`✅ タスクステータスを更新しました: completed`);
           }
 
@@ -211,7 +233,12 @@ export async function mergeCoordinatorNode(
               message: 'Merge conflict detected',
             };
 
-            await fileWriter.writeJSON(`.kugutsu/tasks/${mergeTask.taskId}/merge-result.json`, mergeResult);
+            await AIFileWriter.writeFile(
+              provider,
+              `.kugutsu/tasks/${mergeTask.taskId}/merge-result.json`,
+              mergeResult,
+              config.baseRepoPath
+            );
             console.log(`📝 merge-result.json を作成しました (conflict): ${mergeTask.taskId}`);
 
             // Create conflicts.json
@@ -233,15 +260,27 @@ export async function mergeCoordinatorNode(
               resolution: 'pending',
             };
 
-            await fileWriter.writeJSON(`.kugutsu/tasks/${mergeTask.taskId}/conflicts.json`, conflicts);
+            await AIFileWriter.writeFile(
+              provider,
+              `.kugutsu/tasks/${mergeTask.taskId}/conflicts.json`,
+              conflicts,
+              config.baseRepoPath
+            );
             console.log(`📝 conflicts.json を作成しました: ${mergeTask.taskId}`);
 
-            // Update tasks.json status to 'conflict_detected'
+            // Update tasks.json status to 'conflict_detected' using AI
             const taskToUpdate = tasks.find((t) => t.id === mergeTask.taskId);
             if (taskToUpdate) {
-              taskToUpdate.status = 'conflict_detected';
-              taskToUpdate.updatedAt = new Date().toISOString();
-              await fileWriter.writeJSON(tasksPath || '.kugutsu/tasks.json', tasks);
+              await AIFileWriter.updateTaskInTasksJson(
+                provider,
+                tasksPath || '.kugutsu/tasks.json',
+                mergeTask.taskId,
+                {
+                  status: 'conflict_detected',
+                  updatedAt: new Date().toISOString(),
+                },
+                config.baseRepoPath
+              );
               console.log(`⚠️ タスクステータスを更新しました: conflict_detected`);
             }
 

@@ -93,7 +93,7 @@ async function runE2EMinimalVerification() {
 
     // 初期状態作成
     const initialState = createInitialState(taskRequest, {
-      maxEngineers: 1,
+      maxEngineers: 5,
       maxTurns: 30,
       baseBranch: 'main',
       baseRepoPath: testDir,
@@ -102,7 +102,7 @@ async function runE2EMinimalVerification() {
     });
 
     console.log('🔧 Configuration:');
-    console.log(`  - Max Engineers: 1`);
+    console.log(`  - Max Engineers: 5`);
     console.log(`  - Max Turns: 30`);
     console.log(`  - Base Repo: ${testDir}`);
     console.log(`  - Provider: claude (logged-in session)`);

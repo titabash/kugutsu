@@ -1,0 +1,17 @@
+# E2E Minimal Verification Workspace
+
+このディレクトリは `npm run verify:e2e-minimal` でE2E検証時に使用されます。
+
+## 動作
+
+1. スクリプトがこのディレクトリをGitリポジトリとして初期化
+2. テストファイルを作成
+3. Kugutsuワークフローを実行（worktree作成、タスク実行など）
+4. 実行後、生成されたファイルは.gitignoreで無視される
+
+## 生成されるファイル（.gitignoreで除外）
+
+- `.kugutsu/` - Kugutsuの管理ファイル
+- `worktrees/` - Git worktreeディレクトリ
+- `src/` - 生成されたソースコード
+- `tests/` - 生成されたテストコード

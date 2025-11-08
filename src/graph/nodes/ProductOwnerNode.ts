@@ -11,12 +11,12 @@
  */
 
 import * as path from 'path';
-import type { ParallelDevStateType, ParallelDevStateUpdate } from '../state.js';
+import type { ParallelDevStateType, ParallelDevStateUpdate, FeedbackRequest } from '../state.js';
 import type { Task } from '../types.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 import type { AIProviderConfig } from '../../providers/IAIProvider.js';
 import { FileReader } from '../../utils/FileReader.js';
-import type { TechStack, Requirements, TaskArtifact } from '../../types/artifacts.js';
+import type { TaskArtifact } from '../../types/artifacts.js';
 import { RetryManager } from '../../utils/RetryManager.js';
 import { ErrorClassifier } from '../../utils/ErrorClassifier.js';
 
@@ -46,6 +46,68 @@ export async function productOwnerNode(
 
   console.log('📊 Product Owner: ユーザー要求を分析しています...');
 
+  // フィードバック受信チェック
+  const feedback = state.feedbackRequest;
+  let feedbackContext = '';
+
+  if (feedback && feedback.targetNode === 'product_owner') {
+    console.log(`\n${'='.repeat(80)}`);
+    console.log(`📢 [FEEDBACK LOOP] ProductOwnerノードがフィードバックを受信しました`);
+    console.log(`${'='.repeat(80)}`);
+    console.log(`リクエスト元: ${feedback.requestingNode}`);
+    console.log(`リトライ回数: ${feedback.retryCount}/3`);
+    console.log(`タイムスタンプ: ${feedback.timestamp.toISOString()}`);
+    console.log(`理由: ${feedback.reason}`);
+    console.log(`詳細: ${JSON.stringify(feedback.details, null, 2)}`);
+    console.log(`フィードバック履歴: ${state.feedbackHistory.length}件`);
+    console.log(`全ノードリトライ状況: ${JSON.stringify(state.nodeRetryCounters)}`);
+    console.log(`${'='.repeat(80)}\n`);
+
+    // リトライ上限チェック（3回まで）
+    if (feedback.retryCount > 3) {
+      console.error(`⚠️ ProductOwnerノードへのフィードバックが上限（3回）に達しました`);
+
+      return {
+        feedbackRequest: null, // フィードバッククリア
+        logs: [
+          {
+            timestamp: new Date(),
+            level: 'error',
+            source: 'ProductOwnerNode',
+            message: `リトライ上限超過: ${feedback.reason}`,
+          },
+        ],
+        metadata: {
+          hasErrors: true,
+          errors: [
+            ...(state.metadata.errors || []),
+            `ProductOwner retry limit exceeded: ${feedback.reason}`,
+          ],
+        },
+      };
+    }
+
+    // フィードバック内容をプロンプトに追加するためのコンテキスト
+    feedbackContext = `
+# 📢 フィードバック対応（リトライ ${feedback.retryCount}回目）
+
+前回の実行で以下の不備が検出されました：
+
+**エラー**: ${feedback.reason}
+
+**詳細**:
+${JSON.stringify(feedback.details, null, 2)}
+
+**不足ファイル**: ${feedback.details.missingFiles?.join(', ') || 'なし'}
+**不足フィールド**: ${feedback.details.missingFields?.join(', ') || 'なし'}
+
+**重要**: この不備を修正してください。必要なファイルをすべて作成し、必須フィールドを埋めてください。
+
+---
+
+`;
+  }
+
   const kugutsuDir = path.join(config.baseRepoPath, '.kugutsu');
   const fileReader = new FileReader(config.baseRepoPath);
 
@@ -53,7 +115,7 @@ export async function productOwnerNode(
     // Phase 1: Technology Stack Analysis
     // Use relative path from baseRepoPath for AI prompts
     const techStackFilePath = '.kugutsu/tech-stack.json';
-    const techStackAnalysisPrompt = `
+    const techStackAnalysisPrompt = `${feedbackContext}
 # Technology Stack Analysis
 
 プロジェクトの技術スタックを分析して、ファイルに保存してください。
@@ -142,37 +204,10 @@ ${config.baseRepoPath}
 
     console.log('✅ 技術スタック分析完了');
 
-    // Read tech stack from file (with retry to wait for AI to write the file)
-    let techStackContent = '';
-    try {
-      // Wait a bit for the file to be written
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      // Retry reading the file
-      let retries = 3;
-      while (retries > 0) {
-        try {
-          const techStack = await fileReader.readJSON<TechStack>('.kugutsu/tech-stack.json');
-          techStackContent = JSON.stringify(techStack, null, 2);
-          break;
-        } catch (error) {
-          retries--;
-          if (retries > 0) {
-            await new Promise(resolve => setTimeout(resolve, 1000));
-          } else {
-            throw error;
-          }
-        }
-      }
-    } catch (error) {
-      console.warn('⚠️ tech-stack.json の読み込みに失敗しました（AI がファイルを作成しなかった可能性があります）');
-      // 空のtechStackContentで続行
-    }
-
     // Phase 2: Requirements Analysis
     // Use relative path from baseRepoPath for AI prompts
     const requirementsFilePath = '.kugutsu/requirements.json';
-    const requirementsAnalysisPrompt = `
+    const requirementsAnalysisPrompt = `${feedbackContext}
 # Requirements Analysis
 
 以下の開発要求を分析して、ファイルに保存してください。
@@ -181,7 +216,7 @@ ${config.baseRepoPath}
 ${userRequest}
 
 ## 技術スタック
-${techStackContent}
+**Readツールで${techStackFilePath}を読み込んで参照してください**
 
 ## タスク
 MECE原則（漏れなく、重複なく）に基づいて要求を分析し、以下を実行してください：
@@ -262,49 +297,22 @@ MECE原則（漏れなく、重複なく）に基づいて要求を分析し、�
 
     console.log('✅ 要求分析完了');
 
-    // Read requirements from file (with retry to wait for AI to write the file)
-    let requirementsContent = '';
-    try {
-      // Wait a bit for the file to be written
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      // Retry reading the file
-      let retries = 3;
-      while (retries > 0) {
-        try {
-          const requirements = await fileReader.readJSON<Requirements>('.kugutsu/requirements.json');
-          requirementsContent = JSON.stringify(requirements, null, 2);
-          break;
-        } catch (error) {
-          retries--;
-          if (retries > 0) {
-            await new Promise(resolve => setTimeout(resolve, 1000));
-          } else {
-            throw error;
-          }
-        }
-      }
-    } catch (error) {
-      console.warn('⚠️ requirements.json の読み込みに失敗しました（AI がファイルを作成しなかった可能性があります）');
-      // 空のrequirementsContentで続行
-    }
-
     // Phase 3: Task Generation
     // Use relative path from baseRepoPath for AI prompts
     const tasksFilePath = '.kugutsu/tasks.json';
-    const taskGenerationPrompt = `
+    const taskGenerationPrompt = `${feedbackContext}
 # Task Generation
 
 **重要**: これは既存プロジェクトへの機能追加です。新しいプロジェクトを作成する必要はありません。
 
 ## プロジェクト情報
-${techStackContent || 'プロジェクト情報を確認中...'}
+**Readツールで${techStackFilePath}を読み込んで参照してください**
 
 ## ユーザーリクエスト
 ${userRequest}
 
 ## 要求分析結果
-${requirementsContent || '(要求分析が完了していません)'}
+**Readツールで${requirementsFilePath}を読み込んで参照してください**
 
 ## タスク生成の原則
 1. **既存プロジェクト**: プロジェクトセットアップは不要。既存のコードベースに機能を追加する
@@ -432,7 +440,7 @@ ${requirementsContent || '(要求分析が完了していません)'}
     console.log('✅ タスクリスト読み込み完了');
 
     // Phase 4: Create instruction.md for each task
-    const instructionPrompt = `
+    const instructionPrompt = `${feedbackContext}
 # Task Instructions Generation
 
 以下のタスクそれぞれに対して、詳細な実装指示書（instruction.md）を作成してください。
@@ -441,7 +449,7 @@ ${requirementsContent || '(要求分析が完了していません)'}
 ${JSON.stringify(tasks.map(t => ({ id: t.id, title: t.title, description: t.description })), null, 2)}
 
 ## プロジェクト情報
-${techStackContent || 'Next.js TypeScript プロジェクト'}
+**Readツールで${techStackFilePath}を読み込んで参照してください**
 
 ## ユーザーリクエスト
 ${userRequest}
@@ -505,6 +513,7 @@ ${userRequest}
       techStackPath: '.kugutsu/tech-stack.json',
       requirementsPath: '.kugutsu/requirements.json',
       tasksPath: '.kugutsu/tasks.json',
+      feedbackRequest: null, // フィードバッククリア（成功）
       logs: [
         {
           timestamp: new Date(),

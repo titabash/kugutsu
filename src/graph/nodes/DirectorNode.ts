@@ -120,17 +120,15 @@ ${state.userRequest}
     // Execute AI prompt with Write tool
     console.log('🤖 AI: ストーリーマッピング生成中...');
 
-    const fileWriter = new AIFileWriter(provider);
-    await fileWriter.writeFile(
-      storyMapJsonPath,
-      'ストーリーマッピングJSON',
-      prompt,
-      {
-        maxTurns: state.config.maxTurns || 10,
-        cwd: state.config.baseRepoPath,
-        permissionMode: 'acceptEdits',
-      }
-    );
+    // Execute AI to write files using Write tool
+    for await (const message of provider.execute(prompt, {
+      maxTurns: state.config.maxTurns || 10,
+      cwd: state.config.baseRepoPath,
+      allowedTools: ['Write', 'Read'],
+      permissionMode: 'acceptEdits',
+    })) {
+      // AI writes the files
+    }
 
     // Read the created JSON file to get story mapping
     const storyMappingContent = await fs.readFile(storyMapJsonPath, 'utf-8');

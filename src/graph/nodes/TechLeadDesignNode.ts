@@ -103,7 +103,6 @@ export async function techLeadDesignNode(
   };
 
   const provider = AIProviderFactory.create(providerConfig);
-  const fileWriter = new AIFileWriter(provider);
 
   // Define all design file paths
   const designDocsPath = path.join(
@@ -173,33 +172,42 @@ export async function techLeadDesignNode(
 
   // ステップ1: 全体設計書を生成
   const designDocsPrompt = buildDesignDocsPrompt(storyMapping, designDocsPath);
-  await fileWriter.writeFile(designDocsPath, '全体設計書', designDocsPrompt, {
+  for await (const message of provider.execute(designDocsPrompt, {
     maxTurns: config.maxTurns || 30,
     cwd: config.baseRepoPath,
+    allowedTools: ['Write', 'Read', 'Glob'],
     permissionMode: 'acceptEdits',
-  });
+  })) {
+    // AI writes the design docs
+  }
   console.log('✅ 全体設計書を保存しました');
 
   console.log('🤖 AI: UI/UX設計を生成中...');
 
   // ステップ2: UI/UX設計を生成
   const uiuxPrompt = buildUIUXDesignPrompt(storyMapping, screensJsonPath, wireframesMdPath);
-  await fileWriter.writeFile(screensJsonPath, 'UI/UX設計', uiuxPrompt, {
+  for await (const message of provider.execute(uiuxPrompt, {
     maxTurns: config.maxTurns || 30,
     cwd: config.baseRepoPath,
+    allowedTools: ['Write'],
     permissionMode: 'acceptEdits',
-  });
+  })) {
+    // AI writes the UI/UX design
+  }
   console.log('✅ screens.json と wireframes.md を保存しました');
 
   console.log('🤖 AI: DB設計を生成中...');
 
   // ステップ3: DB設計を生成
   const dbPrompt = buildDatabaseDesignPrompt(storyMapping, schemaJsonPath, erDiagramMdPath);
-  await fileWriter.writeFile(schemaJsonPath, 'DB設計', dbPrompt, {
+  for await (const message of provider.execute(dbPrompt, {
     maxTurns: config.maxTurns || 30,
     cwd: config.baseRepoPath,
+    allowedTools: ['Write'],
     permissionMode: 'acceptEdits',
-  });
+  })) {
+    // AI writes the database design
+  }
   console.log('✅ schema.json と er-diagram.md を保存しました');
 
   console.log('🤖 AI: API設計を生成中...');
@@ -215,11 +223,14 @@ export async function techLeadDesignNode(
 
   // ステップ4: API設計を生成
   const apiPrompt = buildAPIDesignPrompt(storyMapping, dbSchema, apiSpecJsonPath, apiSpecMdPath);
-  await fileWriter.writeFile(apiSpecJsonPath, 'API設計', apiPrompt, {
+  for await (const message of provider.execute(apiPrompt, {
     maxTurns: config.maxTurns || 30,
     cwd: config.baseRepoPath,
+    allowedTools: ['Write'],
     permissionMode: 'acceptEdits',
-  });
+  })) {
+    // AI writes the API design
+  }
   console.log('✅ api-spec.json と api-spec.md を保存しました');
 
   console.log('✅ 設計書作成完了');

@@ -176,8 +176,7 @@ export async function reviewStoryMappingNode(
     reviews: [...(reviewHistory.reviews || []), newReview],
   };
 
-  // AIFileWriterでレビュー履歴を保存（Upsert方式）
-  const fileWriter = new AIFileWriter(provider);
+  // Save review history using AI Write tool
   const reviewHistorySavePrompt = `
 以下のレビュー履歴を${reviewHistoryPath}に保存してください。
 
@@ -188,16 +187,14 @@ ${JSON.stringify(updatedHistory, null, 2)}
 **重要**: Writeツールを使用してこのファイルを作成してください。
 `.trim();
 
-  await fileWriter.writeFile(
-    reviewHistoryPath,
-    'レビュー履歴',
-    reviewHistorySavePrompt,
-    {
-      maxTurns: 5,
-      cwd: config.baseRepoPath,
-      permissionMode: 'acceptEdits',
-    }
-  );
+  for await (const message of provider.execute(reviewHistorySavePrompt, {
+    maxTurns: 5,
+    cwd: config.baseRepoPath,
+    allowedTools: ['Write'],
+    permissionMode: 'acceptEdits',
+  })) {
+    // AI writes the file
+  }
 
   console.log('💾 レビュー履歴を保存しました');
 

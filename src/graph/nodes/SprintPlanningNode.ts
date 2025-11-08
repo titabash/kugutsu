@@ -231,9 +231,6 @@ JSON形式で以下の構造で出力してください：
   newSprint.status = 'active';
   newSprint.startedAt = new Date();
 
-  // AIFileWriterでスプリント情報を保存
-  const fileWriter = new AIFileWriter(provider);
-
   // active-sprint.jsonを保存
   const activeSprintSavePrompt = `
 以下のアクティブスプリント情報を${activeSprintPath}に保存してください。
@@ -245,16 +242,14 @@ ${JSON.stringify(newSprint, null, 2)}
 **重要**: Writeツールを使用してこのファイルを作成してください。
 `.trim();
 
-  await fileWriter.writeFile(
-    activeSprintPath,
-    'アクティブスプリント',
-    activeSprintSavePrompt,
-    {
-      maxTurns: 5,
-      cwd: config.baseRepoPath,
-      permissionMode: 'acceptEdits',
-    }
-  );
+  for await (const message of provider.execute(activeSprintSavePrompt, {
+    maxTurns: 5,
+    cwd: config.baseRepoPath,
+    allowedTools: ['Write'],
+    permissionMode: 'acceptEdits',
+  })) {
+    // AI writes the file
+  }
 
   // global-queue.jsonを保存
   const globalQueueSavePrompt = `
@@ -267,16 +262,14 @@ ${JSON.stringify(updatedGlobalTasks, null, 2)}
 **重要**: Writeツールを使用してこのファイルを作成してください。
 `.trim();
 
-  await fileWriter.writeFile(
-    globalQueuePath,
-    'グローバルタスクキュー',
-    globalQueueSavePrompt,
-    {
-      maxTurns: 5,
-      cwd: config.baseRepoPath,
-      permissionMode: 'acceptEdits',
-    }
-  );
+  for await (const message of provider.execute(globalQueueSavePrompt, {
+    maxTurns: 5,
+    cwd: config.baseRepoPath,
+    allowedTools: ['Write'],
+    permissionMode: 'acceptEdits',
+  })) {
+    // AI writes the file
+  }
 
   return {
     activeSprint: newSprint,

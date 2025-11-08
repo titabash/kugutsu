@@ -9,7 +9,8 @@
  * - Updates task status to `implemented` in tasks.json after completion
  */
 
-import type { ParallelDevStateType, ParallelDevStateUpdate } from '../state.js';
+import { Command, interrupt } from '@langchain/langgraph';
+import type { ParallelDevStateType, ParallelDevStateUpdate, FeedbackRequest } from '../state.js';
 import type { Task } from '../types.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 import type { AIProviderConfig } from '../../providers/IAIProvider.js';
@@ -19,6 +20,7 @@ import { TaskStateMachine } from '../../utils/TaskStateMachine.js';
 import type { TaskArtifact } from '../../types/artifacts.js';
 import { RetryManager } from '../../utils/RetryManager.js';
 import { ErrorClassifier } from '../../utils/ErrorClassifier.js';
+import { PrerequisiteChecker } from '../../utils/PrerequisiteChecker.js';
 
 /**
  * Engineer Node
@@ -38,6 +40,157 @@ export async function engineerNode(
   const { config, tasks, tasksPath } = state;
 
   console.log(`👷 Engineer: タスク ${taskId} を実装しています...`);
+
+  // フィードバック受信チェック
+  const feedback = state.feedbackRequest;
+  if (feedback && feedback.targetNode === 'engineer' && feedback.details.taskId === taskId) {
+    console.log(`📢 フィードバック受信: ${feedback.reason}`);
+    console.log(`   詳細: ${JSON.stringify(feedback.details, null, 2)}`);
+    console.log(`   リトライ回数: ${feedback.retryCount}`);
+    // フィードバックを受信したので、クリアせずに通常処理へ進む
+    // （クリアは処理成功時に行う）
+  }
+
+  // 前提条件チェック
+  const prereqChecker = new PrerequisiteChecker(config);
+  const prereqCheck = await prereqChecker.checkEngineer(state, taskId);
+
+  if (!prereqCheck.success) {
+    console.error(`❌ 前提条件エラー: ${prereqCheck.error}`);
+
+    // 現在のリトライ回数を取得
+    const currentRetryCount = state.nodeRetryCounters[prereqCheck.responsibleNode!] || 0;
+
+    // 2回目のリトライ時に人間の確認を求める (Human-in-the-Loop)
+    if (currentRetryCount === 2) {
+      console.log(`⚠️ タスク ${taskId} で2回目のフィードバックが発生しました`);
+      console.log(`前提条件エラー: ${prereqCheck.error}`);
+      console.log(`責任ノード: ${prereqCheck.responsibleNode}`);
+
+      // Interrupt: 人間の意思決定を待つ
+      const userDecision = interrupt({
+        message: `タスク ${taskId} で2回目のフィードバックが発生しました`,
+        reason: prereqCheck.error,
+        responsibleNode: prereqCheck.responsibleNode,
+        missingFiles: prereqCheck.missingFiles,
+        missingFields: prereqCheck.missingFields,
+        options: {
+          retry: '再試行する（もう1回フィードバックを送る）',
+          skip: 'タスクをスキップする',
+          fail: 'タスクを失敗としてマークする',
+        },
+        taskId,
+        retryCount: currentRetryCount,
+      });
+
+      // ユーザーの選択に応じて処理
+      if (userDecision === 'skip' || userDecision === 'fail') {
+        console.log(`👤 ユーザー決定: ${userDecision}`);
+        const task = state.tasks.find((t) => t.id === taskId);
+        if (task) {
+          const failedTask = TaskStateMachine.transition(task, 'failed');
+          return {
+            tasks: [failedTask],
+            failedTasks: [failedTask],
+            logs: [
+              {
+                timestamp: new Date(),
+                level: 'warn',
+                source: 'EngineerNode',
+                message: `ユーザー決定により${userDecision === 'skip' ? 'スキップ' : '失敗'}`,
+                taskId,
+              },
+            ],
+            feedbackRequest: null,
+            metadata: {
+              tasksFailed: (state.metadata.tasksFailed || 0) + 1,
+            },
+          };
+        }
+      }
+
+      console.log(`👤 ユーザー決定: retry - 再試行します`);
+      // retryの場合は通常のフィードバックフローに進む
+    }
+
+    // リトライ上限チェック（3回まで）
+    if (currentRetryCount >= 3) {
+      console.error(`⚠️ ノード ${prereqCheck.responsibleNode} へのフィードバックが上限（3回）に達しました`);
+
+      // タスクをfailedに遷移
+      const task = state.tasks.find((t) => t.id === taskId);
+      if (task) {
+        const failedTask = TaskStateMachine.transition(task, 'failed');
+
+        return {
+          tasks: [failedTask],
+          failedTasks: [failedTask],
+          logs: [
+            {
+              timestamp: new Date(),
+              level: 'error',
+              source: 'EngineerNode',
+              message: `前提条件エラー（リトライ上限）: ${prereqCheck.error}`,
+              taskId,
+            },
+          ],
+          feedbackRequest: null, // フィードバッククリア
+          metadata: {
+            tasksFailed: (state.metadata.tasksFailed || 0) + 1,
+            hasErrors: true,
+            errors: [
+              ...(state.metadata.errors || []),
+              `Task ${taskId}: ${prereqCheck.error}`,
+            ],
+          },
+        };
+      }
+    }
+
+    // フィードバックリクエスト発行
+    const feedbackRequest: FeedbackRequest = {
+      targetNode: prereqCheck.responsibleNode!,
+      requestingNode: 'engineer',
+      reason: prereqCheck.error!,
+      details: {
+        taskId,
+        missingFiles: prereqCheck.missingFiles || [],
+        missingFields: prereqCheck.missingFields || [],
+      },
+      retryCount: currentRetryCount + 1,
+      timestamp: new Date(),
+    };
+
+    // 詳細なフィードバックログ
+    console.log(`\n${'='.repeat(80)}`);
+    console.log(`🔄 [FEEDBACK LOOP] EngineerノードがフィードバックをReissueしています`);
+    console.log(`${'='.repeat(80)}`);
+    console.log(`ターゲットノード: ${feedbackRequest.targetNode}`);
+    console.log(`タスクID: ${taskId}`);
+    console.log(`リトライ回数: ${feedbackRequest.retryCount}/3`);
+    console.log(`理由: ${feedbackRequest.reason}`);
+    console.log(`不足ファイル: ${feedbackRequest.details.missingFiles?.join(', ') || 'なし'}`);
+    console.log(`不足フィールド: ${feedbackRequest.details.missingFields?.join(', ') || 'なし'}`);
+    console.log(`${'='.repeat(80)}\n`);
+
+    return {
+      feedbackRequest,
+      feedbackHistory: [feedbackRequest],
+      nodeRetryCounters: {
+        [prereqCheck.responsibleNode!]: currentRetryCount + 1,
+      },
+      logs: [
+        {
+          timestamp: new Date(),
+          level: 'warn',
+          source: 'EngineerNode',
+          message: `フィードバック発行: ${prereqCheck.responsibleNode} へ (リトライ ${feedbackRequest.retryCount}/3)`,
+          data: { feedback: feedbackRequest },
+          taskId,
+        },
+      ],
+    };
+  }
 
   // Read tasks from file
   const fileReader = new FileReader(config.baseRepoPath);
@@ -365,6 +518,7 @@ ${dependenciesSection}
 
       return {
         tasks: [inReviewTask],
+        feedbackRequest: null, // フィードバッククリア（成功）
         logs: [
           {
             timestamp: new Date(),
@@ -387,6 +541,7 @@ ${dependenciesSection}
     }
 
     return {
+      feedbackRequest: null, // フィードバッククリア（成功）
       logs: [
         {
           timestamp: new Date(),

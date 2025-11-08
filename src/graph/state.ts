@@ -20,6 +20,59 @@ import type {
 import type { StoryMapping } from '../types/scrum.js';
 
 /**
+ * Feedback Request
+ *
+ * ノードが前提条件の不備を検出した際に発行するリクエスト
+ */
+export interface FeedbackRequest {
+  /**
+   * フィードバック先のノード名
+   * 例: 'product_owner', 'engineer_dispatch'
+   */
+  targetNode: string;
+
+  /**
+   * リクエスト元のノード名
+   * 例: 'engineer', 'review'
+   */
+  requestingNode: string;
+
+  /**
+   * 不備の理由（ユーザーフレンドリーなメッセージ）
+   */
+  reason: string;
+
+  /**
+   * 詳細情報（構造化データ）
+   */
+  details: {
+    taskId?: string;
+    missingFiles?: string[];
+    missingFields?: string[];
+    validationErrors?: any[];
+    [key: string]: any;
+  };
+
+  /**
+   * このフィードバックのリトライ回数
+   */
+  retryCount: number;
+
+  /**
+   * フィードバック作成時刻
+   */
+  timestamp: Date;
+}
+
+/**
+ * ノード固有のリトライカウンター
+ * 各ノードが何回フィードバックループを実行したかを追跡
+ */
+export interface NodeRetryCounters {
+  [nodeName: string]: number;
+}
+
+/**
  * Parallel Development State
  *
  * This is the main state object that flows through the LangGraph workflow.
@@ -477,6 +530,62 @@ export const ParallelDevState = Annotation.Root({
     },
     default: () => null,
   }),
+
+  /**
+   * Feedback Loop fields
+   */
+
+  /**
+   * 現在アクティブなフィードバックリクエスト
+   * Conditional edgeがこれを見てルーティングを決定
+   *
+   * Reducer: Replace (default)
+   */
+  feedbackRequest: Annotation<FeedbackRequest | null>({
+    reducer: (state: FeedbackRequest | null, update: FeedbackRequest | null) => {
+      return update ?? state;
+    },
+    default: () => null,
+  }),
+
+  /**
+   * フィードバック履歴（デバッグ・分析用）
+   *
+   * Reducer: Append new feedback requests, keeping only the most recent 100 entries
+   */
+  feedbackHistory: Annotation<FeedbackRequest[]>({
+    reducer: (state: FeedbackRequest[], update: FeedbackRequest[]) => {
+      const combined = state.concat(update);
+      // Keep only the most recent 100 feedback requests
+      return combined.slice(-100);
+    },
+    default: () => [],
+  }),
+
+  /**
+   * ノード別リトライカウンター
+   * 各ノードへのフィードバック回数を追跡（無限ループ防止）
+   *
+   * Reducer: Merge (shallow merge)
+   */
+  nodeRetryCounters: Annotation<NodeRetryCounters>({
+    reducer: (state: NodeRetryCounters, update: NodeRetryCounters) => {
+      return { ...state, ...update };
+    },
+    default: () => ({}),
+  }),
+
+  /**
+   * グローバルリトライ上限（無限ループ防止）
+   *
+   * Reducer: Replace (default)
+   */
+  maxGlobalRetries: Annotation<number>({
+    reducer: (state: number, update: number) => {
+      return update ?? state;
+    },
+    default: () => 10,
+  }),
 });
 
 /**
@@ -550,6 +659,11 @@ export function createInitialState(
     storyMapping: null,
     designDocs: null,
     dependencyGraph: null,
+    // Feedback Loop fields
+    feedbackRequest: null,
+    feedbackHistory: [],
+    nodeRetryCounters: {},
+    maxGlobalRetries: 10,
   };
 }
 

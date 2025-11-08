@@ -4,7 +4,7 @@
  * Main workflow graph using LangGraphJS
  */
 
-import { StateGraph } from '@langchain/langgraph';
+import { StateGraph, MemorySaver } from '@langchain/langgraph';
 import { ParallelDevState, type ParallelDevStateType } from './state.js';
 import { productOwnerNode } from './nodes/ProductOwnerNode.js';
 import { engineerDispatchNode } from './nodes/EngineerDispatchNode.js';
@@ -207,16 +207,27 @@ export function createParallelDevGraph() {
   // product_owner → engineer_dispatch
   workflow.addEdge('product_owner', 'engineer_dispatch');
 
-  // engineer_dispatch → conditional
+  // engineer_dispatch → conditional（フィードバックルーティング対応）
   workflow.addConditionalEdges(
     'engineer_dispatch',
     (state: ParallelDevStateType) => {
+      // フィードバックチェック（最優先）
+      if (state.feedbackRequest) {
+        const target = state.feedbackRequest.targetNode;
+        console.log(`🔄 フィードバックルーティング: engineer_dispatch → ${target}`);
+        return `feedback_${target}`;
+      }
+
+      // 通常フロー
       const inProgressTasks = state.tasks.filter((t) => t.status === 'in_progress');
       return inProgressTasks.length > 0 ? 'has_tasks' : 'no_tasks';
     },
     {
       has_tasks: 'engineer',
       no_tasks: 'check_completion',
+      // フィードバックルート
+      feedback_product_owner: 'product_owner',
+      feedback_engineer_dispatch: 'engineer_dispatch',
     }
   );
 
@@ -269,10 +280,21 @@ export function createParallelDevGraph() {
 /**
  * Create and compile the parallel development workflow graph
  *
+ * @param options Compilation options
+ * @param options.enableCheckpointer Enable state persistence (default: false for backward compatibility)
  * @returns Compiled graph ready for execution
  */
-export function compileParallelDevGraph() {
+export function compileParallelDevGraph(options?: { enableCheckpointer?: boolean }) {
   const workflow = createParallelDevGraph();
+
+  // Enable checkpointer for state persistence and pause/resume functionality
+  // Default to false for backward compatibility with existing tests
+  if (options?.enableCheckpointer === true) {
+    return workflow.compile({
+      checkpointer: new MemorySaver(),
+    });
+  }
+
   return workflow.compile();
 }
 
@@ -519,10 +541,21 @@ export function createSprintDrivenGraph() {
 /**
  * Create and compile the sprint-driven development workflow graph
  *
+ * @param options Compilation options
+ * @param options.enableCheckpointer Enable state persistence (default: false for backward compatibility)
  * @returns Compiled graph ready for execution
  */
-export function compileSprintDrivenGraph() {
+export function compileSprintDrivenGraph(options?: { enableCheckpointer?: boolean }) {
   const workflow = createSprintDrivenGraph();
+
+  // Enable checkpointer for state persistence and pause/resume functionality
+  // Default to false for backward compatibility with existing tests
+  if (options?.enableCheckpointer === true) {
+    return workflow.compile({
+      checkpointer: new MemorySaver(),
+    });
+  }
+
   return workflow.compile();
 }
 
@@ -734,10 +767,21 @@ export function createScrumDevGraph() {
 /**
  * Create and compile the Scrum development workflow graph
  *
+ * @param options Compilation options
+ * @param options.enableCheckpointer Enable state persistence (default: false for backward compatibility)
  * @returns Compiled graph ready for execution
  */
-export function compileScrumDevGraph() {
+export function compileScrumDevGraph(options?: { enableCheckpointer?: boolean }) {
   const workflow = createScrumDevGraph();
+
+  // Enable checkpointer for state persistence and pause/resume functionality
+  // Default to false for backward compatibility with existing tests
+  if (options?.enableCheckpointer === true) {
+    return workflow.compile({
+      checkpointer: new MemorySaver(),
+    });
+  }
+
   return workflow.compile();
 }
 

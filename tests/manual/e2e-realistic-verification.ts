@@ -33,34 +33,32 @@ async function runE2ERealisticVerification() {
 
     // ディレクトリ作成
     await fs.mkdir(testDir, { recursive: true });
+
+    console.log('📦 Creating Next.js app with create-next-app...');
+    console.log('   This may take a moment...');
+
+    // create-next-appでNext.jsプロジェクトを作成
+    const { execSync } = await import('child_process');
+    try {
+      execSync(
+        'npx create-next-app@latest . --typescript --app --tailwind --eslint --no-git --no-install',
+        {
+          cwd: testDir,
+          stdio: 'pipe', // 出力を抑制
+        }
+      );
+      console.log('✅ Next.js app created successfully');
+    } catch (error) {
+      console.error('❌ Failed to create Next.js app:', error instanceof Error ? error.message : String(error));
+      throw error;
+    }
+
+    // .kugutsuディレクトリを作成
     await fs.mkdir(kugutsuDir, { recursive: true });
-
-    // より実践的なプロジェクト構造を作成
-    await fs.mkdir(path.join(testDir, 'src'), { recursive: true });
-    await fs.mkdir(path.join(testDir, 'tests'), { recursive: true });
-
-    await fs.writeFile(
-      path.join(testDir, 'README.md'),
-      '# Realistic E2E Test Project\n\nUser management API project.',
-      'utf-8'
-    );
-
-    await fs.writeFile(
-      path.join(testDir, 'package.json'),
-      JSON.stringify({
-        name: 'test-project',
-        version: '1.0.0',
-        scripts: {
-          test: 'jest',
-        },
-      }, null, 2),
-      'utf-8'
-    );
 
     console.log(`✅ Test workspace created: ${testDir}`);
 
     // Gitリポジトリとして初期化（worktree操作に必要）
-    const { execSync } = await import('child_process');
     try {
       execSync('git init', { cwd: testDir, stdio: 'pipe' });
       execSync('git config user.email "test@example.com"', { cwd: testDir, stdio: 'pipe' });
@@ -317,8 +315,35 @@ Please implement with proper TypeScript types and basic error handling.
     console.error(error);
     process.exit(1);
   } finally {
-    // クリーンアップ（オプション）
-    // await fs.rm(testDir, { recursive: true, force: true });
+    // クリーンアップ処理
+    // 環境変数 KEEP_TEST_WORKSPACE=1 を設定するとクリーンアップをスキップ
+    const shouldKeep = process.env.KEEP_TEST_WORKSPACE === '1';
+
+    if (shouldKeep) {
+      console.log(`\n📁 Test workspace preserved: ${testDir}`);
+      console.log('   Set KEEP_TEST_WORKSPACE=0 to enable auto-cleanup');
+    } else {
+      try {
+        // ディレクトリ内の生成ファイルのみ削除（.gitkeepは保持）
+        const entries = await fs.readdir(testDir);
+
+        for (const entry of entries) {
+          // .gitkeepは残す
+          if (entry === '.gitkeep') {
+            continue;
+          }
+
+          const fullPath = path.join(testDir, entry);
+          await fs.rm(fullPath, { recursive: true, force: true });
+        }
+
+        console.log(`\n🗑️  Test workspace cleaned up: ${testDir}`);
+        console.log('   (Directory structure preserved with .gitkeep)');
+      } catch (cleanupError) {
+        console.warn(`\n⚠️  Cleanup warning: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`);
+        console.log(`   You may need to manually clean: ${testDir}`);
+      }
+    }
   }
 }
 

@@ -8,10 +8,35 @@ Claude Code環境（ログイン済みセッション）でのE2E検証スクリ
 - ✅ `@anthropic-ai/claude-agent-sdk`がインストール済み
 - ✅ **ANTHROPIC_API_KEYは不要** - Claude Codeのログインセッションを使用
 - ✅ Git がインストール済み（worktree操作に必要）
+- ✅ Node.js 18+ とnpm/npx がインストール済み
+- ✅ インターネット接続（create-next-appのダウンロードに必要）
 
-## 重要: Git Worktree検証について
+## 重要: Next.jsアプリとGit Worktree検証について
 
-このE2E検証では、**実際のGit worktree操作**をテストします。そのため:
+このE2E検証では、**実際のNext.jsアプリとGit worktree操作**をテストします:
+
+### 1. Next.jsアプリの自動作成
+
+各検証実行時に、`create-next-app`で公式のNext.jsアプリを作成します:
+
+```bash
+npx create-next-app@latest . --typescript --app --tailwind --eslint --no-git --no-install
+```
+
+**設定**:
+- ✅ TypeScript
+- ✅ App Router
+- ✅ Tailwind CSS
+- ✅ ESLint
+- ⚠️ `--no-install`: 依存関係インストールはスキップ（高速化）
+
+**初回実行時の注意**:
+- create-next-appのダウンロードに30秒〜1分程度かかります
+- インターネット接続が必要です
+
+### 2. Git Worktree検証
+
+作成されたNext.jsアプリをGitリポジトリとして初期化し、worktree操作をテストします:
 
 1. **テストワークスペースはGitリポジトリとして初期化されます**
    - スクリプトが自動的に`git init`を実行
@@ -21,7 +46,7 @@ Claude Code環境（ログイン済みセッション）でのE2E検証スクリ
 2. **生成されたファイルは.gitignoreで除外されます**
    - `.kugutsu/` - Kugutsuの管理ファイル
    - `worktrees/` - Git worktreeディレクトリ
-   - `src/`, `tests/` - 生成されたコード
+   - Next.jsアプリファイル全体
 
 3. **ディレクトリ構造自体はGitで追跡されます**
    - `test-e2e-minimal/` と `test-e2e-realistic/` はリポジトリに含まれる
@@ -41,7 +66,11 @@ Claude Code環境（ログイン済みセッション）でのE2E検証スクリ
 
 **実行方法**:
 ```bash
+# 通常実行（実行後にワークスペースを自動削除）
 npm run verify:e2e-minimal
+
+# ワークスペースを残したまま実行（デバッグ用）
+KEEP_TEST_WORKSPACE=1 npm run verify:e2e-minimal
 ```
 
 **期待される動作**:
@@ -64,7 +93,11 @@ npm run verify:e2e-minimal
 
 **実行方法**:
 ```bash
+# 通常実行（実行後にワークスペースを自動削除）
 npm run verify:e2e-realistic
+
+# ワークスペースを残したまま実行（デバッグ用）
+KEEP_TEST_WORKSPACE=1 npm run verify:e2e-realistic
 ```
 
 **期待される動作**:
@@ -178,6 +211,63 @@ claude auth status
 **解決策**:
 1. テストワークスペースのディレクトリ構造を確認
 2. `baseRepoPath`が正しく設定されているか確認
+
+---
+
+## テストワークスペースの管理
+
+### 自動クリーンアップ（デフォルト）
+
+通常実行では、テスト完了後に自動的にワークスペースが削除されます:
+
+```bash
+npm run verify:e2e-minimal
+
+# 実行後
+🗑️  Test workspace cleaned up: ./test-e2e-minimal
+```
+
+### ワークスペースを保持（デバッグ用）
+
+デバッグ時にワークスペースを残したい場合:
+
+```bash
+KEEP_TEST_WORKSPACE=1 npm run verify:e2e-minimal
+
+# 実行後
+📁 Test workspace preserved: ./test-e2e-minimal
+   Set KEEP_TEST_WORKSPACE=0 to enable auto-cleanup
+```
+
+保持されたワークスペースで以下を確認できます:
+- `.kugutsu/tasks.json` - タスク情報
+- `.kugutsu/tasks/{task-id}/` - 各タスクの詳細
+- `worktrees/` - Git worktree構造
+- 生成されたソースコード
+
+### 手動クリーンアップ
+
+保持したワークスペース内の生成ファイルを削除する場合:
+
+```bash
+# test-e2e-minimal内の生成ファイルを削除（.gitkeepは保持）
+cd test-e2e-minimal
+rm -rf .git .kugutsu worktrees README.md package.json src tests
+cd ..
+
+# test-e2e-realistic内の生成ファイルを削除（.gitkeepは保持）
+cd test-e2e-realistic
+rm -rf .git .kugutsu worktrees README.md package.json src tests
+cd ..
+```
+
+または、より簡単に:
+
+```bash
+# すべてのファイルを削除（.gitkeepのみ残す）
+find test-e2e-minimal -mindepth 1 ! -name '.gitkeep' -delete
+find test-e2e-realistic -mindepth 1 ! -name '.gitkeep' -delete
+```
 
 ---
 

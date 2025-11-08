@@ -45,10 +45,10 @@ export class ClaudeAgentProvider implements IAIProvider {
     this.apiKey = config.apiKey || process.env.ANTHROPIC_API_KEY || '';
     this.model = config.model || 'claude-sonnet-4-5-20250929';
 
+    // Note: API key is optional when running in Claude Code environment
+    // The SDK will use the logged-in session if no API key is provided
     if (!this.apiKey) {
-      throw new Error(
-        'Claude API key is required. Set ANTHROPIC_API_KEY environment variable or pass apiKey in config.'
-      );
+      console.log('⚠️  No API key provided - using Claude Code logged-in session (if available)');
     }
 
     this.ready = true;

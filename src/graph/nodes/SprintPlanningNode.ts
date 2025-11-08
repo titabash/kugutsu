@@ -32,6 +32,7 @@ export async function sprintPlanningNode(
   state: ParallelDevStateType
 ): Promise<ParallelDevStateUpdate> {
   const { globalTasks, projects, currentProjectId, config } = state;
+  const maxTurns = config.maxTurns || 50;
 
   console.log('📅 SprintPlanning: スプリント計画を作成しています...');
 
@@ -158,7 +159,7 @@ JSON形式で以下の構造で出力してください：
 
   let sprintPlanResult = '';
   for await (const message of provider.execute(sprintPlanningPrompt, {
-    maxTurns: 10,
+    maxTurns,
     cwd: config.baseRepoPath,
     allowedTools: ['Read', 'Glob'],
     permissionMode: 'acceptEdits',
@@ -242,8 +243,8 @@ ${JSON.stringify(newSprint, null, 2)}
 **重要**: Writeツールを使用してこのファイルを作成してください。
 `.trim();
 
-  for await (const message of provider.execute(activeSprintSavePrompt, {
-    maxTurns: 5,
+  for await (const _message of provider.execute(activeSprintSavePrompt, {
+    maxTurns,
     cwd: config.baseRepoPath,
     allowedTools: ['Write'],
     permissionMode: 'acceptEdits',
@@ -262,8 +263,8 @@ ${JSON.stringify(updatedGlobalTasks, null, 2)}
 **重要**: Writeツールを使用してこのファイルを作成してください。
 `.trim();
 
-  for await (const message of provider.execute(globalQueueSavePrompt, {
-    maxTurns: 5,
+  for await (const _message of provider.execute(globalQueueSavePrompt, {
+    maxTurns,
     cwd: config.baseRepoPath,
     allowedTools: ['Write'],
     permissionMode: 'acceptEdits',

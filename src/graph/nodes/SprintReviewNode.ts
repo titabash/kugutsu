@@ -30,6 +30,7 @@ export async function sprintReviewNode(
   state: ParallelDevStateType
 ): Promise<ParallelDevStateUpdate> {
   const { activeSprint, globalTasks, config } = state;
+  const maxTurns = config.maxTurns || 50;
 
   console.log('🔍 SprintReview: スプリント完了確認中...');
 
@@ -140,7 +141,7 @@ JSON形式で以下を出力してください：
 
     let aiResponseText = '';
     for await (const message of provider.execute(deployabilityCheckPrompt, {
-      maxTurns: 5,
+      maxTurns,
       cwd: config.baseRepoPath,
       allowedTools: ['Read', 'Glob'],
       permissionMode: 'acceptEdits',

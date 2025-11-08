@@ -87,6 +87,7 @@ export async function taskBreakdownNode(
   state: ParallelDevStateType
 ): Promise<ParallelDevStateUpdate> {
   const { config, currentProjectId } = state;
+  const maxTurns = config.maxTurns || 50;
 
   console.log('📋 TaskBreakdown: タスク分解開始');
 
@@ -154,7 +155,7 @@ export async function taskBreakdownNode(
 
   let aiResponseText = '';
   for await (const message of provider.execute(taskBreakdownPrompt, {
-    maxTurns: 30,
+    maxTurns,
     cwd: config.baseRepoPath,
     allowedTools: ['Read', 'Glob', 'Grep'],
     permissionMode: 'acceptEdits',

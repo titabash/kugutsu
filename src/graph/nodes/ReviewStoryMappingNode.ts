@@ -51,6 +51,7 @@ export async function reviewStoryMappingNode(
   state: ParallelDevStateType
 ): Promise<ParallelDevStateUpdate> {
   const { config, currentProjectId } = state;
+  const maxTurns = config.maxTurns || 50;
 
   console.log('📖 StoryMappingReview: ストーリーマッピングレビュー開始');
 
@@ -141,7 +142,7 @@ export async function reviewStoryMappingNode(
 
   let aiResponseText = '';
   for await (const message of provider.execute(reviewPrompt, {
-    maxTurns: 10,
+    maxTurns,
     cwd: config.baseRepoPath,
     allowedTools: ['Read', 'Glob'],
     permissionMode: 'acceptEdits',
@@ -187,8 +188,8 @@ ${JSON.stringify(updatedHistory, null, 2)}
 **重要**: Writeツールを使用してこのファイルを作成してください。
 `.trim();
 
-  for await (const message of provider.execute(reviewHistorySavePrompt, {
-    maxTurns: 5,
+  for await (const _message of provider.execute(reviewHistorySavePrompt, {
+    maxTurns,
     cwd: config.baseRepoPath,
     allowedTools: ['Write'],
     permissionMode: 'acceptEdits',

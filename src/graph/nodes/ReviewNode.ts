@@ -36,6 +36,7 @@ export async function reviewNode(
   taskId: string
 ): Promise<ParallelDevStateUpdate> {
   const { config, tasks, tasksPath } = state;
+  const maxTurns = config.maxTurns || 50;
 
   console.log(`🔍 Review: タスク ${taskId} をレビューしています...`);
 
@@ -163,7 +164,7 @@ REVIEW_STATUS: APPROVED または CHANGES_REQUESTED
         let status: 'approved' | 'changes_requested' = 'approved';
 
         for await (const message of provider.execute(reviewPrompt, {
-          maxTurns: 10,
+          maxTurns,
           cwd: taskArtifact.worktreePath,
           allowedTools: ['Read', 'Grep', 'Glob', 'Bash'],
           permissionMode: 'acceptEdits',

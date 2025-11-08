@@ -30,6 +30,7 @@ export async function checkModeNode(
   state: ParallelDevStateType
 ): Promise<ParallelDevStateUpdate> {
   const { userRequest, config } = state;
+  const maxTurns = config.maxTurns || 50;
 
   console.log('🔍 CheckMode: ユーザーリクエストを分析しています...');
   console.log(`📝 リクエスト: ${userRequest}`);
@@ -132,7 +133,7 @@ export async function checkModeNode(
     for await (const message of repositoryAnalysisProvider.execute(
       repositoryAnalysisPrompt,
       {
-        maxTurns: 10,
+        maxTurns,
         cwd: config.baseRepoPath,
         allowedTools: ['Read', 'Glob', 'Grep'],
         permissionMode: 'acceptEdits',
@@ -288,7 +289,7 @@ JSON形式で以下を出力してください：
 
   let aiResponseText = '';
   for await (const message of provider.execute(continuationDetectionPrompt, {
-    maxTurns: 5,
+    maxTurns,
     cwd: config.baseRepoPath,
     allowedTools: [],
     permissionMode: 'acceptEdits',

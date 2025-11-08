@@ -118,26 +118,28 @@ ${JSON.stringify(feedback.details, null, 2)}
     const techStackAnalysisPrompt = `${feedbackContext}
 # Technology Stack Analysis
 
-プロジェクトの技術スタックを分析して、ファイルに保存してください。
+**🎯 必須タスク**: Writeツールで \`${techStackFilePath}\` を作成してください。
 
 ## 対象リポジトリ
 ${config.baseRepoPath}
 
-## タスク
-以下を実行してください：
+## 手順
+
 1. リポジトリ内の設定ファイルを確認（package.json, tsconfig.json, go.mod, requirements.txt等）
 2. 使用されているプログラミング言語を特定
 3. フレームワークとライブラリを特定
 4. ビルドツールとテストフレームワークを特定
-5. **ファイルの作成・更新（Upsert方式）**
+5. **Writeツールで結果をファイルに保存（必須）**
 
-## ファイル作成・更新方針（Upsert）
-1. **Readツールで${techStackFilePath}の存在を確認**
-2. **存在する場合**: 既存内容を読み込み、その内容を基に更新してWriteツールで保存
-3. **存在しない場合**: 新規作成してWriteツールで保存
+## ファイル作成方針（Upsert）
 
-## 出力ファイル
-**ファイルパス**: ${techStackFilePath}
+- **Readツールで${techStackFilePath}の存在を確認**
+- **存在する場合**: 既存内容を読み込み、更新してWriteツールで保存
+- **存在しない場合**: 新規作成してWriteツールで保存
+
+## 出力ファイル仕様
+
+**ファイルパス**: \`${techStackFilePath}\`
 
 **ファイル形式**: JSON
 
@@ -152,14 +154,15 @@ ${config.baseRepoPath}
 }
 \`\`\`
 
-**重要**: 必ず Write ツールを使用してファイルを作成してください。既存ファイルがあれば既存の内容を尊重して更新してください。
+**⚠️ 重要**: このタスクを完了するには、Writeツールでファイルを作成することが必須です。
 `;
 
     // Phase 1: Tech stack analysis with retry
+    const maxTurns = config.maxTurns || 50;
     const techStackResult = await RetryManager.executeWithRetry(
       async () => {
-        for await (const message of provider.execute(techStackAnalysisPrompt, {
-          maxTurns: 5,
+        for await (const _message of provider.execute(techStackAnalysisPrompt, {
+          maxTurns,
           cwd: config.baseRepoPath,
           allowedTools: ['Read', 'Glob', 'Grep', 'Write'],
           permissionMode: 'acceptEdits',
@@ -251,8 +254,8 @@ MECE原則（漏れなく、重複なく）に基づいて要求を分析し、�
     // Phase 2: Requirements analysis with retry
     const requirementsResult = await RetryManager.executeWithRetry(
       async () => {
-        for await (const message of provider.execute(requirementsAnalysisPrompt, {
-          maxTurns: 5,
+        for await (const _message of provider.execute(requirementsAnalysisPrompt, {
+          maxTurns,
           cwd: config.baseRepoPath,
           allowedTools: ['Read', 'Glob', 'Grep', 'Write'],
           permissionMode: 'acceptEdits',
@@ -303,6 +306,8 @@ MECE原則（漏れなく、重複なく）に基づいて要求を分析し、�
     const taskGenerationPrompt = `${feedbackContext}
 # Task Generation
 
+**🎯 必須タスク**: Writeツールで \`${tasksFilePath}\` を作成してください。
+
 **重要**: これは既存プロジェクトへの機能追加です。新しいプロジェクトを作成する必要はありません。
 
 ## プロジェクト情報
@@ -315,24 +320,27 @@ ${userRequest}
 **Readツールで${requirementsFilePath}を読み込んで参照してください**
 
 ## タスク生成の原則
+
 1. **既存プロジェクト**: プロジェクトセットアップは不要。既存のコードベースに機能を追加する
 2. **独立性**: 各タスクは他のタスクと独立して実行可能
 3. **明確性**: タスクの目的と成果物が明確
 4. **テスト駆動**: 各タスクはテストを含む
 5. **適切な粒度**: 大きすぎず、小さすぎないサイズ
 
-## タスク
-以下を実行してください：
+## 手順
+
 1. タスクを並列実行可能に分割
-2. **ファイルの作成・更新（Upsert方式）**
+2. **Writeツールでタスクリストをファイルに保存（必須）**
 
-## ファイル作成・更新方針（Upsert）
-1. **Readツールで${tasksFilePath}の存在を確認**
-2. **存在する場合**: 既存タスクを読み込み、新しいタスクを追加（重複はid で判定して更新）してWriteツールで保存
-3. **存在しない場合**: 新規作成してWriteツールで保存
+## ファイル作成方針（Upsert）
 
-## 出力ファイル: タスクリスト
-**ファイルパス**: ${tasksFilePath}
+- **Readツールで${tasksFilePath}の存在を確認**
+- **存在する場合**: 既存タスクを読み込み、新しいタスクを追加（重複はid で判定して更新）してWriteツールで保存
+- **存在しない場合**: 新規作成してWriteツールで保存
+
+## 出力ファイル仕様
+
+**ファイルパス**: \`${tasksFilePath}\`
 
 **ファイル形式**: JSON配列
 
@@ -352,14 +360,14 @@ ${userRequest}
 ]
 \`\`\`
 
-**重要**: 必ず Write ツールを使用してファイルを作成してください。既存ファイルがあれば既存のタスクとマージしてください。
+**⚠️ 重要**: このタスクを完了するには、Writeツールでファイルを作成することが必須です。
 `;
 
     // Phase 3: Task generation with retry
     const taskGenerationResult = await RetryManager.executeWithRetry(
       async () => {
-        for await (const message of provider.execute(taskGenerationPrompt, {
-          maxTurns: 10,
+        for await (const _message of provider.execute(taskGenerationPrompt, {
+          maxTurns,
           cwd: config.baseRepoPath,
           allowedTools: ['Read', 'Glob', 'Grep', 'Write'],
           permissionMode: 'acceptEdits',
@@ -404,10 +412,13 @@ ${userRequest}
 
     console.log('✅ タスク生成完了');
 
-    // Read tasks from file
+    // Wait for file to be created (AI operations may be async)
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    // Read tasks from file created by AI
     let tasks: Task[] = [];
     try {
-      console.log(`🔍 Reading tasks from .kugutsu/tasks.json...`);
+      console.log(`🔍 Reading tasks from ${tasksFilePath}...`);
       const tasksData = await fileReader.readJSON<TaskArtifact[]>('.kugutsu/tasks.json');
       console.log(`🔍 Found ${tasksData.length} tasks in file`);
       tasks = tasksData.map((task) => ({
@@ -421,7 +432,8 @@ ${userRequest}
         updatedAt: new Date(task.updatedAt),
       }));
     } catch (error) {
-      console.error('❌ tasks.json の読み込みに失敗:', error);
+      console.error(`❌ ${tasksFilePath} の読み込みに失敗:`, error);
+      console.error('⚠️ AIがファイルを作成しなかった可能性があります');
       // Fallback: Create a single task
       tasks = [
         {
@@ -482,8 +494,8 @@ ${userRequest}
 
     const instructionResult = await RetryManager.executeWithRetry(
       async () => {
-        for await (const message of provider.execute(instructionPrompt, {
-          maxTurns: 15,
+        for await (const _message of provider.execute(instructionPrompt, {
+          maxTurns,
           cwd: config.baseRepoPath,
           allowedTools: ['Read', 'Glob', 'Write'],
           permissionMode: 'acceptEdits',

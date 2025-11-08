@@ -54,6 +54,7 @@ export async function reviewDesignNode(
   state: ParallelDevStateType
 ): Promise<ParallelDevStateUpdate> {
   const { config, currentProjectId } = state;
+  const maxTurns = config.maxTurns || 50;
 
   console.log('🔍 DesignReview: 設計書レビュー開始（3者協調）');
 
@@ -145,7 +146,8 @@ export async function reviewDesignNode(
       apiSpecMarkdown,
     },
     storyMapping,
-    config.baseRepoPath
+    config.baseRepoPath,
+    maxTurns
   );
 
   console.log('🤖 AI: ProductOwnerAIレビュー実行中...');
@@ -159,7 +161,8 @@ export async function reviewDesignNode(
       apiSpecMarkdown,
     },
     storyMapping,
-    config.baseRepoPath
+    config.baseRepoPath,
+    maxTurns
   );
 
   console.log('🤖 AI: TechLeadAIレビュー実行中...');
@@ -173,7 +176,8 @@ export async function reviewDesignNode(
       apiSpecMarkdown,
     },
     storyMapping,
-    config.baseRepoPath
+    config.baseRepoPath,
+    maxTurns
   );
 
   // レビュー結果を統合
@@ -307,13 +311,14 @@ async function executeReview(
     apiSpecMarkdown: string | null;
   },
   storyMapping: any,
-  cwd: string
+  cwd: string,
+  maxTurns: number
 ): Promise<ReviewerResult> {
   const prompt = buildReviewPrompt(reviewer, designDocs, storyMapping);
 
   let aiResponseText = '';
   for await (const message of provider.execute(prompt, {
-    maxTurns: 10,
+    maxTurns,
     cwd,
     allowedTools: ['Read', 'Glob'],
     permissionMode: 'acceptEdits',

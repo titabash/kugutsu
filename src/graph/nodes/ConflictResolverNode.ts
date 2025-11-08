@@ -30,6 +30,7 @@ export async function conflictResolverNode(
   state: ParallelDevStateType
 ): Promise<ParallelDevStateUpdate> {
   const { config, tasksPath } = state;
+  const maxTurns = config.maxTurns || 50;
 
   console.log('🔧 Conflict Resolver: コンフリクトを解消しています...');
 
@@ -185,7 +186,7 @@ ${config.worktreeBasePath}/${task.id}
         // Execute conflict resolution
         const worktreePath = `${config.worktreeBasePath}/${task.id}`;
         for await (const message of provider.execute(conflictResolutionPrompt, {
-          maxTurns: 20,
+          maxTurns,
           cwd: worktreePath,
           permissionMode: 'acceptEdits',
           allowedTools: ['Read', 'Write', 'Edit', 'Bash', 'Grep', 'Glob'],

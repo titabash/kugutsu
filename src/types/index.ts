@@ -188,9 +188,32 @@ export interface DependencyFailureStrategy {
 // ========================================
 
 /**
- * グローバルタスク（複数プロジェクト対応）
+ * GlobalTask（Product Backlog管理用）
  *
- * Note: 型システムを統一するため、独立した定義に変更
+ * グローバルタスクキューで管理される全プロジェクトのタスク。
+ *
+ * **用途**: Product/Sprint Backlog管理
+ * **スコープ**: 全プロジェクト、全スプリント
+ * **永続化**: `.kugutsu/tasks/global-queue.json`
+ * **管理ノード**: ProductOwnerNode, TaskBreakdownNode, SprintPlanningNode
+ *
+ * **Product Backlogの判定**:
+ * - `sprint === undefined`: 未割り当て（Product Backlog）
+ * - `sprint !== undefined`: スプリント割り当て済み（Sprint Backlog）
+ *
+ * **Taskとの違い**:
+ * - `GlobalTask`: バックログ管理用（プロジェクト全体で永続化）
+ * - `Task`: 実行中タスク（worktreePath、branchName、sessionId等を含む）
+ *
+ * **ライフサイクル**:
+ * ```
+ * ProductOwnerNode → globalTasks (sprint: undefined)  ← Product Backlog
+ * SprintPlanningNode → globalTasks (sprint: 'xxx')    ← Sprint Backlog
+ * EngineerDispatchNode → tasks（実行キュー）
+ * ReviewNode → globalTasks (status: 'completed')      ← 完了記録
+ * ```
+ *
+ * **Note**: 型システムを統一するため、独立した定義に変更
  * priorityはnumber型（0-100）を使用
  */
 export interface GlobalTask {

@@ -10,15 +10,14 @@ export type { GlobalTask, ProjectMetadata, Sprint } from '../types/index.js';
 /**
  * Task status enum
  *
- * 6-column Kanban board statuses:
- * - pending: 待機中 (依存関係未解決)
- * - ready: 準備完了 (依存関係解決済み、実行可能)
- * - in_progress: 実装中 (EngineerAI実装作業中)
- * - in_review: レビュー中 (TechLeadAIコードレビュー中)
- * - completed: 完了 (レビュー承認済み、終端状態)
- * - failed: 失敗 (実装失敗または致命的エラー)
+ * 5-column Kanban board statuses:
+ * - pending: 待機中（スプリント未割り当て、またはスプリント内で未着手）
+ * - in_progress: 実装中（EngineerAI実装作業中）
+ * - in_review: レビュー中（TechLeadAIコードレビュー中）
+ * - completed: 完了（レビュー承認済み、終端状態）
+ * - failed: 失敗（実装失敗または致命的エラー）
  */
-export type TaskStatus = 'pending' | 'ready' | 'in_progress' | 'in_review' | 'completed' | 'failed';
+export type TaskStatus = 'pending' | 'in_progress' | 'in_review' | 'completed' | 'failed';
 
 /**
  * Review status enum
@@ -36,9 +35,24 @@ export type MergeStatus = 'pending' | 'in_progress' | 'completed' | 'conflict';
 export type LogLevel = 'info' | 'warn' | 'error' | 'debug' | 'success';
 
 /**
- * Task definition
+ * Task definition（実行キュー管理用）
  *
- * Represents a single development task to be executed by an AI engineer
+ * Represents a single development task to be executed by an AI engineer.
+ *
+ * **用途**: 現在のワークフロー実行中のタスク管理
+ * **スコープ**: 単一実行セッション
+ * **永続化**: `.kugutsu/tasks.json`（一時的）
+ * **管理ノード**: EngineerDispatchNode, EngineerNode, ReviewNode
+ *
+ * **globalTasksとの違い**:
+ * - `Task`: 実行中のタスク（worktreePath、branchName、sessionId等を含む）
+ * - `GlobalTask`: Product/Sprint Backlog管理用（プロジェクト全体で永続化）
+ *
+ * **変換フロー**:
+ * ```
+ * globalTasks（バックログ） → EngineerDispatchNode → tasks（実行キュー）
+ * tasks（実行完了） → ReviewNode → globalTasks（完了記録）
+ * ```
  */
 export interface Task {
   /**

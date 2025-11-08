@@ -56,7 +56,7 @@ jest.unstable_mockModule('child_process', () => ({
 }));
 
 // Import AFTER mocking
-const { compileSprintDrivenGraph } = await import('../../src/graph/ParallelDevGraph.js');
+const { compileUnifiedScrumWorkflowGraph } = await import('../../src/graph/ParallelDevGraph.js');
 const { createInitialState } = await import('../../src/graph/state.js');
 const { MockAIProvider } = await import('../../src/providers/MockAIProvider.js');
 
@@ -105,13 +105,13 @@ describe('Sprint-Driven Development Integration', () => {
   });
 
   test('should compile sprint-driven graph successfully', () => {
-    const graph = compileSprintDrivenGraph();
+    const graph = compileUnifiedScrumWorkflowGraph();
 
     expect(graph).toBeDefined();
   });
 
   test('should have all required nodes in sprint-driven graph', () => {
-    const graph = compileSprintDrivenGraph();
+    const graph = compileUnifiedScrumWorkflowGraph();
 
     // Verify graph structure
     expect(graph).toBeDefined();

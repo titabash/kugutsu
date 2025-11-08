@@ -132,10 +132,8 @@ export class TaskConverter {
   ): TaskStatus {
     switch (artifact.status) {
       case 'pending':
-        // 依存関係をチェックして ready 判定
-        return this.canMoveToReady(artifact, existingTasks)
-          ? 'ready'
-          : 'pending';
+        // 依存関係チェックは EngineerDispatchNode で実行されるため、ここでは pending のまま
+        return 'pending';
 
       case 'in_progress':
         return 'in_progress';
@@ -163,7 +161,6 @@ export class TaskConverter {
    *
    * 変換ルール:
    * - pending → pending
-   * - ready → pending
    * - in_progress → in_progress
    * - in_review → implemented
    * - completed → completed
@@ -177,7 +174,6 @@ export class TaskConverter {
   ): ArtifactTaskStatus {
     switch (status) {
       case 'pending':
-      case 'ready':
         return 'pending';
 
       case 'in_progress':

@@ -36,7 +36,7 @@ jest.unstable_mockModule('child_process', () => ({
 }));
 
 // Import AFTER mocking
-const { compileParallelDevGraph } = await import('../../src/graph/ParallelDevGraph.js');
+const { compileUnifiedScrumWorkflowGraph } = await import('../../src/graph/ParallelDevGraph.js');
 const { createInitialState } = await import('../../src/graph/state.js');
 const { MockAIProvider } = await import('../../src/providers/MockAIProvider.js');
 const {
@@ -148,7 +148,7 @@ describe('Dependency Graph Execution', () => {
       });
 
       // Compile and execute graph
-      const graph = compileParallelDevGraph();
+      const graph = compileUnifiedScrumWorkflowGraph();
       const states: any[] = [];
       const stream = await graph.stream(initialState);
 
@@ -276,7 +276,7 @@ describe('Dependency Graph Execution', () => {
       });
 
       // Compile and execute graph
-      const graph = compileParallelDevGraph();
+      const graph = compileUnifiedScrumWorkflowGraph();
       const states: any[] = [];
       const stream = await graph.stream(initialState);
 
@@ -391,7 +391,7 @@ describe('Dependency Graph Execution', () => {
       });
 
       // Compile and execute graph
-      const graph = compileParallelDevGraph();
+      const graph = compileUnifiedScrumWorkflowGraph();
       const states: any[] = [];
       const stream = await graph.stream(initialState);
 

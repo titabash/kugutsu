@@ -258,6 +258,39 @@ export class MockAIProvider implements IAIProvider {
     this.lastPrompt = '';
     this.lastOptions = {};
   }
+
+  /**
+   * Set up mock response for complexity judgment (AnalyzeComplexityNode)
+   *
+   * @param requiresDetailedDesign - Whether detailed design is required (default: true)
+   * @param complexityLevel - Complexity level ('high' or 'low', default: 'high')
+   * @param reason - Reason for the judgment (default: mock reason)
+   */
+  setupComplexityJudgmentMock(
+    requiresDetailedDesign: boolean = true,
+    complexityLevel: 'high' | 'low' = 'high',
+    reason: string = 'Mock complexity judgment for testing'
+  ): void {
+    const jsonResponse = JSON.stringify(
+      {
+        requiresDetailedDesign,
+        complexityLevel,
+        reason,
+      },
+      null,
+      2
+    );
+
+    this.setMockResponse(
+      /analyze.*complexity|determine.*complexity|Complexity Criteria/i,
+      {
+        messages: [
+          createMockMessage.assistant(`\`\`\`json\n${jsonResponse}\n\`\`\``),
+          createMockMessage.result(true),
+        ],
+      }
+    );
+  }
 }
 
 /**

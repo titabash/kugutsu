@@ -2,7 +2,7 @@
  * Task State Machine
  *
  * タスクステータスの状態遷移ルールを管理
- * 6列Kanbanステータス (pending, ready, in_progress, in_review, completed, failed) の
+ * 5列Kanbanステータス (pending, in_progress, in_review, completed, failed) の
  * 遷移バリデーションと実行を提供
  */
 
@@ -37,8 +37,7 @@ export class TaskStateMachine {
    * 許可された状態遷移のマップ
    *
    * 遷移ルール:
-   * - pending → ready: 依存関係解決時
-   * - ready → in_progress: worktree作成・Engineer割り当て時
+   * - pending → in_progress: 依存関係解決・worktree作成・Engineer割り当て時
    * - in_progress → in_review: 実装完了時
    * - in_progress → failed: 実装エラー時
    * - in_review → in_progress: レビュー変更要求時
@@ -47,8 +46,7 @@ export class TaskStateMachine {
    * - completed → (なし): 終端状態、遷移不可
    */
   private static readonly transitions: Map<TaskStatus, TaskStatus[]> = new Map([
-    ['pending', ['ready']],
-    ['ready', ['in_progress']],
+    ['pending', ['in_progress']],
     ['in_progress', ['in_review', 'failed']],
     ['in_review', ['in_progress', 'completed']],
     ['failed', ['pending']],
@@ -103,11 +101,8 @@ export class TaskStateMachine {
     };
 
     switch (`${task.status}->${newStatus}`) {
-      case 'pending->ready':
+      case 'pending->in_progress':
         // 依存関係が解決されていることを確認（呼び出し元で確認済みと想定）
-        break;
-
-      case 'ready->in_progress':
         // worktreePath, branchNameは呼び出し元で設定済みと仮定
         if (!updatedTask.worktreePath || !updatedTask.branchName) {
           throw new Error(
@@ -161,18 +156,22 @@ export class TaskStateMachine {
   }
 
   /**
-   * pending → ready への遷移条件チェック
+   * pending タスクの依存関係チェック
    *
    * すべての依存タスクがcompletedであることを確認
    *
+   * Note: 名前は歴史的理由で "canMoveToReady" ですが、
+   * 実際には依存関係が解決されているかをチェックしています。
+   * pending → in_progress への遷移前に使用されます。
+   *
    * @param task - 対象タスク
    * @param allTasks - 全タスクリスト
-   * @returns 遷移可能であればtrue
+   * @returns 依存関係が解決されていればtrue
    */
   static canMoveToReady(task: Task, allTasks: Task[]): boolean {
     if (task.status !== 'pending') return false;
 
-    // 依存関係がない場合はready可能
+    // 依存関係がない場合は実行可能
     if (task.dependencies.length === 0) return true;
 
     // すべての依存タスクがcompletedであること
@@ -206,7 +205,6 @@ export class TaskStateMachine {
 
     // ステータスノードの定義（色分け）
     graph += '  pending [fillcolor=gray, style="rounded,filled"];\n';
-    graph += '  ready [fillcolor=lightblue, style="rounded,filled"];\n';
     graph += '  in_progress [fillcolor=yellow, style="rounded,filled"];\n';
     graph += '  in_review [fillcolor=orange, style="rounded,filled"];\n';
     graph += '  completed [fillcolor=green, style="rounded,filled"];\n';

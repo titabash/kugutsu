@@ -15,7 +15,7 @@
  * ```
  */
 
-import { compileParallelDevGraph } from '../../src/graph/ParallelDevGraph.js';
+import { compileUnifiedScrumWorkflowGraph } from '../../src/graph/ParallelDevGraph.js';
 import { createInitialState } from '../../src/graph/state.js';
 import * as fs from 'fs/promises';
 import * as fsSync from 'fs';
@@ -109,7 +109,7 @@ async function runE2EMinimalVerification() {
     console.log('');
 
     // グラフをコンパイル
-    const graph = compileParallelDevGraph();
+    const graph = compileUnifiedScrumWorkflowGraph();
     console.log('✅ Graph compiled successfully');
     console.log('');
 

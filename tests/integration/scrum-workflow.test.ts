@@ -93,7 +93,7 @@ jest.unstable_mockModule('../../src/managers/DirectorAI.js', () => ({
 }));
 
 // Import AFTER mocking
-const { compileScrumDevGraph } = await import('../../src/graph/ParallelDevGraph.js');
+const { compileUnifiedScrumWorkflowGraph } = await import('../../src/graph/ParallelDevGraph.js');
 const { createInitialState } = await import('../../src/graph/state.js');
 const { MockAIProvider, createMockMessage } = await import('../../src/providers/MockAIProvider.js');
 
@@ -175,7 +175,7 @@ describe('Scrum Development Workflow Integration', () => {
   });
 
   test('should compile scrum development graph successfully', () => {
-    const graph = compileScrumDevGraph();
+    const graph = compileUnifiedScrumWorkflowGraph();
 
     expect(graph).toBeDefined();
     expect(typeof graph.invoke).toBe('function');
@@ -183,7 +183,7 @@ describe('Scrum Development Workflow Integration', () => {
   });
 
   test('should have all required nodes in scrum workflow graph', () => {
-    const graph = compileScrumDevGraph();
+    const graph = compileUnifiedScrumWorkflowGraph();
 
     // Verify graph structure
     expect(graph).toBeDefined();

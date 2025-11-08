@@ -38,7 +38,7 @@ jest.unstable_mockModule('child_process', () => ({
 }));
 
 // Import AFTER mocking
-const { compileScrumDevGraph, compileSprintDrivenGraph } = await import('../../src/graph/ParallelDevGraph.js');
+const { compileUnifiedScrumWorkflowGraph } = await import('../../src/graph/ParallelDevGraph.js');
 const { createInitialState } = await import('../../src/graph/state.js');
 const { MockAIProvider, createMockMessage } = await import('../../src/providers/MockAIProvider.js');
 const { setupTestEnvironment } = await import('../helpers/integration-test-helpers.js');
@@ -79,7 +79,7 @@ describe('Scrum/Sprint Complete Workflow', () => {
 
     try {
       // Compile Scrum graph
-      const graph = compileScrumDevGraph();
+      const graph = compileUnifiedScrumWorkflowGraph();
 
       expect(graph).toBeDefined();
 
@@ -145,7 +145,7 @@ describe('Scrum/Sprint Complete Workflow', () => {
 
     try {
       // Compile Sprint graph
-      const graph = compileSprintDrivenGraph();
+      const graph = compileUnifiedScrumWorkflowGraph();
 
       expect(graph).toBeDefined();
 

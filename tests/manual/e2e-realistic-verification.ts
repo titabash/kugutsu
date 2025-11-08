@@ -14,7 +14,7 @@
  * ```
  */
 
-import { compileParallelDevGraph } from '../../src/graph/ParallelDevGraph.js';
+import { compileUnifiedScrumWorkflowGraph } from '../../src/graph/ParallelDevGraph.js';
 import { createInitialState } from '../../src/graph/state.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -97,7 +97,7 @@ Please implement with proper TypeScript types and basic error handling.
     console.log('');
 
     // グラフをコンパイル
-    const graph = compileParallelDevGraph();
+    const graph = compileUnifiedScrumWorkflowGraph();
     console.log('✅ Graph compiled successfully');
     console.log('');
 

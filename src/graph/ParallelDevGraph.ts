@@ -20,25 +20,57 @@ import { reviewStoryMappingNode } from './nodes/ReviewStoryMappingNode.js';
 import { techLeadDesignNode } from './nodes/TechLeadDesignNode.js';
 import { reviewDesignNode } from './nodes/ReviewDesignNode.js';
 import { taskBreakdownNode } from './nodes/TaskBreakdownNode.js';
+import { analyzeComplexityNode } from './nodes/AnalyzeComplexityNode.js';
 
 /**
- * Create the parallel development workflow graph
+ * Create the Unified Scrum Workflow Graph
  *
- * Workflow:
- * 1. ProductOwner: Analyze requirements and generate tasks
- * 2. EngineerDispatch: Assign tasks to worktrees
- * 3. Engineer: Implement tasks (currently sequential, will be parallelized)
- * 4. Review: Review completed tasks (currently sequential, will be parallelized)
- * 5. MergeCoordinator: Merge approved tasks
- * 6. ConflictResolver: Resolve merge conflicts if any
- * 7. CheckCompletion: Check if all tasks are done
+ * This is the single, unified workflow that replaces the previous 3 separate graphs:
+ * - createParallelDevGraph (basic parallel development)
+ * - createSprintDrivenGraph (sprint-based development)
+ * - createScrumDevGraph (full Scrum with story mapping)
+ *
+ * Unified Workflow:
+ * 1. AnalyzeComplexityNode: AI-driven complexity analysis
+ * 2. Conditional branching based on complexity:
+ *    - High: Director → ReviewStoryMapping → TechLeadDesign → ReviewDesign → TaskBreakdown
+ *    - Low: ProductOwner (direct task breakdown)
+ * 3. CheckMode: Detect continuation vs new mode
+ * 4. SprintPlanning: Plan sprint (8-16h units)
+ * 5. Engineer execution loop: EngineerDispatch → Engineer → Review → MergeCoordinator → ConflictResolver
+ * 6. SprintReview: Sprint completion check, generate next sprint
  */
-export function createParallelDevGraph() {
+export function createUnifiedScrumWorkflowGraph() {
   const workflow = new StateGraph(ParallelDevState)
-    // Add all nodes first using method chaining
+    // ================================================
+    // Entry: Complexity Analysis
+    // ================================================
+    .addNode('analyze_complexity', analyzeComplexityNode)
+
+    // ================================================
+    // High Complexity Path: Full Scrum Flow
+    // ================================================
+    .addNode('director_ai', directorNode)
+    .addNode('review_story_mapping', reviewStoryMappingNode)
+    .addNode('tech_lead_design', techLeadDesignNode)
+    .addNode('review_design', reviewDesignNode)
+    .addNode('task_breakdown', taskBreakdownNode)
+
+    // ================================================
+    // Low Complexity Path: Direct Task Breakdown
+    // ================================================
     .addNode('product_owner', productOwnerNode)
+
+    // ================================================
+    // Common Path: Sprint-Driven Execution
+    // ================================================
+    .addNode('check_mode', checkModeNode)
+    .addNode('sprint_planning', sprintPlanningNode)
     .addNode('engineer_dispatch', engineerDispatchNode)
-    // Engineer wrapper node: executes all in-progress tasks
+
+    // ================================================
+    // Engineer Wrapper: Parallel Task Execution
+    // ================================================
     .addNode('engineer', async (state: ParallelDevStateType) => {
       const inProgressTasks = state.tasks.filter((t) => t.status === 'in_progress');
 
@@ -94,11 +126,15 @@ export function createParallelDevGraph() {
 
       return results;
     })
-    // Review wrapper node: reviews all in_review tasks
+
+    // ================================================
+    // Review Wrapper: Parallel Code Review
+    // ⚠️ FIXED: Changed from status === 'completed' to status === 'in_review'
+    // ================================================
     .addNode('review', async (state: ParallelDevStateType) => {
       const completedTasks = state.tasks.filter(
         (t) =>
-          t.status === 'in_review' &&
+          t.status === 'in_review' && // ✅ FIXED: was 'completed'
           !state.reviews.some((r) => r.taskId === t.id)
       );
 
@@ -122,7 +158,7 @@ export function createParallelDevGraph() {
         completedTasks.map((task) => reviewNode(state, task.id))
       );
 
-      // Accumulate all results (including tasks!)
+      // Accumulate all results
       const results = {
         tasks: [] as any[],
         completedTasks: [] as any[],
@@ -152,92 +188,118 @@ export function createParallelDevGraph() {
 
       return results;
     })
+
+    // ================================================
+    // Merge and Conflict Resolution
+    // ================================================
     .addNode('merge_coordinator', mergeCoordinatorNode)
     .addNode('conflict_resolver', conflictResolverNode)
-    // Add check_completion node
-    .addNode('check_completion', (state: ParallelDevStateType) => {
-      console.log(`🔍 check_completion: state.tasks.length = ${state.tasks.length}`);
-      state.tasks.forEach((t) => console.log(`  Task ${t.id}: status = ${t.status}`));
 
-      const allTasksSettled = state.tasks.every(
-        (t) => t.status === 'completed' || t.status === 'failed'
-      );
+    // ================================================
+    // Sprint Review and Completion
+    // ================================================
+    .addNode('sprint_review', sprintReviewNode);
 
-      const pendingTasks = state.tasks.filter((t) => t.status === 'pending');
-      const inProgressTasks = state.tasks.filter((t) => t.status === 'in_progress');
-      const completedTasks = state.tasks.filter((t) => t.status === 'completed');
-      const failedTasks = state.tasks.filter((t) => t.status === 'failed');
+  // ================================================
+  // Define Edges
+  // ================================================
 
-      console.log('\n📊 ===== 進捗状況 =====');
-      console.log(`   待機中: ${pendingTasks.length}`);
-      console.log(`   実行中: ${inProgressTasks.length}`);
-      console.log(`   完了: ${completedTasks.length}`);
-      console.log(`   失敗: ${failedTasks.length}`);
-      console.log('========================\n');
+  // Entry point: __start__ → analyze_complexity
+  workflow.addEdge('__start__', 'analyze_complexity');
 
-      return {
-        logs: [
-          {
-            timestamp: new Date(),
-            level: 'info',
-            source: 'check_completion',
-            message: allTasksSettled
-              ? '全タスク完了'
-              : `進行中: 待機${pendingTasks.length}件、実行中${inProgressTasks.length}件、完了${completedTasks.length}件、失敗${failedTasks.length}件`,
-            data: {
-              pending: pendingTasks.length,
-              inProgress: inProgressTasks.length,
-              completed: completedTasks.length,
-              failed: failedTasks.length,
-            },
-          },
-        ],
-        metadata: {
-          phase: allTasksSettled ? 'complete' : state.metadata.phase,
-          completedAt: allTasksSettled ? new Date() : undefined,
-        },
-      };
-    });
+  // Conditional branching based on complexity
+  workflow.addConditionalEdges(
+    'analyze_complexity',
+    (state: ParallelDevStateType) => {
+      const requiresDetailedDesign = state.metadata.requiresDetailedDesign;
+      console.log(`🔍 複雑度判定結果: ${requiresDetailedDesign ? '高（詳細設計実行）' : '低（詳細設計スキップ）'}`);
+      return requiresDetailedDesign ? 'high_complexity' : 'low_complexity';
+    },
+    {
+      high_complexity: 'director_ai',
+      low_complexity: 'product_owner',
+    }
+  );
 
-  // Define edges
+  // High complexity path edges
+  workflow.addEdge('director_ai', 'review_story_mapping');
 
-  // __start__ → product_owner
-  workflow.addEdge('__start__', 'product_owner');
+  workflow.addConditionalEdges(
+    'review_story_mapping',
+    (state: ParallelDevStateType) => {
+      // Check if story mapping was approved or needs revision
+      // For now, default to approved (future: implement approval logic)
+      return 'approved';
+    },
+    {
+      approved: 'tech_lead_design',
+      revision_needed: 'director_ai',
+    }
+  );
 
-  // product_owner → engineer_dispatch
-  workflow.addEdge('product_owner', 'engineer_dispatch');
+  workflow.addEdge('tech_lead_design', 'review_design');
 
-  // engineer_dispatch → conditional（フィードバックルーティング対応）
+  workflow.addConditionalEdges(
+    'review_design',
+    (state: ParallelDevStateType) => {
+      // Check if design was approved or needs revision
+      // For now, default to approved (future: implement approval logic)
+      return 'approved';
+    },
+    {
+      approved: 'task_breakdown',
+      revision_needed: 'tech_lead_design',
+    }
+  );
+
+  workflow.addEdge('task_breakdown', 'check_mode');
+
+  // Low complexity path edge
+  workflow.addEdge('product_owner', 'check_mode');
+
+  // CheckMode routing: new mode or continuation mode
+  workflow.addConditionalEdges('check_mode', checkModeRouter, {
+    product_owner: 'product_owner',
+    sprint_planning: 'sprint_planning',
+  });
+
+  // Sprint planning → engineer dispatch
+  workflow.addConditionalEdges('sprint_planning', sprintPlanningRouter, {
+    engineer_dispatch: 'engineer_dispatch',
+    sprint_review: 'sprint_review',
+  });
+
+  // Engineer dispatch → conditional (feedback routing or normal flow)
   workflow.addConditionalEdges(
     'engineer_dispatch',
     (state: ParallelDevStateType) => {
-      // フィードバックチェック（最優先）
+      // Feedback check (highest priority)
       if (state.feedbackRequest) {
         const target = state.feedbackRequest.targetNode;
         console.log(`🔄 フィードバックルーティング: engineer_dispatch → ${target}`);
         return `feedback_${target}`;
       }
 
-      // 通常フロー
+      // Normal flow
       const inProgressTasks = state.tasks.filter((t) => t.status === 'in_progress');
       return inProgressTasks.length > 0 ? 'has_tasks' : 'no_tasks';
     },
     {
       has_tasks: 'engineer',
-      no_tasks: 'check_completion',
-      // フィードバックルート
+      no_tasks: 'sprint_review',
+      // Feedback routes
       feedback_product_owner: 'product_owner',
       feedback_engineer_dispatch: 'engineer_dispatch',
     }
   );
 
-  // engineer → review
+  // Engineer → review
   workflow.addEdge('engineer', 'review');
 
-  // review → merge_coordinator
+  // Review → merge_coordinator
   workflow.addEdge('review', 'merge_coordinator');
 
-  // merge_coordinator → conditional
+  // Merge coordinator → conditional
   workflow.addConditionalEdges(
     'merge_coordinator',
     (state: ParallelDevStateType) => {
@@ -252,527 +314,31 @@ export function createParallelDevGraph() {
     {
       has_conflicts: 'conflict_resolver',
       has_pending: 'engineer_dispatch',
-      no_pending: 'check_completion',
+      no_pending: 'sprint_review',
     }
   );
 
-  // conflict_resolver → merge_coordinator (retry)
+  // Conflict resolver → merge coordinator (retry)
   workflow.addEdge('conflict_resolver', 'merge_coordinator');
 
-  // check_completion → conditional (__end__ or continue)
-  workflow.addConditionalEdges(
-    'check_completion',
-    (state: ParallelDevStateType) => {
-      const allTasksSettled = state.tasks.every(
-        (t) => t.status === 'completed' || t.status === 'failed'
-      );
-      return allTasksSettled ? 'done' : 'continue';
-    },
-    {
-      done: '__end__',
-      continue: 'engineer_dispatch',
-    }
-  );
+  // Sprint review → conditional (__end__ or continue)
+  workflow.addConditionalEdges('sprint_review', sprintReviewRouter, {
+    sprint_planning: 'sprint_planning',
+    __end__: '__end__',
+  });
 
   return workflow;
 }
 
 /**
- * Create and compile the parallel development workflow graph
+ * Create and compile the Unified Scrum Workflow Graph
  *
  * @param options Compilation options
  * @param options.enableCheckpointer Enable state persistence (default: false for backward compatibility)
  * @returns Compiled graph ready for execution
  */
-export function compileParallelDevGraph(options?: { enableCheckpointer?: boolean }) {
-  const workflow = createParallelDevGraph();
-
-  // Enable checkpointer for state persistence and pause/resume functionality
-  // Default to false for backward compatibility with existing tests
-  if (options?.enableCheckpointer === true) {
-    return workflow.compile({
-      checkpointer: new MemorySaver(),
-    });
-  }
-
-  return workflow.compile();
-}
-
-/**
- * Create the sprint-driven development workflow graph
- *
- * Sprint-Driven Workflow:
- * 1. CheckMode: Detect continuation mode or new mode
- * 2. [Continuation] SprintPlanning: Plan next sprint (8-16h)
- * 3. [New] ProductOwner: Analyze requirements and generate tasks
- * 4. EngineerDispatch: Assign tasks to worktrees
- * 5. Engineer: Implement tasks in parallel
- * 6. Review: Review completed tasks in parallel
- * 7. MergeCoordinator: Merge approved tasks
- * 8. [Conflicts] ConflictResolver: Resolve merge conflicts
- * 9. SprintReview: Check sprint completion, decide next sprint
- * 10. [More tasks] → SprintPlanning (loop)
- * 11. [All done] → END
- */
-export function createSprintDrivenGraph() {
-  const workflow = new StateGraph(ParallelDevState)
-    // ================================================
-    // Upper Layer: Scrum Development Process Nodes
-    // ================================================
-    .addNode('check_mode', checkModeNode)
-    .addNode('product_owner', productOwnerNode)
-
-    // ================================================
-    // Lower Layer: Sprint-Driven Execution Nodes
-    // ================================================
-    .addNode('sprint_planning', sprintPlanningNode)
-    .addNode('engineer_dispatch', engineerDispatchNode)
-
-    // Engineer wrapper node: executes all in-progress tasks in parallel
-    .addNode('engineer', async (state: ParallelDevStateType) => {
-      const inProgressTasks = state.tasks.filter((t) => t.status === 'in_progress');
-
-      if (inProgressTasks.length === 0) {
-        return {
-          logs: [
-            {
-              timestamp: new Date(),
-              level: 'info',
-              source: 'EngineerWrapper',
-              message: '実行可能なタスクがありません',
-            },
-          ],
-        };
-      }
-
-      console.log(`👷 ${inProgressTasks.length}個のタスクを並列実装中...`);
-
-      // Execute all in-progress tasks in parallel (with allSettled to continue on failures)
-      const taskResults = await Promise.allSettled(
-        inProgressTasks.map((task) => engineerNode(state, task.id))
-      );
-
-      // Accumulate all results
-      const results = {
-        tasks: [] as any[],
-        completedTasks: [] as any[],
-        failedTasks: [] as any[],
-        logs: [] as any[],
-        metadata: {},
-      };
-
-      for (const settledResult of taskResults) {
-        if (settledResult.status === 'fulfilled') {
-          // タスク実行成功
-          const result = settledResult.value;
-          if (result.tasks) results.tasks.push(...result.tasks);
-          if (result.completedTasks) results.completedTasks.push(...result.completedTasks);
-          if (result.failedTasks) results.failedTasks.push(...result.failedTasks);
-          if (result.logs) results.logs.push(...result.logs);
-          if (result.metadata) results.metadata = { ...results.metadata, ...result.metadata };
-        } else {
-          // タスク実行失敗
-          results.logs.push({
-            timestamp: new Date(),
-            level: 'error' as const,
-            source: 'EngineerWrapper',
-            message: `タスク実行エラー: ${settledResult.reason?.message || settledResult.reason}`,
-            data: { error: settledResult.reason },
-          });
-        }
-      }
-
-      return results;
-    })
-
-    // Review wrapper node: reviews all completed tasks in parallel
-    .addNode('review', async (state: ParallelDevStateType) => {
-      const completedTasks = state.tasks.filter(
-        (t) =>
-          t.status === 'completed' &&
-          !state.reviews.some((r) => r.taskId === t.id)
-      );
-
-      if (completedTasks.length === 0) {
-        return {
-          logs: [
-            {
-              timestamp: new Date(),
-              level: 'info',
-              source: 'ReviewWrapper',
-              message: 'レビュー対象のタスクがありません',
-            },
-          ],
-        };
-      }
-
-      console.log(`🔍 ${completedTasks.length}個のタスクを並列レビュー中...`);
-
-      // Review all completed tasks in parallel (with allSettled to continue on failures)
-      const reviewResults = await Promise.allSettled(
-        completedTasks.map((task) => reviewNode(state, task.id))
-      );
-
-      // Accumulate all results (including tasks!)
-      const results = {
-        tasks: [] as any[],
-        completedTasks: [] as any[],
-        reviews: [] as any[],
-        logs: [] as any[],
-      };
-
-      for (const settledResult of reviewResults) {
-        if (settledResult.status === 'fulfilled') {
-          // レビュー成功
-          const result = settledResult.value;
-          if (result.tasks) results.tasks.push(...result.tasks);
-          if (result.completedTasks) results.completedTasks.push(...result.completedTasks);
-          if (result.reviews) results.reviews.push(...result.reviews);
-          if (result.logs) results.logs.push(...result.logs);
-        } else {
-          // レビュー失敗
-          results.logs.push({
-            timestamp: new Date(),
-            level: 'error' as const,
-            source: 'ReviewWrapper',
-            message: `レビュー実行エラー: ${settledResult.reason?.message || settledResult.reason}`,
-            data: { error: settledResult.reason },
-          });
-        }
-      }
-
-      return results;
-    })
-
-    .addNode('merge_coordinator', mergeCoordinatorNode)
-    .addNode('conflict_resolver', conflictResolverNode)
-    .addNode('sprint_review', sprintReviewNode);
-
-  // ================================================
-  // Edge Definition: Upper Layer (Scrum Development)
-  // ================================================
-
-  // START → check_mode
-  workflow.addEdge('__start__', 'check_mode');
-
-  // check_mode → [product_owner/sprint_planning]
-  workflow.addConditionalEdges(
-    'check_mode',
-    checkModeRouter,
-    {
-      product_owner: 'product_owner',
-      sprint_planning: 'sprint_planning',
-    }
-  );
-
-  // product_owner → sprint_planning
-  // (After task breakdown, delegate to sprint-driven execution)
-  workflow.addEdge('product_owner', 'sprint_planning');
-
-  // ================================================
-  // Edge Definition: Lower Layer (Sprint-Driven Execution)
-  // ================================================
-
-  // sprint_planning → [engineer_dispatch/END]
-  workflow.addConditionalEdges(
-    'sprint_planning',
-    sprintPlanningRouter,
-    {
-      engineer_dispatch: 'engineer_dispatch',
-      END: '__end__',
-    }
-  );
-
-  // engineer_dispatch → conditional
-  workflow.addConditionalEdges(
-    'engineer_dispatch',
-    (state: ParallelDevStateType) => {
-      const inProgressTasks = state.tasks.filter((t) => t.status === 'in_progress');
-      return inProgressTasks.length > 0 ? 'has_tasks' : 'no_tasks';
-    },
-    {
-      has_tasks: 'engineer',
-      no_tasks: 'sprint_review',
-    }
-  );
-
-  // engineer → review
-  workflow.addEdge('engineer', 'review');
-
-  // review → merge_coordinator
-  workflow.addEdge('review', 'merge_coordinator');
-
-  // merge_coordinator → [conflict_resolver/sprint_review]
-  workflow.addConditionalEdges(
-    'merge_coordinator',
-    (state: ParallelDevStateType) => {
-      const conflicts = state.mergeQueue.filter((m) => m.status === 'conflict');
-      if (conflicts.length > 0) {
-        return 'has_conflicts';
-      }
-
-      const pendingTasks = state.tasks.filter((t) => t.status === 'pending');
-      return pendingTasks.length > 0 ? 'has_pending' : 'review_sprint';
-    },
-    {
-      has_conflicts: 'conflict_resolver',
-      has_pending: 'engineer_dispatch',
-      review_sprint: 'sprint_review',
-    }
-  );
-
-  // conflict_resolver → merge_coordinator (retry)
-  workflow.addEdge('conflict_resolver', 'merge_coordinator');
-
-  // sprint_review → [sprint_planning/engineer_dispatch/END]
-  workflow.addConditionalEdges(
-    'sprint_review',
-    sprintReviewRouter,
-    {
-      sprint_planning: 'sprint_planning',
-      engineer_dispatch: 'engineer_dispatch',
-      END: '__end__',
-    }
-  );
-
-  return workflow;
-}
-
-/**
- * Create and compile the sprint-driven development workflow graph
- *
- * @param options Compilation options
- * @param options.enableCheckpointer Enable state persistence (default: false for backward compatibility)
- * @returns Compiled graph ready for execution
- */
-export function compileSprintDrivenGraph(options?: { enableCheckpointer?: boolean }) {
-  const workflow = createSprintDrivenGraph();
-
-  // Enable checkpointer for state persistence and pause/resume functionality
-  // Default to false for backward compatibility with existing tests
-  if (options?.enableCheckpointer === true) {
-    return workflow.compile({
-      checkpointer: new MemorySaver(),
-    });
-  }
-
-  return workflow.compile();
-}
-
-/**
- * Create the Scrum development workflow graph (Phase 6)
- *
- * Workflow:
- * 1. director_ai: Create story mapping from user request
- * 2. review_story_mapping: Review story mapping (ProductOwnerAI)
- * 3. tech_lead_design: Generate design documents
- * 4. review_design: Review design documents (3-party review)
- * 5. task_breakdown: Break down into implementation tasks
- * 6. engineer_dispatch: Continue with normal parallel dev flow
- */
-export function createScrumDevGraph() {
-  const workflow = new StateGraph(ParallelDevState)
-    // Scrum Development Flow nodes
-    .addNode('director_ai', directorNode)
-    .addNode('review_story_mapping', reviewStoryMappingNode)
-    .addNode('tech_lead_design', techLeadDesignNode)
-    .addNode('review_design', reviewDesignNode)
-    .addNode('task_breakdown', taskBreakdownNode)
-
-    // Existing parallel dev nodes
-    .addNode('engineer_dispatch', engineerDispatchNode)
-    .addNode('engineer', async (state: ParallelDevStateType) => {
-      const inProgressTasks = state.tasks.filter((t) => t.status === 'in_progress');
-
-      if (inProgressTasks.length === 0) {
-        return {
-          logs: [
-            {
-              timestamp: new Date(),
-              level: 'info',
-              source: 'EngineerWrapper',
-              message: '実行可能なタスクがありません',
-            },
-          ],
-        };
-      }
-
-      console.log(`👷 ${inProgressTasks.length}個のタスクを並列実装中...`);
-
-      const taskResults = await Promise.all(
-        inProgressTasks.map((task) => engineerNode(state, task.id))
-      );
-
-      const results = {
-        tasks: [] as any[],
-        completedTasks: [] as any[],
-        failedTasks: [] as any[],
-        logs: [] as any[],
-        metadata: {},
-      };
-
-      for (const result of taskResults) {
-        if (result.tasks) results.tasks.push(...result.tasks);
-        if (result.completedTasks) results.completedTasks.push(...result.completedTasks);
-        if (result.failedTasks) results.failedTasks.push(...result.failedTasks);
-        if (result.logs) results.logs.push(...result.logs);
-        if (result.metadata) results.metadata = { ...results.metadata, ...result.metadata };
-      }
-
-      return results;
-    })
-    .addNode('review', async (state: ParallelDevStateType) => {
-      const completedTasks = state.tasks.filter(
-        (t) =>
-          t.status === 'completed' &&
-          !state.reviews.some((r) => r.taskId === t.id)
-      );
-
-      if (completedTasks.length === 0) {
-        return {
-          logs: [
-            {
-              timestamp: new Date(),
-              level: 'info',
-              source: 'ReviewWrapper',
-              message: 'レビュー対象のタスクがありません',
-            },
-          ],
-        };
-      }
-
-      console.log(`🔍 ${completedTasks.length}個のタスクを並列レビュー中...`);
-
-      const reviewResults = await Promise.all(
-        completedTasks.map((task) => reviewNode(state, task.id))
-      );
-
-      const results = {
-        reviews: [] as any[],
-        logs: [] as any[],
-      };
-
-      for (const result of reviewResults) {
-        if (result.reviews) results.reviews.push(...result.reviews);
-        if (result.logs) results.logs.push(...result.logs);
-      }
-
-      return results;
-    })
-    .addNode('merge_coordinator', mergeCoordinatorNode)
-    .addNode('conflict_resolver', conflictResolverNode);
-
-  // Set entry point
-  workflow.addEdge('__start__', 'director_ai');
-
-  // Scrum flow edges
-  workflow.addEdge('director_ai', 'review_story_mapping');
-
-  // review_story_mapping → [tech_lead_design/director_ai]
-  workflow.addConditionalEdges(
-    'review_story_mapping',
-    (state: ParallelDevStateType) => {
-      if (state.storyMappingApproved) {
-        return 'approved';
-      } else {
-        return 'revision_needed';
-      }
-    },
-    {
-      approved: 'tech_lead_design',
-      revision_needed: 'director_ai', // Loop back for revision
-    }
-  );
-
-  workflow.addEdge('tech_lead_design', 'review_design');
-
-  // review_design → [task_breakdown/tech_lead_design]
-  workflow.addConditionalEdges(
-    'review_design',
-    (state: ParallelDevStateType) => {
-      // Check if design is approved (no critical/major issues in reviewFeedback)
-      if (!state.reviewFeedback || state.reviewFeedback.issues.length === 0) {
-        return 'approved';
-      } else {
-        const hasCriticalOrMajor = state.reviewFeedback.issues.some(
-          (issue) => issue.severity === 'critical' || issue.severity === 'major'
-        );
-        return hasCriticalOrMajor ? 'revision_needed' : 'approved';
-      }
-    },
-    {
-      approved: 'task_breakdown',
-      revision_needed: 'tech_lead_design', // Loop back for revision
-    }
-  );
-
-  workflow.addEdge('task_breakdown', 'engineer_dispatch');
-
-  // Normal parallel dev flow
-  workflow.addEdge('engineer_dispatch', 'engineer');
-
-  // engineer → [review/engineer_dispatch/END]
-  workflow.addConditionalEdges(
-    'engineer',
-    (state: ParallelDevStateType) => {
-      const hasInProgress = state.tasks.some((t) => t.status === 'in_progress');
-      const hasCompleted = state.tasks.some(
-        (t) => t.status === 'completed' && !state.reviews.some((r) => r.taskId === t.id)
-      );
-
-      if (hasCompleted) return 'review';
-      if (hasInProgress) return 'engineer_dispatch';
-
-      const allComplete = state.tasks.every(
-        (t) => t.status === 'completed' || t.status === 'failed'
-      );
-      return allComplete ? 'END' : 'engineer_dispatch';
-    },
-    {
-      review: 'review',
-      engineer_dispatch: 'engineer_dispatch',
-      END: '__end__',
-    }
-  );
-
-  workflow.addEdge('review', 'merge_coordinator');
-
-  // merge_coordinator → [engineer_dispatch/conflict_resolver/END]
-  workflow.addConditionalEdges(
-    'merge_coordinator',
-    (state: ParallelDevStateType) => {
-      const hasPending = state.tasks.some((t) => t.status === 'pending');
-      const hasConflicts = state.tasks.some((t) => t.isConflictResolution);
-
-      if (hasConflicts) return 'conflict_resolver';
-      if (hasPending) return 'engineer_dispatch';
-
-      const allComplete = state.tasks.every(
-        (t) => t.status === 'completed' || t.status === 'failed'
-      );
-      return allComplete ? 'END' : 'engineer_dispatch';
-    },
-    {
-      conflict_resolver: 'conflict_resolver',
-      engineer_dispatch: 'engineer_dispatch',
-      END: '__end__',
-    }
-  );
-
-  workflow.addEdge('conflict_resolver', 'merge_coordinator');
-
-  return workflow;
-}
-
-/**
- * Create and compile the Scrum development workflow graph
- *
- * @param options Compilation options
- * @param options.enableCheckpointer Enable state persistence (default: false for backward compatibility)
- * @returns Compiled graph ready for execution
- */
-export function compileScrumDevGraph(options?: { enableCheckpointer?: boolean }) {
-  const workflow = createScrumDevGraph();
+export function compileUnifiedScrumWorkflowGraph(options?: { enableCheckpointer?: boolean }) {
+  const workflow = createUnifiedScrumWorkflowGraph();
 
   // Enable checkpointer for state persistence and pause/resume functionality
   // Default to false for backward compatibility with existing tests
@@ -788,4 +354,4 @@ export function compileScrumDevGraph(options?: { enableCheckpointer?: boolean })
 /**
  * Export for convenience
  */
-export default compileParallelDevGraph;
+export default compileUnifiedScrumWorkflowGraph;

@@ -42,8 +42,8 @@ describe('TaskConverter', () => {
 
       const task = TaskConverter.toStateTask(artifact);
 
-      // No dependencies -> should be 'ready'
-      expect(task.status).toBe('ready');
+      // Dependency checking is done in EngineerDispatchNode, so status stays 'pending'
+      expect(task.status).toBe('pending');
     });
 
     it('should convert "pending" status with unresolved dependencies to "pending"', () => {
@@ -74,7 +74,7 @@ describe('TaskConverter', () => {
       expect(task.status).toBe('pending');
     });
 
-    it('should convert "pending" status with resolved dependencies to "ready"', () => {
+    it('should convert "pending" status with resolved dependencies to "pending"', () => {
       const artifact: TaskArtifact = {
         id: 'task-002',
         title: 'Test',
@@ -99,7 +99,8 @@ describe('TaskConverter', () => {
 
       const task = TaskConverter.toStateTask(artifact, existingTasks);
 
-      expect(task.status).toBe('ready');
+      // Dependency checking is done in EngineerDispatchNode, not in TaskConverter
+      expect(task.status).toBe('pending');
     });
 
     it('should convert "in_progress" status to "in_progress"', () => {
@@ -242,21 +243,6 @@ describe('TaskConverter', () => {
         priority: 1,
         dependencies: [],
         status: 'pending',
-      };
-
-      const artifact = TaskConverter.toArtifact(task);
-
-      expect(artifact.status).toBe('pending');
-    });
-
-    it('should convert "ready" status to "pending"', () => {
-      const task: Task = {
-        id: 'task-001',
-        title: 'Test',
-        description: 'Test',
-        priority: 1,
-        dependencies: [],
-        status: 'ready',
       };
 
       const artifact = TaskConverter.toArtifact(task);

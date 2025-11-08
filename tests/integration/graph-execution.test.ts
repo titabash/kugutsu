@@ -35,8 +35,14 @@ jest.unstable_mockModule('child_process', () => ({
   execSync: mockExecSync,
 }));
 
+// Mock DataPersistence BEFORE importing
+let mockPersistence: any;
+jest.unstable_mockModule('../../src/utils/DataPersistence.js', () => ({
+  DataPersistence: jest.fn().mockImplementation(() => mockPersistence),
+}));
+
 // Import AFTER mocking
-const { compileParallelDevGraph } = await import('../../src/graph/ParallelDevGraph.js');
+const { compileUnifiedScrumWorkflowGraph } = await import('../../src/graph/ParallelDevGraph.js');
 const { createInitialState } = await import('../../src/graph/state.js');
 const { MockAIProvider, createMockMessage } = await import('../../src/providers/MockAIProvider.js');
 
@@ -49,6 +55,15 @@ describe('Graph Execution Integration', () => {
 
     // Setup mock provider
     mockProvider = new MockAIProvider();
+
+    // Setup mock persistence
+    mockPersistence = {
+      initialize: jest.fn<any>().mockResolvedValue(undefined),
+      loadGlobalQueue: jest.fn<any>().mockResolvedValue([]),
+      loadAllProjectMetadata: jest.fn<any>().mockResolvedValue(new Map()),
+      saveProjectMetadata: jest.fn<any>().mockResolvedValue(undefined),
+      loadRepositoryMetadata: jest.fn<any>().mockResolvedValue(null),
+    };
 
     // Setup default git worktree mock
     mockCreateWorktree.mockImplementation(async (taskId: string) => ({
@@ -232,7 +247,7 @@ describe('Graph Execution Integration', () => {
       });
 
       // Compile graph
-      const graph = compileParallelDevGraph();
+      const graph = compileUnifiedScrumWorkflowGraph();
 
       // Execute graph and collect all states
       const states: any[] = [];
@@ -460,7 +475,7 @@ describe('Graph Execution Integration', () => {
       });
 
       // Compile graph
-      const graph = compileParallelDevGraph();
+      const graph = compileUnifiedScrumWorkflowGraph();
 
       // Execute graph
       const states: any[] = [];
@@ -608,7 +623,7 @@ describe('Graph Execution Integration', () => {
       });
 
       // Compile graph
-      const graph = compileParallelDevGraph();
+      const graph = compileUnifiedScrumWorkflowGraph();
 
       // Execute graph
       const states: any[] = [];

@@ -18,8 +18,8 @@ import type { TaskArtifact } from '../../types/artifacts.js';
  * Engineer Dispatch Node
  *
  * Responsibilities:
- * 1. Transition pending tasks to ready (when dependencies satisfied)
- * 2. Transition ready tasks to in_progress (create worktrees)
+ * 1. Check dependencies for pending tasks
+ * 2. Transition pending tasks to in_progress (create worktrees)
  * 3. Limit concurrent tasks to maxEngineers
  * 4. Use TaskStateMachine for all state transitions
  */
@@ -59,45 +59,18 @@ export async function engineerDispatchNode(
     const newWorktrees = new Map<string, WorktreeInfo>();
     const logs: any[] = [];
 
-    // Phase 1: pending → ready (依存関係解決)
-    const tasksToMarkReady = tasks.filter((task) =>
-      TaskStateMachine.canMoveToReady(task, tasks)
+    // pending → in_progress (依存関係チェック + worktree作成)
+    // Get pending tasks with resolved dependencies
+    const pendingTasks = tasks.filter((task) =>
+      task.status === 'pending' &&
+      TaskStateMachine.canMoveToReady(task, tasks) // Check if dependencies are satisfied
     );
 
-    for (const task of tasksToMarkReady) {
-      const readyTask = TaskStateMachine.transition(task, 'ready');
-
-      // Replace if exists, otherwise add
-      const existingIndex = updatedTasks.findIndex((t) => t.id === readyTask.id);
-      if (existingIndex >= 0) {
-        updatedTasks[existingIndex] = readyTask;
-      } else {
-        updatedTasks.push(readyTask);
-      }
-
-      logs.push({
-        timestamp: new Date(),
-        level: 'info',
-        source: 'EngineerDispatchNode',
-        message: `タスク ${task.id} が準備完了 (ready) になりました`,
-        data: { taskId: task.id },
-        taskId: task.id,
-      });
-
-      console.log(`✅ タスク ${task.id} → ready`);
-    }
-
-    // Phase 2: ready → in_progress (worktree作成)
-    const readyTasks = tasks
-      .filter((t) => t.status === 'ready')
-      .concat(updatedTasks.filter((t) => t.status === 'ready'));
-
-    if (readyTasks.length === 0) {
+    if (pendingTasks.length === 0) {
       console.log('⏸️ 実行可能なタスクがありません');
       return {
         tasks: updatedTasks,
         logs: [
-          ...logs,
           {
             timestamp: new Date(),
             level: 'info',
@@ -109,10 +82,10 @@ export async function engineerDispatchNode(
     }
 
     // Sort by priority (highest first)
-    readyTasks.sort((a, b) => b.priority - a.priority);
+    pendingTasks.sort((a, b) => b.priority - a.priority);
 
     // Limit to maxEngineers
-    const tasksToDispatch = readyTasks.slice(0, config.maxEngineers);
+    const tasksToDispatch = pendingTasks.slice(0, config.maxEngineers);
 
     console.log(`📋 ${tasksToDispatch.length}個のタスクをディスパッチします`);
 
@@ -128,7 +101,7 @@ export async function engineerDispatchNode(
           branchName: result.branchName,
         };
 
-        // ready → in_progress (TaskStateMachine validates worktreePath/branchName)
+        // pending → in_progress (TaskStateMachine validates worktreePath/branchName)
         const inProgressTask = TaskStateMachine.transition(
           taskWithWorktree,
           'in_progress'

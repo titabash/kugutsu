@@ -322,6 +322,21 @@ export const ParallelDevState = Annotation.Root({
      * Error messages (if any)
      */
     errors?: string[];
+
+    /**
+     * Whether detailed design phase is required
+     * - true: Execute full Scrum flow (director_ai → tech_lead_design → task_breakdown)
+     * - false: Skip design phase and go directly to product_owner
+     * Set by: AnalyzeComplexityNode
+     */
+    requiresDetailedDesign?: boolean;
+
+    /**
+     * Reason for complexity judgment
+     * Explanation of why requiresDetailedDesign was set to true/false
+     * Set by: AnalyzeComplexityNode
+     */
+    complexityReason?: string;
   }>({
     reducer: (
       state: Record<string, any>,
@@ -643,6 +658,8 @@ export function createInitialState(
       tasksFailed: 0,
       hasErrors: false,
       errors: [],
+      requiresDetailedDesign: false, // Default: skip detailed design (AI will override)
+      complexityReason: undefined,
     },
     // Sprint-driven development fields
     globalTasks: [],

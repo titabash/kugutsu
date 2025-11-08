@@ -6,15 +6,10 @@
  */
 
 import type { BrowserWindow } from 'electron';
-import { compileParallelDevGraph, compileSprintDrivenGraph, compileScrumDevGraph } from '../graph/ParallelDevGraph.js';
+import { compileUnifiedScrumWorkflowGraph } from '../graph/ParallelDevGraph.js';
 import { createInitialState, type ParallelDevStateType } from '../graph/state.js';
 import type { ParallelDevConfig } from '../graph/types.js';
 import { StateStreamManager } from './StateStreamManager.js';
-
-/**
- * Workflow type
- */
-export type WorkflowType = 'parallel' | 'sprint' | 'scrum';
 
 /**
  * Orchestrator configuration
@@ -34,20 +29,6 @@ export interface OrchestratorConfig {
    * Electron window for UI updates (optional)
    */
   window?: BrowserWindow | null;
-
-  /**
-   * Workflow type (default: 'sprint')
-   * - 'parallel': Standard parallel development
-   * - 'sprint': Sprint-driven development
-   * - 'scrum': Scrum development (story mapping → design → tasks)
-   */
-  workflowType?: WorkflowType;
-
-  /**
-   * Use sprint-driven development workflow (default: true)
-   * @deprecated Use workflowType instead
-   */
-  useSprintDriven?: boolean;
 }
 
 /**
@@ -85,26 +66,16 @@ export class ParallelDevOrchestrator {
    * Execute the parallel development workflow
    */
   async execute(orchestratorConfig: OrchestratorConfig): Promise<ParallelDevStateType> {
-    const { userRequest, config, window, useSprintDriven, workflowType: explicitWorkflowType } = orchestratorConfig;
+    const { userRequest, config, window } = orchestratorConfig;
 
     // Set window if provided
     if (window) {
       this.setWindow(window);
     }
 
-    // Determine workflow type (with backward compatibility)
-    const workflowType: WorkflowType = explicitWorkflowType
-      || (useSprintDriven === false ? 'parallel' : 'sprint');
-
-    const workflowNames = {
-      parallel: '標準並列開発',
-      sprint: 'スプリント駆動開発',
-      scrum: 'スクラム開発フロー',
-    };
-
     console.log('🚀 Parallel Development Orchestrator 起動');
     console.log(`📝 ユーザー要求: ${userRequest}`);
-    console.log(`🔄 ワークフロー: ${workflowNames[workflowType]}`);
+    console.log(`🔄 ワークフロー: 統合Scrumワークフロー（複雑度判定による自動分岐）`);
 
     // Track current state for error handling
     let currentState: ParallelDevStateType | null = null;
@@ -114,12 +85,11 @@ export class ParallelDevOrchestrator {
       const initialState = createInitialState(userRequest, config);
       currentState = initialState;
 
-      // Compile graph based on workflow type
-      console.log('📊 LangGraphワークフローをコンパイル中...');
-      const graph =
-        workflowType === 'scrum' ? compileScrumDevGraph() :
-        workflowType === 'sprint' ? compileSprintDrivenGraph() :
-        compileParallelDevGraph();
+      // Compile Unified Scrum Workflow Graph
+      console.log('📊 統合Scrumワークフローをコンパイル中...');
+      const graph = compileUnifiedScrumWorkflowGraph({
+        enableCheckpointer: true,
+      });
 
       // Stream initial state to UI via StateStreamManager
       if (this.stateStreamManager) {

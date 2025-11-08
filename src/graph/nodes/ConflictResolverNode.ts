@@ -16,6 +16,7 @@ import type { AIProviderConfig } from '../../providers/IAIProvider.js';
 import { FileReader } from '../../utils/FileReader.js';
 import { AIFileWriter } from '../../utils/AIFileWriter.js';
 import type { TaskArtifact, Conflicts } from '../../types/artifacts.js';
+import { MessageHandler } from '../../utils/MessageHandler.js';
 
 /**
  * Conflict Resolver Node
@@ -185,16 +186,24 @@ ${config.worktreeBasePath}/${task.id}
 
         // Execute conflict resolution
         const worktreePath = `${config.worktreeBasePath}/${task.id}`;
+
+        const handler = new MessageHandler({
+          maxTurns,
+          nodeName: `ConflictResolver - Task ${task.id}`,
+          taskId: task.id,
+        });
+
         for await (const message of provider.execute(conflictResolutionPrompt, {
           maxTurns,
           cwd: worktreePath,
           permissionMode: 'acceptEdits',
           allowedTools: ['Read', 'Write', 'Edit', 'Bash', 'Grep', 'Glob'],
+          includePartialMessages: true,
         })) {
-          if (message.type === 'assistant' && message.content) {
-            console.log(`  💬 ${JSON.stringify(message.content).substring(0, 80)}...`);
-          }
+          await handler.handleMessage(message);
         }
+
+        handler.complete(true, 'コンフリクト解決が完了しました');
 
         // Update conflicts.json - mark as resolved using AI
         conflictInfo.resolution = 'resolved';

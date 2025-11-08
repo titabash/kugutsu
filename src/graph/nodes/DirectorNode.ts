@@ -12,6 +12,7 @@ import { AIFileWriter } from '../../utils/AIFileWriter.js';
 import { getSchemaValidator } from '../../utils/SchemaValidator.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { MessageHandler } from '../../utils/MessageHandler.js';
 
 /**
  * Director Node
@@ -118,7 +119,10 @@ ${state.userRequest}
 `;
 
     // Execute AI prompt with Write tool
-    console.log('🤖 AI: ストーリーマッピング生成中...');
+    const handler = new MessageHandler({
+      maxTurns: state.config.maxTurns || 30,
+      nodeName: 'Director - Story Mapping',
+    });
 
     // Execute AI to write files using Write tool
     for await (const message of provider.execute(prompt, {
@@ -126,9 +130,12 @@ ${state.userRequest}
       cwd: state.config.baseRepoPath,
       allowedTools: ['Write', 'Read'],
       permissionMode: 'acceptEdits',
+      includePartialMessages: true,
     })) {
-      // AI writes the files
+      await handler.handleMessage(message);
     }
+
+    handler.complete(true, 'ストーリーマッピング生成が完了しました');
 
     // Read the created JSON file to get story mapping
     const storyMappingContent = await fs.readFile(storyMapJsonPath, 'utf-8');

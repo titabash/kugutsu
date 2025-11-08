@@ -16,6 +16,7 @@ import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 import type { AIProviderConfig } from '../../providers/IAIProvider.js';
 import { AIFileWriter } from '../../utils/AIFileWriter.js';
 import type { StoryMapping } from '../../types/scrum.js';
+import { MessageHandler } from '../../utils/MessageHandler.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
@@ -140,13 +141,21 @@ export async function reviewStoryMappingNode(
 
   console.log('🤖 AI: ストーリーマッピングレビュー実行中...');
 
+  const handler1 = new MessageHandler({
+    maxTurns,
+    nodeName: 'ReviewStoryMapping - Review Execution',
+  });
+
   let aiResponseText = '';
   for await (const message of provider.execute(reviewPrompt, {
     maxTurns,
     cwd: config.baseRepoPath,
     allowedTools: ['Read', 'Glob'],
     permissionMode: 'acceptEdits',
+    includePartialMessages: true,
   })) {
+    await handler1.handleMessage(message);
+
     if (message.type === 'assistant' && message.content) {
       if (typeof message.content === 'string') {
         aiResponseText += message.content;
@@ -155,6 +164,8 @@ export async function reviewStoryMappingNode(
       }
     }
   }
+
+  handler1.complete(true, 'ストーリーマッピングレビューが完了しました');
 
   // レビュー結果を解析
   const reviewResult = extractReviewResult(aiResponseText);
@@ -188,14 +199,22 @@ ${JSON.stringify(updatedHistory, null, 2)}
 **重要**: Writeツールを使用してこのファイルを作成してください。
 `.trim();
 
-  for await (const _message of provider.execute(reviewHistorySavePrompt, {
+  const handler2 = new MessageHandler({
+    maxTurns,
+    nodeName: 'ReviewStoryMapping - Save Review History',
+  });
+
+  for await (const message of provider.execute(reviewHistorySavePrompt, {
     maxTurns,
     cwd: config.baseRepoPath,
     allowedTools: ['Write'],
     permissionMode: 'acceptEdits',
+    includePartialMessages: true,
   })) {
-    // AI writes the file
+    await handler2.handleMessage(message);
   }
+
+  handler2.complete(true, 'レビュー履歴保存が完了しました');
 
   console.log('💾 レビュー履歴を保存しました');
 

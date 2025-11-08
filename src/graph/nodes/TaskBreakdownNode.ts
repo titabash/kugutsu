@@ -15,6 +15,7 @@ import type { AIProviderConfig } from '../../providers/IAIProvider.js';
 import { DataPersistence } from '../../utils/DataPersistence.js';
 import type { StoryMapping } from '../../types/scrum.js';
 import { randomUUID } from 'crypto';
+import { MessageHandler } from '../../utils/MessageHandler.js';
 
 /**
  * タスク定義
@@ -153,13 +154,21 @@ export async function taskBreakdownNode(
     uiuxScreens
   );
 
+  const handler = new MessageHandler({
+    maxTurns,
+    nodeName: 'TaskBreakdown - Task Analysis',
+  });
+
   let aiResponseText = '';
   for await (const message of provider.execute(taskBreakdownPrompt, {
     maxTurns,
     cwd: config.baseRepoPath,
     allowedTools: ['Read', 'Glob', 'Grep'],
     permissionMode: 'acceptEdits',
+    includePartialMessages: true,
   })) {
+    await handler.handleMessage(message);
+
     if (message.type === 'assistant' && message.content) {
       if (typeof message.content === 'string') {
         aiResponseText += message.content;
@@ -168,6 +177,8 @@ export async function taskBreakdownNode(
       }
     }
   }
+
+  handler.complete(true, 'タスク分解が完了しました');
 
   // タスクリストを抽出
   const taskList = extractTaskList(aiResponseText);

@@ -21,6 +21,7 @@ import type { TaskArtifact } from '../../types/artifacts.js';
 import { RetryManager } from '../../utils/RetryManager.js';
 import { ErrorClassifier } from '../../utils/ErrorClassifier.js';
 import { PrerequisiteChecker } from '../../utils/PrerequisiteChecker.js';
+import { MessageHandler } from '../../utils/MessageHandler.js';
 
 /**
  * Engineer Node
@@ -408,12 +409,19 @@ ${dependenciesSection}
         const collectedMessages: any[] = [];
         let capturedSessionId: string | undefined = taskArtifact.sessionId;
 
+        const handler = new MessageHandler({
+          maxTurns: state.config.maxTurns,
+          nodeName: `Engineer - Task ${taskId}`,
+          taskId,
+        });
+
         for await (const message of provider.execute(implementationPrompt, {
           maxTurns: state.config.maxTurns,
           cwd: taskArtifact.worktreePath,
           permissionMode: 'acceptEdits',
           allowedTools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
           resume: taskArtifact.sessionId,
+          includePartialMessages: true,
         })) {
           collectedMessages.push(message);
 
@@ -422,12 +430,11 @@ ${dependenciesSection}
             capturedSessionId = message.session_id;
           }
 
-          // Log progress
-          if (message.type === 'assistant' && message.content) {
-            console.log(`  💬 ${JSON.stringify(message.content).substring(0, 100)}...`);
-          }
+          // Handle message for progress display
+          await handler.handleMessage(message);
         }
 
+        handler.complete(true, 'タスクの実装が完了しました');
         return { messages: collectedMessages, sessionId: capturedSessionId };
       },
       {

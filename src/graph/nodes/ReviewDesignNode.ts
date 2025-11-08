@@ -13,6 +13,7 @@ import type { ParallelDevStateType, ParallelDevStateUpdate } from '../state.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 import type { AIProviderConfig } from '../../providers/IAIProvider.js';
 import { DataPersistence } from '../../utils/DataPersistence.js';
+import { MessageHandler } from '../../utils/MessageHandler.js';
 
 /**
  * 設計書レビュー結果
@@ -316,13 +317,21 @@ async function executeReview(
 ): Promise<ReviewerResult> {
   const prompt = buildReviewPrompt(reviewer, designDocs, storyMapping);
 
+  const handler = new MessageHandler({
+    maxTurns,
+    nodeName: `ReviewDesign - ${reviewer} Review`,
+  });
+
   let aiResponseText = '';
   for await (const message of provider.execute(prompt, {
     maxTurns,
     cwd,
     allowedTools: ['Read', 'Glob'],
     permissionMode: 'acceptEdits',
+    includePartialMessages: true,
   })) {
+    await handler.handleMessage(message);
+
     if (message.type === 'assistant' && message.content) {
       if (typeof message.content === 'string') {
         aiResponseText += message.content;
@@ -331,6 +340,8 @@ async function executeReview(
       }
     }
   }
+
+  handler.complete(true, `${reviewer}レビューが完了しました`);
 
   // レビュー結果を解析
   return extractReviewerResult(reviewer, aiResponseText);

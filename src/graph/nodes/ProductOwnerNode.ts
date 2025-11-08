@@ -19,6 +19,7 @@ import { FileReader } from '../../utils/FileReader.js';
 import type { TaskArtifact } from '../../types/artifacts.js';
 import { RetryManager } from '../../utils/RetryManager.js';
 import { ErrorClassifier } from '../../utils/ErrorClassifier.js';
+import { MessageHandler } from '../../utils/MessageHandler.js';
 
 /**
  * Product Owner Node
@@ -161,14 +162,22 @@ ${config.baseRepoPath}
     const maxTurns = config.maxTurns || 30;
     const techStackResult = await RetryManager.executeWithRetry(
       async () => {
-        for await (const _message of provider.execute(techStackAnalysisPrompt, {
+        const handler = new MessageHandler({
+          maxTurns,
+          nodeName: 'ProductOwner - Tech Stack Analysis',
+        });
+
+        for await (const message of provider.execute(techStackAnalysisPrompt, {
           maxTurns,
           cwd: config.baseRepoPath,
           allowedTools: ['Read', 'Glob', 'Grep', 'Write'],
           permissionMode: 'acceptEdits',
+          includePartialMessages: true,
         })) {
-          // AI が Write ツールでファイルを作成するのを待つ
+          await handler.handleMessage(message);
         }
+
+        handler.complete(true, '技術スタック分析が完了しました');
         return true;
       },
       {
@@ -254,14 +263,22 @@ MECE原則（漏れなく、重複なく）に基づいて要求を分析し、�
     // Phase 2: Requirements analysis with retry
     const requirementsResult = await RetryManager.executeWithRetry(
       async () => {
-        for await (const _message of provider.execute(requirementsAnalysisPrompt, {
+        const handler = new MessageHandler({
+          maxTurns,
+          nodeName: 'ProductOwner - Requirements Analysis',
+        });
+
+        for await (const message of provider.execute(requirementsAnalysisPrompt, {
           maxTurns,
           cwd: config.baseRepoPath,
           allowedTools: ['Read', 'Glob', 'Grep', 'Write'],
           permissionMode: 'acceptEdits',
+          includePartialMessages: true,
         })) {
-          // AI が Write ツールでファイルを作成するのを待つ
+          await handler.handleMessage(message);
         }
+
+        handler.complete(true, '要求分析が完了しました');
         return true;
       },
       {
@@ -366,14 +383,22 @@ ${userRequest}
     // Phase 3: Task generation with retry
     const taskGenerationResult = await RetryManager.executeWithRetry(
       async () => {
-        for await (const _message of provider.execute(taskGenerationPrompt, {
+        const handler = new MessageHandler({
+          maxTurns,
+          nodeName: 'ProductOwner - Task Generation',
+        });
+
+        for await (const message of provider.execute(taskGenerationPrompt, {
           maxTurns,
           cwd: config.baseRepoPath,
           allowedTools: ['Read', 'Glob', 'Grep', 'Write'],
           permissionMode: 'acceptEdits',
+          includePartialMessages: true,
         })) {
-          // AI が Write ツールでファイルを作成するのを待つ
+          await handler.handleMessage(message);
         }
+
+        handler.complete(true, 'タスク生成が完了しました');
         return true;
       },
       {
@@ -494,14 +519,22 @@ ${userRequest}
 
     const instructionResult = await RetryManager.executeWithRetry(
       async () => {
-        for await (const _message of provider.execute(instructionPrompt, {
+        const handler = new MessageHandler({
+          maxTurns,
+          nodeName: 'ProductOwner - Instruction Generation',
+        });
+
+        for await (const message of provider.execute(instructionPrompt, {
           maxTurns,
           cwd: config.baseRepoPath,
           allowedTools: ['Read', 'Glob', 'Write'],
           permissionMode: 'acceptEdits',
+          includePartialMessages: true,
         })) {
-          // AI が Write ツールでファイルを作成するのを待つ
+          await handler.handleMessage(message);
         }
+
+        handler.complete(true, 'Instruction.md生成が完了しました');
         return true;
       },
       {

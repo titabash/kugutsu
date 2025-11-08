@@ -7,6 +7,7 @@
 import type { ParallelDevStateType, ParallelDevStateUpdate } from '../state.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 import type { AIProviderConfig } from '../../providers/IAIProvider.js';
+import { MessageHandler } from '../../utils/MessageHandler.js';
 
 /**
  * Analyze Complexity Node
@@ -103,17 +104,27 @@ DO NOT include any other text, only the JSON object.
     // Query AI provider
     console.log('🤖 AI分析を実行中...');
 
+    const handler = new MessageHandler({
+      maxTurns: 5,
+      nodeName: 'AnalyzeComplexity - Complexity Analysis',
+    });
+
     let aiResponseText = '';
     for await (const message of provider.execute(analysisPrompt, {
       maxTurns: 5,
       cwd: config.baseRepoPath,
       allowedTools: ['Read', 'Glob'],
       permissionMode: 'acceptEdits',
+      includePartialMessages: true,
     })) {
+      await handler.handleMessage(message);
+
       if (message.type === 'assistant' && typeof message.content === 'string') {
         aiResponseText += message.content;
       }
     }
+
+    handler.complete(true, '複雑度分析が完了しました');
 
     // Parse AI response
     const result = parseAnalysisResult(aiResponseText);

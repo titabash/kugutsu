@@ -17,6 +17,7 @@ import { AIFileWriter } from '../../utils/AIFileWriter.js';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { MessageHandler } from '../../utils/MessageHandler.js';
 
 /**
  * Sprint Planning Node
@@ -157,13 +158,21 @@ JSON形式で以下の構造で出力してください：
 - スプリントゴールは具体的に記述
 `;
 
+  const handler1 = new MessageHandler({
+    maxTurns,
+    nodeName: 'SprintPlanning - Sprint Plan Creation',
+  });
+
   let sprintPlanResult = '';
   for await (const message of provider.execute(sprintPlanningPrompt, {
     maxTurns,
     cwd: config.baseRepoPath,
     allowedTools: ['Read', 'Glob'],
     permissionMode: 'acceptEdits',
+    includePartialMessages: true,
   })) {
+    await handler1.handleMessage(message);
+
     if (message.type === 'assistant' && message.content) {
       // Handle both string and object content
       if (typeof message.content === 'string') {
@@ -173,6 +182,8 @@ JSON形式で以下の構造で出力してください：
       }
     }
   }
+
+  handler1.complete(true, 'スプリント計画作成が完了しました');
 
   console.log('✅ スプリント計画生成完了');
 
@@ -243,14 +254,22 @@ ${JSON.stringify(newSprint, null, 2)}
 **重要**: Writeツールを使用してこのファイルを作成してください。
 `.trim();
 
-  for await (const _message of provider.execute(activeSprintSavePrompt, {
+  const handler2 = new MessageHandler({
+    maxTurns,
+    nodeName: 'SprintPlanning - Save Active Sprint',
+  });
+
+  for await (const message of provider.execute(activeSprintSavePrompt, {
     maxTurns,
     cwd: config.baseRepoPath,
     allowedTools: ['Write'],
     permissionMode: 'acceptEdits',
+    includePartialMessages: true,
   })) {
-    // AI writes the file
+    await handler2.handleMessage(message);
   }
+
+  handler2.complete(true, 'アクティブスプリント保存が完了しました');
 
   // global-queue.jsonを保存
   const globalQueueSavePrompt = `
@@ -263,14 +282,22 @@ ${JSON.stringify(updatedGlobalTasks, null, 2)}
 **重要**: Writeツールを使用してこのファイルを作成してください。
 `.trim();
 
-  for await (const _message of provider.execute(globalQueueSavePrompt, {
+  const handler3 = new MessageHandler({
+    maxTurns,
+    nodeName: 'SprintPlanning - Save Global Queue',
+  });
+
+  for await (const message of provider.execute(globalQueueSavePrompt, {
     maxTurns,
     cwd: config.baseRepoPath,
     allowedTools: ['Write'],
     permissionMode: 'acceptEdits',
+    includePartialMessages: true,
   })) {
-    // AI writes the file
+    await handler3.handleMessage(message);
   }
+
+  handler3.complete(true, 'グローバルキュー保存が完了しました');
 
   return {
     activeSprint: newSprint,

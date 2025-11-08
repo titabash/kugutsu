@@ -15,6 +15,7 @@ import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 import type { AIProviderConfig } from '../../providers/IAIProvider.js';
 import { GitWorktreeManager } from '../../managers/GitWorktreeManager.js';
 import { randomUUID } from 'crypto';
+import { MessageHandler } from '../../utils/MessageHandler.js';
 
 /**
  * Check Mode Node
@@ -285,7 +286,10 @@ JSON形式で以下を出力してください：
 \`\`\`
 `;
 
-  console.log('🤖 AI: 継続モード判定中...');
+  const handler = new MessageHandler({
+    maxTurns,
+    nodeName: 'CheckMode - Continuation Detection',
+  });
 
   let aiResponseText = '';
   for await (const message of provider.execute(continuationDetectionPrompt, {
@@ -293,7 +297,10 @@ JSON形式で以下を出力してください：
     cwd: config.baseRepoPath,
     allowedTools: [],
     permissionMode: 'acceptEdits',
+    includePartialMessages: true,
   })) {
+    await handler.handleMessage(message);
+
     if (message.type === 'assistant' && message.content) {
       // Handle both string and object content
       if (typeof message.content === 'string') {
@@ -303,6 +310,8 @@ JSON形式で以下を出力してください：
       }
     }
   }
+
+  handler.complete(true, '継続モード判定が完了しました');
 
   // JSONを抽出してパース
   const jsonMatch = aiResponseText.match(/```json\n([\s\S]*?)\n```/);

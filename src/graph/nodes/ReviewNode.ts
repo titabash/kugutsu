@@ -19,6 +19,7 @@ import { TaskStateMachine } from '../../utils/TaskStateMachine.js';
 import type { TaskArtifact, Review as ReviewArtifact, ReviewComment } from '../../types/artifacts.js';
 import { RetryManager } from '../../utils/RetryManager.js';
 import { ErrorClassifier } from '../../utils/ErrorClassifier.js';
+import { MessageHandler } from '../../utils/MessageHandler.js';
 
 /**
  * Review Node
@@ -163,12 +164,22 @@ REVIEW_STATUS: APPROVED または CHANGES_REQUESTED
         const comments: string[] = [];
         let status: 'approved' | 'changes_requested' = 'approved';
 
+        const handler = new MessageHandler({
+          maxTurns,
+          nodeName: `Review - Task ${taskId}`,
+          taskId,
+        });
+
         for await (const message of provider.execute(reviewPrompt, {
           maxTurns,
           cwd: taskArtifact.worktreePath,
           allowedTools: ['Read', 'Grep', 'Glob', 'Bash'],
           permissionMode: 'acceptEdits',
+          includePartialMessages: true,
         })) {
+          // Handle message for progress display
+          await handler.handleMessage(message);
+
           if (message.type === 'assistant' && message.content) {
             const content = JSON.stringify(message.content);
             comments.push(content);
@@ -180,6 +191,7 @@ REVIEW_STATUS: APPROVED または CHANGES_REQUESTED
           }
         }
 
+        handler.complete(true, `レビュー完了 - ${status === 'approved' ? '承認' : '修正要求'}`);
         return { comments, status };
       },
       {

@@ -15,6 +15,7 @@ import type { Sprint } from '../types.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 import type { AIProviderConfig } from '../../providers/IAIProvider.js';
 import { DataPersistence } from '../../utils/DataPersistence.js';
+import { MessageHandler } from '../../utils/MessageHandler.js';
 
 /**
  * Sprint Review Node
@@ -139,13 +140,21 @@ JSON形式で以下を出力してください：
 
     console.log('🤖 AI: デプロイ可能性判定中...');
 
+    const handler = new MessageHandler({
+      maxTurns,
+      nodeName: 'SprintReview - Deployability Check',
+    });
+
     let aiResponseText = '';
     for await (const message of provider.execute(deployabilityCheckPrompt, {
       maxTurns,
       cwd: config.baseRepoPath,
       allowedTools: ['Read', 'Glob'],
       permissionMode: 'acceptEdits',
+      includePartialMessages: true,
     })) {
+      await handler.handleMessage(message);
+
       if (message.type === 'assistant' && message.content) {
         // Handle both string and object content
         if (typeof message.content === 'string') {
@@ -155,6 +164,8 @@ JSON形式で以下を出力してください：
         }
       }
     }
+
+    handler.complete(true, 'デプロイ可能性チェックが完了しました');
 
     // JSONを抽出してパース
     const jsonMatch = aiResponseText.match(/```json\n([\s\S]*?)\n```/);

@@ -16,6 +16,7 @@ import type { AIProviderConfig } from '../../providers/IAIProvider.js';
 import { AIFileWriter } from '../../utils/AIFileWriter.js';
 import { GitWorktreeManager } from '../../managers/GitWorktreeManager.js';
 import type { StoryMapping } from '../../types/scrum.js';
+import { MessageHandler } from '../../utils/MessageHandler.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
@@ -172,42 +173,71 @@ export async function techLeadDesignNode(
 
   // ステップ1: 全体設計書を生成
   const designDocsPrompt = buildDesignDocsPrompt(storyMapping, designDocsPath);
+
+  const handler1 = new MessageHandler({
+    maxTurns: config.maxTurns || 30,
+    nodeName: 'TechLeadDesign - Design Docs',
+  });
+
   for await (const message of provider.execute(designDocsPrompt, {
     maxTurns: config.maxTurns || 30,
     cwd: config.baseRepoPath,
     allowedTools: ['Write', 'Read', 'Glob'],
     permissionMode: 'acceptEdits',
+    includePartialMessages: true,
   })) {
-    // AI writes the design docs
+    await handler1.handleMessage(message);
   }
+
+  handler1.complete(true, '全体設計書生成が完了しました');
   console.log('✅ 全体設計書を保存しました');
 
   console.log('🤖 AI: UI/UX設計を生成中...');
 
   // ステップ2: UI/UX設計を生成
   const uiuxPrompt = buildUIUXDesignPrompt(storyMapping, screensJsonPath, wireframesMdPath);
+
+  const handler2 = new MessageHandler({
+    maxTurns: config.maxTurns || 30,
+    nodeName: 'TechLeadDesign - UI/UX Design',
+  });
+
   for await (const message of provider.execute(uiuxPrompt, {
     maxTurns: config.maxTurns || 30,
     cwd: config.baseRepoPath,
     allowedTools: ['Write'],
     permissionMode: 'acceptEdits',
+    includePartialMessages: true,
   })) {
-    // AI writes the UI/UX design
+    await handler2.handleMessage(message);
   }
+
+  handler2.complete(true, 'UI/UX設計生成が完了しました');
+
   console.log('✅ screens.json と wireframes.md を保存しました');
 
   console.log('🤖 AI: DB設計を生成中...');
 
   // ステップ3: DB設計を生成
   const dbPrompt = buildDatabaseDesignPrompt(storyMapping, schemaJsonPath, erDiagramMdPath);
+
+  const handler3 = new MessageHandler({
+    maxTurns: config.maxTurns || 30,
+    nodeName: 'TechLeadDesign - Database Design',
+  });
+
   for await (const message of provider.execute(dbPrompt, {
     maxTurns: config.maxTurns || 30,
     cwd: config.baseRepoPath,
     allowedTools: ['Write'],
     permissionMode: 'acceptEdits',
+    includePartialMessages: true,
   })) {
-    // AI writes the database design
+    await handler3.handleMessage(message);
   }
+
+  handler3.complete(true, 'DB設計生成が完了しました');
+
   console.log('✅ schema.json と er-diagram.md を保存しました');
 
   console.log('🤖 AI: API設計を生成中...');
@@ -223,14 +253,24 @@ export async function techLeadDesignNode(
 
   // ステップ4: API設計を生成
   const apiPrompt = buildAPIDesignPrompt(storyMapping, dbSchema, apiSpecJsonPath, apiSpecMdPath);
+
+  const handler4 = new MessageHandler({
+    maxTurns: config.maxTurns || 30,
+    nodeName: 'TechLeadDesign - API Design',
+  });
+
   for await (const message of provider.execute(apiPrompt, {
     maxTurns: config.maxTurns || 30,
     cwd: config.baseRepoPath,
     allowedTools: ['Write'],
     permissionMode: 'acceptEdits',
+    includePartialMessages: true,
   })) {
-    // AI writes the API design
+    await handler4.handleMessage(message);
   }
+
+  handler4.complete(true, 'API設計生成が完了しました');
+
   console.log('✅ api-spec.json と api-spec.md を保存しました');
 
   console.log('✅ 設計書作成完了');

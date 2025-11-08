@@ -8,8 +8,10 @@
 import type { ParallelDevStateType, ParallelDevStateUpdate } from '../state.js';
 import type { StoryMapping } from '../../types/scrum.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
-import { DataPersistence } from '../../utils/DataPersistence.js';
+import { AIFileWriter } from '../../utils/AIFileWriter.js';
 import { getSchemaValidator } from '../../utils/SchemaValidator.js';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 
 /**
  * Director Node
@@ -25,9 +27,26 @@ export async function directorNode(state: ParallelDevStateType): Promise<Paralle
       ? AIProviderFactory.create({ provider: state.config.provider })
       : AIProviderFactory.createFromEnv();
 
-    // Initialize data persistence
-    const dataPersistence = new DataPersistence(state.config.baseRepoPath);
     const schemaValidator = getSchemaValidator();
+    const projectId = state.currentProjectId || 'default-project';
+
+    // Define file paths
+    const storyMapJsonPath = path.join(
+      state.config.baseRepoPath,
+      '.kugutsu',
+      'projects',
+      projectId,
+      'story-mapping',
+      'story-map.json'
+    );
+    const storyMapMdPath = path.join(
+      state.config.baseRepoPath,
+      '.kugutsu',
+      'projects',
+      projectId,
+      'story-mapping',
+      'story-map.md'
+    );
 
     // Create prompt for story mapping
     const prompt = `
@@ -43,7 +62,11 @@ ${state.userRequest}
 2. **エピック**: 大きな機能グループ（3-5個）
 3. **ユーザーストーリー**: 各エピックを構成する具体的なストーリー
 
-# 出力形式（JSON）
+# 【必須作成ファイル】
+以下の2つのファイルをWriteツールで必ず作成してください：
+
+## 1. ${storyMapJsonPath}
+以下の形式のJSONファイルを作成してください：
 \`\`\`json
 {
   "persona": {
@@ -75,37 +98,43 @@ ${state.userRequest}
 }
 \`\`\`
 
+## 2. ${storyMapMdPath}
+上記JSONの内容を人間が読みやすいMarkdown形式に整形して作成してください。
+以下の構成で作成してください：
+- ペルソナ情報（名前、役割、目標、課題）
+- エピックとユーザーストーリー（優先度順）
+- 各ストーリーの詳細（asA, iWantTo, soThat, 受入基準、見積もり）
+
 # 重要な指示
 - ペルソナは1つ
 - エピックは3-5個
 - 各エピックには2-5個のストーリー
 - priorityは1（高）、2（中）、3（低）
 - estimatedPointsは1（簡単）、3（普通）、5（難しい）、8（とても難しい）
+- **必ずWriteツールを使用して上記2つのファイルを作成してください**
+- 作成後、Readツールで各ファイルの存在を確認してください
 
-JSON形式で出力してください。
+これらのファイルを作成せずにタスクを完了してはいけません。
 `;
 
-    // Execute AI prompt
+    // Execute AI prompt with Write tool
     console.log('🤖 AI: ストーリーマッピング生成中...');
 
-    let storyMappingJson = '';
-    for await (const message of provider.execute(prompt, {
-      maxTurns: state.config.maxTurns || 10,
-      cwd: state.config.baseRepoPath,
-      permissionMode: 'acceptEdits',
-    })) {
-      if (message.type === 'assistant' && typeof message.content === 'string') {
-        storyMappingJson += message.content;
+    const fileWriter = new AIFileWriter(provider);
+    await fileWriter.writeFile(
+      storyMapJsonPath,
+      'ストーリーマッピングJSON',
+      prompt,
+      {
+        maxTurns: state.config.maxTurns || 10,
+        cwd: state.config.baseRepoPath,
+        permissionMode: 'acceptEdits',
       }
-    }
+    );
 
-    // Extract JSON from response
-    const jsonMatch = storyMappingJson.match(/```json\n([\s\S]*?)\n```/);
-    if (!jsonMatch) {
-      throw new Error('AIからのレスポンスにJSON形式のストーリーマッピングが含まれていません');
-    }
-
-    const storyMapping: StoryMapping = JSON.parse(jsonMatch[1]);
+    // Read the created JSON file to get story mapping
+    const storyMappingContent = await fs.readFile(storyMapJsonPath, 'utf-8');
+    const storyMapping: StoryMapping = JSON.parse(storyMappingContent);
 
     // Validate schema (optional validation)
     try {
@@ -118,13 +147,6 @@ JSON形式で出力してください。
       // Schema validation is optional, continue without it
       console.debug('スキーマ検証をスキップしました');
     }
-
-    // Generate Markdown representation
-    const markdown = generateStoryMappingMarkdown(storyMapping);
-
-    // Persist story mapping
-    const projectId = state.currentProjectId || 'default-project';
-    await dataPersistence.saveStoryMapping(projectId, { storyMapping, markdown });
 
     console.log('✅ ストーリーマッピング作成完了');
 
@@ -140,6 +162,10 @@ JSON形式で出力してください。
           data: {
             epicCount: storyMapping.epics.length,
             storyCount: storyMapping.epics.reduce((sum, e) => sum + e.stories.length, 0),
+            files: {
+              json: storyMapJsonPath,
+              markdown: storyMapMdPath,
+            },
           },
         },
       ],
@@ -159,57 +185,4 @@ JSON形式で出力してください。
       ],
     } as ParallelDevStateUpdate;
   }
-}
-
-/**
- * Generate Markdown representation of story mapping
- */
-function generateStoryMappingMarkdown(storyMapping: StoryMapping): string {
-  let markdown = '# ストーリーマッピング\n\n';
-
-  // Persona
-  markdown += '## ペルソナ\n\n';
-  markdown += `**名前**: ${storyMapping.persona.name}\n\n`;
-  markdown += `**役割**: ${storyMapping.persona.role}\n\n`;
-  markdown += `**目標**: ${storyMapping.persona.goal}\n\n`;
-
-  if (storyMapping.persona.painPoints && storyMapping.persona.painPoints.length > 0) {
-    markdown += '**課題**:\n';
-    storyMapping.persona.painPoints.forEach((p) => {
-      markdown += `- ${p}\n`;
-    });
-    markdown += '\n';
-  }
-
-  // Epics and Stories
-  markdown += '## エピックとユーザーストーリー\n\n';
-
-  storyMapping.epics
-    .sort((a, b) => a.priority - b.priority)
-    .forEach((epic) => {
-      markdown += `### ${epic.title} (優先度: ${epic.priority})\n\n`;
-      if (epic.description) {
-        markdown += `${epic.description}\n\n`;
-      }
-
-      markdown += '#### ユーザーストーリー\n\n';
-      epic.stories
-        .sort((a, b) => a.priority - b.priority)
-        .forEach((story) => {
-          markdown += `##### ${story.title}\n\n`;
-          markdown += `- **〜として**: ${story.asA}\n`;
-          markdown += `- **〜したい**: ${story.iWantTo}\n`;
-          markdown += `- **〜できるように**: ${story.soThat}\n`;
-          markdown += `- **優先度**: ${story.priority}\n`;
-          markdown += `- **見積もり**: ${story.estimatedPoints} ポイント\n\n`;
-
-          markdown += '**受入基準**:\n';
-          story.acceptanceCriteria.forEach((criteria) => {
-            markdown += `- ${criteria}\n`;
-          });
-          markdown += '\n';
-        });
-    });
-
-  return markdown;
 }

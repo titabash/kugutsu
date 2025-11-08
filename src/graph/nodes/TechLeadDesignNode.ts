@@ -13,9 +13,11 @@
 import type { ParallelDevStateType, ParallelDevStateUpdate } from '../state.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 import type { AIProviderConfig } from '../../providers/IAIProvider.js';
-import { DataPersistence } from '../../utils/DataPersistence.js';
+import { AIFileWriter } from '../../utils/AIFileWriter.js';
 import { GitWorktreeManager } from '../../managers/GitWorktreeManager.js';
 import type { StoryMapping } from '../../types/scrum.js';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 
 /**
  * Tech Lead Design Node
@@ -62,28 +64,35 @@ export async function techLeadDesignNode(
     };
   }
 
-  // データ永続化マネージャーを初期化
-  const persistence = new DataPersistence(config.baseRepoPath);
-  await persistence.initialize();
+  // Define file paths
+  const storyMapJsonPath = path.join(
+    config.baseRepoPath,
+    '.kugutsu',
+    'projects',
+    currentProjectId,
+    'story-mapping',
+    'story-map.json'
+  );
 
   // ストーリーマッピングを読み込み
-  const storyMapping = await persistence.loadStoryMapping(currentProjectId);
-
-  if (!storyMapping) {
-    console.log('⚠️ ストーリーマッピングが見つかりません');
+  let storyMapping: StoryMapping;
+  try {
+    const storyMappingContent = await fs.readFile(storyMapJsonPath, 'utf-8');
+    storyMapping = JSON.parse(storyMappingContent);
+    console.log('📖 ストーリーマッピング読み込み完了');
+  } catch (error) {
+    console.log('⚠️ ストーリーマッピングが見つかりません:', storyMapJsonPath);
     return {
       logs: [
         {
           timestamp: new Date(),
           level: 'warn',
           source: 'tech_lead_design',
-          message: 'ストーリーマッピングなし',
+          message: `ストーリーマッピングなし: ${(error as Error).message}`,
         },
       ],
     };
   }
-
-  console.log('📖 ストーリーマッピング読み込み完了');
 
   // AIプロバイダーを作成
   const providerConfig: AIProviderConfig = {
@@ -94,132 +103,124 @@ export async function techLeadDesignNode(
   };
 
   const provider = AIProviderFactory.create(providerConfig);
+  const fileWriter = new AIFileWriter(provider);
+
+  // Define all design file paths
+  const designDocsPath = path.join(
+    config.baseRepoPath,
+    '.kugutsu',
+    'projects',
+    currentProjectId,
+    'design',
+    'design-docs.md'
+  );
+  const screensJsonPath = path.join(
+    config.baseRepoPath,
+    '.kugutsu',
+    'projects',
+    currentProjectId,
+    'design',
+    'uiux',
+    'screens.json'
+  );
+  const wireframesMdPath = path.join(
+    config.baseRepoPath,
+    '.kugutsu',
+    'projects',
+    currentProjectId,
+    'design',
+    'uiux',
+    'wireframes.md'
+  );
+  const schemaJsonPath = path.join(
+    config.baseRepoPath,
+    '.kugutsu',
+    'projects',
+    currentProjectId,
+    'design',
+    'database',
+    'schema.json'
+  );
+  const erDiagramMdPath = path.join(
+    config.baseRepoPath,
+    '.kugutsu',
+    'projects',
+    currentProjectId,
+    'design',
+    'database',
+    'er-diagram.md'
+  );
+  const apiSpecJsonPath = path.join(
+    config.baseRepoPath,
+    '.kugutsu',
+    'projects',
+    currentProjectId,
+    'design',
+    'interfaces',
+    'api-spec.json'
+  );
+  const apiSpecMdPath = path.join(
+    config.baseRepoPath,
+    '.kugutsu',
+    'projects',
+    currentProjectId,
+    'design',
+    'interfaces',
+    'api-spec.md'
+  );
 
   console.log('🤖 AI: 全体設計書を生成中...');
 
   // ステップ1: 全体設計書を生成
-  const designDocsPrompt = buildDesignDocsPrompt(storyMapping);
-  const designDocsMarkdown = await executeAIPrompt(provider, designDocsPrompt, config.baseRepoPath);
-
-  if (!designDocsMarkdown) {
-    console.log('❌ 全体設計書の生成に失敗しました');
-    return {
-      logs: [
-        {
-          timestamp: new Date(),
-          level: 'error',
-          source: 'tech_lead_design',
-          message: '全体設計書生成失敗',
-        },
-      ],
-    };
-  }
-
-  // 全体設計書を保存
-  await persistence.saveDesignDocsMarkdown(currentProjectId, designDocsMarkdown);
+  const designDocsPrompt = buildDesignDocsPrompt(storyMapping, designDocsPath);
+  await fileWriter.writeFile(designDocsPath, '全体設計書', designDocsPrompt, {
+    maxTurns: config.maxTurns || 30,
+    cwd: config.baseRepoPath,
+    permissionMode: 'acceptEdits',
+  });
   console.log('✅ 全体設計書を保存しました');
 
   console.log('🤖 AI: UI/UX設計を生成中...');
 
   // ステップ2: UI/UX設計を生成
-  const uiuxPrompt = buildUIUXDesignPrompt(storyMapping);
-  const uiuxResult = await executeAIPrompt(provider, uiuxPrompt, config.baseRepoPath);
-
-  if (!uiuxResult) {
-    console.log('❌ UI/UX設計の生成に失敗しました');
-    return {
-      logs: [
-        {
-          timestamp: new Date(),
-          level: 'error',
-          source: 'tech_lead_design',
-          message: 'UI/UX設計生成失敗',
-        },
-      ],
-    };
-  }
-
-  // wireframes.mdとscreens.jsonを抽出
-  const wireframesMarkdown = extractMarkdownSection(uiuxResult, 'wireframes');
-  const screensJSON = extractJSONSection(uiuxResult, 'screens');
-
-  if (wireframesMarkdown) {
-    await persistence.saveUIUXWireframes(currentProjectId, wireframesMarkdown);
-    console.log('✅ wireframes.mdを保存しました');
-  }
-
-  if (screensJSON) {
-    await persistence.saveUIUXScreens(currentProjectId, screensJSON);
-    console.log('✅ screens.jsonを保存しました');
-  }
+  const uiuxPrompt = buildUIUXDesignPrompt(storyMapping, screensJsonPath, wireframesMdPath);
+  await fileWriter.writeFile(screensJsonPath, 'UI/UX設計', uiuxPrompt, {
+    maxTurns: config.maxTurns || 30,
+    cwd: config.baseRepoPath,
+    permissionMode: 'acceptEdits',
+  });
+  console.log('✅ screens.json と wireframes.md を保存しました');
 
   console.log('🤖 AI: DB設計を生成中...');
 
   // ステップ3: DB設計を生成
-  const dbPrompt = buildDatabaseDesignPrompt(storyMapping);
-  const dbResult = await executeAIPrompt(provider, dbPrompt, config.baseRepoPath);
-
-  if (!dbResult) {
-    console.log('❌ DB設計の生成に失敗しました');
-    return {
-      logs: [
-        {
-          timestamp: new Date(),
-          level: 'error',
-          source: 'tech_lead_design',
-          message: 'DB設計生成失敗',
-        },
-      ],
-    };
-  }
-
-  // er-diagram.mdとschema.jsonを抽出
-  const erDiagramMarkdown = extractMarkdownSection(dbResult, 'er-diagram');
-  const dbSchemaJSON = extractJSONSection(dbResult, 'schema');
-
-  if (erDiagramMarkdown) {
-    await persistence.saveDatabaseERDiagram(currentProjectId, erDiagramMarkdown);
-    console.log('✅ er-diagram.mdを保存しました');
-  }
-
-  if (dbSchemaJSON) {
-    await persistence.saveDatabaseSchema(currentProjectId, dbSchemaJSON);
-    console.log('✅ schema.jsonを保存しました');
-  }
+  const dbPrompt = buildDatabaseDesignPrompt(storyMapping, schemaJsonPath, erDiagramMdPath);
+  await fileWriter.writeFile(schemaJsonPath, 'DB設計', dbPrompt, {
+    maxTurns: config.maxTurns || 30,
+    cwd: config.baseRepoPath,
+    permissionMode: 'acceptEdits',
+  });
+  console.log('✅ schema.json と er-diagram.md を保存しました');
 
   console.log('🤖 AI: API設計を生成中...');
 
+  // Read schema.json to pass to API design
+  let dbSchema: any = null;
+  try {
+    const schemaContent = await fs.readFile(schemaJsonPath, 'utf-8');
+    dbSchema = JSON.parse(schemaContent);
+  } catch (error) {
+    console.warn('⚠️ schema.jsonの読み込みに失敗しました:', error);
+  }
+
   // ステップ4: API設計を生成
-  const apiPrompt = buildAPIDesignPrompt(storyMapping, dbSchemaJSON);
-  const apiResult = await executeAIPrompt(provider, apiPrompt, config.baseRepoPath);
-
-  if (!apiResult) {
-    console.log('❌ API設計の生成に失敗しました');
-    return {
-      logs: [
-        {
-          timestamp: new Date(),
-          level: 'error',
-          source: 'tech_lead_design',
-          message: 'API設計生成失敗',
-        },
-      ],
-    };
-  }
-
-  // api-spec.mdとapi-spec.jsonを抽出
-  const apiSpecMarkdown = extractMarkdownSection(apiResult, 'api-spec');
-  const apiSpecJSON = extractJSONSection(apiResult, 'api-spec');
-
-  if (apiSpecMarkdown) {
-    await persistence.saveAPISpecMarkdown(currentProjectId, apiSpecMarkdown);
-    console.log('✅ api-spec.mdを保存しました');
-  }
-
-  if (apiSpecJSON) {
-    await persistence.saveAPISpec(currentProjectId, apiSpecJSON);
-    console.log('✅ api-spec.jsonを保存しました');
-  }
+  const apiPrompt = buildAPIDesignPrompt(storyMapping, dbSchema, apiSpecJsonPath, apiSpecMdPath);
+  await fileWriter.writeFile(apiSpecJsonPath, 'API設計', apiPrompt, {
+    maxTurns: config.maxTurns || 30,
+    cwd: config.baseRepoPath,
+    permissionMode: 'acceptEdits',
+  });
+  console.log('✅ api-spec.json と api-spec.md を保存しました');
 
   console.log('✅ 設計書作成完了');
 
@@ -253,52 +254,34 @@ export async function techLeadDesignNode(
   };
 }
 
-/**
- * AI実行ヘルパー
- */
-async function executeAIPrompt(
-  provider: any,
-  prompt: string,
-  cwd: string
-): Promise<string | null> {
-  let result = '';
-
-  try {
-    for await (const message of provider.execute(prompt, {
-      maxTurns: 30,
-      cwd,
-      allowedTools: ['Read', 'Glob', 'Grep'],
-      permissionMode: 'acceptEdits',
-    })) {
-      if (message.type === 'assistant' && message.content) {
-        if (typeof message.content === 'string') {
-          result += message.content;
-        } else {
-          result += JSON.stringify(message.content);
-        }
-      }
-    }
-    return result || null;
-  } catch (error) {
-    console.error('❌ AI実行エラー:', error);
-    return null;
-  }
-}
 
 /**
  * 全体設計書プロンプトを構築
  */
-function buildDesignDocsPrompt(storyMapping: StoryMapping): string {
+function buildDesignDocsPrompt(storyMapping: StoryMapping, designDocsPath: string): string {
   return `
 # 全体設計書の作成
 
 あなたはTechLeadとして、以下のストーリーマッピングから全体設計書を作成してください。
+
+## 【必須ファイルの読み込み】
+以下のファイルは前のノード（DirectorまたはReviewStoryMapping）が作成済みです。必ず読み込んでください：
+- ストーリーマッピングは既に読み込み済みです（下記参照）
 
 ## ストーリーマッピング
 
 \`\`\`json
 ${JSON.stringify(storyMapping, null, 2)}
 \`\`\`
+
+## 【参照推奨ファイル】
+以下のファイルが存在する場合は、Readツールで読み込んで参考にしてください：
+- \`.kugutsu/repository/metadata.json\`: リポジトリの基本情報
+- \`.kugutsu/repository/architecture/overview.md\`: 全体アーキテクチャ
+- \`.kugutsu/repository/architecture/tech-stack.json\`: 技術スタック
+- \`.kugutsu/repository/standards/coding-standards.md\`: コーディング規約
+- \`.kugutsu/repository/database/schema.json\`: 既存のDB設計
+- \`.kugutsu/repository/api/api-spec.json\`: 既存のAPI仕様
 
 ## タスク
 
@@ -335,36 +318,29 @@ ${JSON.stringify(storyMapping, null, 2)}
    - 環境
    - CI/CD
 
+## 【必須作成ファイル】
+以下のファイルをWriteツールで必ず作成してください：
+- **${designDocsPath}**: 上記の全体設計書（Markdown形式）
+
+**重要**: Writeツールを使用してこのファイルを作成してください。作成後、Readツールで内容を確認してください。
+
 ## 重要な指針
 
 - **既存システムを尊重**: コードベースを分析し、既存の技術スタックと整合性を保つ
-- **リポジトリ全体の仕様を参照**: \`.kugutsu/repository/\` 配下に保存されているリポジトリ全体の仕様（アーキテクチャ、技術スタック、コーディング規約、既存DB/API設計）を必ず参照し、整合性を保つ
+- **リポジトリ全体の仕様を参照**: \`.kugutsu/repository/\` 配下の仕様を参照し、整合性を保つ
 - **必要最小限**: 過剰設計を避け、ストーリーを実現する最小限の設計
 - **明確性**: エンジニア間で実装がブレない明確さ
-
-## リポジトリ全体の仕様
-
-以下のファイルに、既存のリポジトリ全体の仕様が保存されています。設計時は必ず参照してください：
-
-- \`.kugutsu/repository/metadata.json\`: リポジトリの基本情報
-- \`.kugutsu/repository/architecture/overview.md\`: 全体アーキテクチャ
-- \`.kugutsu/repository/architecture/tech-stack.json\`: 技術スタック
-- \`.kugutsu/repository/standards/coding-standards.md\`: コーディング規約
-- \`.kugutsu/repository/database/schema.json\`: 既存のDB設計
-- \`.kugutsu/repository/api/api-spec.json\`: 既存のAPI仕様
-
-**設計完了後**: プロジェクト固有の設計をリポジトリ全体の仕様に反映する必要がある場合は、該当ファイルを更新してください。
-
-## 出力形式
-
-Markdown形式で全文を出力してください。Mermaid図を活用してください。
 `.trim();
 }
 
 /**
  * UI/UX設計プロンプトを構築
  */
-function buildUIUXDesignPrompt(storyMapping: StoryMapping): string {
+function buildUIUXDesignPrompt(
+  storyMapping: StoryMapping,
+  screensJsonPath: string,
+  wireframesMdPath: string
+): string {
   return `
 # UI/UX設計書の作成
 
@@ -376,22 +352,11 @@ function buildUIUXDesignPrompt(storyMapping: StoryMapping): string {
 ${JSON.stringify(storyMapping, null, 2)}
 \`\`\`
 
-## タスク
+## 【必須作成ファイル】
+以下の2つのファイルをWriteツールで必ず作成してください：
 
-以下の2つのファイルを作成してください：
-
-### 1. wireframes.md（Markdown + Mermaid）
-
-必須セクション:
-- 画面遷移図（Mermaid graph）
-- 各画面のワイヤーフレーム（ASCII artまたはMermaid）
-- コンポーネント構成
-- 状態管理
-- イベント定義
-
-### 2. screens.json（JSON構造化データ）
-
-フォーマット:
+### 1. ${screensJsonPath}
+JSON構造化データ（以下のフォーマット）:
 \`\`\`json
 {
   "screens": [
@@ -421,27 +386,26 @@ ${JSON.stringify(storyMapping, null, 2)}
 }
 \`\`\`
 
-## 出力形式
+### 2. ${wireframesMdPath}
+Markdown + Mermaid形式（必須セクション）:
+- 画面遷移図（Mermaid graph）
+- 各画面のワイヤーフレーム（ASCII artまたはMermaid）
+- コンポーネント構成
+- 状態管理
+- イベント定義
 
-以下の形式で2つのファイルを出力してください：
-
-\`\`\`markdown:wireframes
-# wireframes.mdの内容
-...
-\`\`\`
-
-\`\`\`json:screens
-{
-  "screens": [...]
-}
-\`\`\`
+**重要**: Writeツールを使用してこれら2つのファイルを作成してください。作成後、Readツールで内容を確認してください。
 `.trim();
 }
 
 /**
  * DB設計プロンプトを構築
  */
-function buildDatabaseDesignPrompt(storyMapping: StoryMapping): string {
+function buildDatabaseDesignPrompt(
+  storyMapping: StoryMapping,
+  schemaJsonPath: string,
+  erDiagramMdPath: string
+): string {
   return `
 # DB設計書の作成
 
@@ -453,22 +417,11 @@ function buildDatabaseDesignPrompt(storyMapping: StoryMapping): string {
 ${JSON.stringify(storyMapping, null, 2)}
 \`\`\`
 
-## タスク
+## 【必須作成ファイル】
+以下の2つのファイルをWriteツールで必ず作成してください：
 
-以下の2つのファイルを作成してください：
-
-### 1. er-diagram.md（Markdown + Mermaid）
-
-必須セクション:
-- ER図（Mermaid erDiagram）
-- 各テーブルの詳細定義
-- インデックス戦略
-- マイグレーションSQL
-- パフォーマンス最適化方針
-
-### 2. schema.json（JSON構造化データ）
-
-フォーマット:
+### 1. ${schemaJsonPath}
+JSON構造化データ（以下のフォーマット）:
 \`\`\`json
 {
   "version": "1.0.0",
@@ -507,6 +460,14 @@ ${JSON.stringify(storyMapping, null, 2)}
 }
 \`\`\`
 
+### 2. ${erDiagramMdPath}
+Markdown + Mermaid形式（必須セクション）:
+- ER図（Mermaid erDiagram）
+- 各テーブルの詳細定義
+- インデックス戦略
+- マイグレーションSQL
+- パフォーマンス最適化方針
+
 ## 重要な指針
 
 - 既存のDB schemaを分析して統一性を保つ
@@ -514,28 +475,19 @@ ${JSON.stringify(storyMapping, null, 2)}
 - インデックスを適切に配置
 - 外部キー制約を設定
 
-## 出力形式
-
-以下の形式で2つのファイルを出力してください：
-
-\`\`\`markdown:er-diagram
-# er-diagram.mdの内容
-...
-\`\`\`
-
-\`\`\`json:schema
-{
-  "version": "1.0.0",
-  ...
-}
-\`\`\`
+**重要**: Writeツールを使用してこれら2つのファイルを作成してください。作成後、Readツールで内容を確認してください。
 `.trim();
 }
 
 /**
  * API設計プロンプトを構築
  */
-function buildAPIDesignPrompt(storyMapping: StoryMapping, dbSchema: any): string {
+function buildAPIDesignPrompt(
+  storyMapping: StoryMapping,
+  dbSchema: any,
+  apiSpecJsonPath: string,
+  apiSpecMdPath: string
+): string {
   const dbSchemaStr = dbSchema ? JSON.stringify(dbSchema, null, 2) : 'N/A';
 
   return `
@@ -555,21 +507,30 @@ ${JSON.stringify(storyMapping, null, 2)}
 ${dbSchemaStr}
 \`\`\`
 
-## タスク
+## 【必須作成ファイル】
+以下の2つのファイルをWriteツールで必ず作成してください：
 
-以下の2つのファイルを作成してください：
+### 1. ${apiSpecJsonPath}
+OpenAPI 3.0準拠のJSON schema:
+\`\`\`json
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "API Title",
+    "version": "1.0.0"
+  },
+  "paths": {
+    ...
+  }
+}
+\`\`\`
 
-### 1. api-spec.md（Markdown）
-
-必須セクション:
+### 2. ${apiSpecMdPath}
+Markdown形式（必須セクション）:
 - API一覧表
 - 各エンドポイントの詳細（リクエスト、レスポンス、エラー）
 - データモデル
 - エラーコード
-
-### 2. api-spec.json（OpenAPI 3.0）
-
-OpenAPI 3.0準拠のJSON schemaを作成してください。
 
 ## 重要な指針
 
@@ -578,48 +539,7 @@ OpenAPI 3.0準拠のJSON schemaを作成してください。
 - エラーハンドリングを明確に
 - バリデーションルールを定義
 
-## 出力形式
-
-以下の形式で2つのファイルを出力してください：
-
-\`\`\`markdown:api-spec
-# api-spec.mdの内容
-...
-\`\`\`
-
-\`\`\`json:api-spec
-{
-  "openapi": "3.0.0",
-  ...
-}
-\`\`\`
+**重要**: Writeツールを使用してこれら2つのファイルを作成してください。作成後、Readツールで内容を確認してください。
 `.trim();
 }
 
-/**
- * Markdownセクションを抽出
- */
-function extractMarkdownSection(response: string, sectionName: string): string | null {
-  const regex = new RegExp(`\`\`\`markdown:${sectionName}\\s*([\\s\\S]*?)\\s*\`\`\``, 'm');
-  const match = response.match(regex);
-  return match ? match[1].trim() : null;
-}
-
-/**
- * JSONセクションを抽出
- */
-function extractJSONSection(response: string, sectionName: string): any | null {
-  const regex = new RegExp(`\`\`\`json:${sectionName}\\s*([\\s\\S]*?)\\s*\`\`\``, 'm');
-  const match = response.match(regex);
-
-  if (!match) {
-    return null;
-  }
-
-  try {
-    return JSON.parse(match[1].trim());
-  } catch (error) {
-    console.error(`❌ ${sectionName} JSONパースエラー:`, error);
-    return null;
-  }
-}

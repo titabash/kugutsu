@@ -195,6 +195,17 @@ ${taskArtifact.dependencies.map((depId) => `- ${depId}`).join('\n')}
 
 以下のタスクを実装してください。
 
+## 【前提条件：必須ファイル】
+以下のファイルは前のノード（ProductOwner）が作成済みです。このタスクの実装に必要な情報が含まれています：
+
+1. **.kugutsu/tasks.json** - タスク一覧と自分の担当タスク情報
+   → このファイルからタスクの状態を確認できます
+
+2. **.kugutsu/tasks/${taskArtifact.id}/instruction.md** - このタスクの実装詳細指示
+   → 下記「タスクの詳細指示」に既に読み込まれています
+
+これらのファイルが存在しない場合はエラーです。
+
 ## タスク情報
 - **ID**: ${taskArtifact.id}
 - **タイトル**: ${taskArtifact.title}

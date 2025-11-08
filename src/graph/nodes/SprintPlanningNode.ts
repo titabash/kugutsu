@@ -13,8 +13,10 @@ import type { ParallelDevStateType, ParallelDevStateUpdate } from '../state.js';
 import type { GlobalTask, Sprint } from '../types.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 import type { AIProviderConfig } from '../../providers/IAIProvider.js';
-import { DataPersistence } from '../../utils/DataPersistence.js';
+import { AIFileWriter } from '../../utils/AIFileWriter.js';
 import { randomUUID } from 'crypto';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 
 /**
  * Sprint Planning Node
@@ -33,12 +35,29 @@ export async function sprintPlanningNode(
 
   console.log('📅 SprintPlanning: スプリント計画を作成しています...');
 
-  // データ永続化マネージャーを初期化
-  const persistence = new DataPersistence(config.baseRepoPath);
-  await persistence.initialize();
+  // Define file paths
+  const activeSprintPath = path.join(
+    config.baseRepoPath,
+    '.kugutsu',
+    'sprints',
+    'active-sprint.json'
+  );
+  const globalQueuePath = path.join(
+    config.baseRepoPath,
+    '.kugutsu',
+    'tasks',
+    'global-queue.json'
+  );
 
   // アクティブなスプリントを確認
-  const existingActiveSprint = await persistence.loadActiveSprint();
+  let existingActiveSprint: Sprint | null = null;
+  try {
+    const activeSprintContent = await fs.readFile(activeSprintPath, 'utf-8');
+    existingActiveSprint = JSON.parse(activeSprintContent);
+  } catch (error) {
+    // ファイルが存在しない場合はnull
+  }
+
   if (existingActiveSprint && existingActiveSprint.status === 'active') {
     console.log(`⚠️ 既にアクティブなスプリントが存在します: ${existingActiveSprint.name}`);
     return {
@@ -212,9 +231,52 @@ JSON形式で以下の構造で出力してください：
   newSprint.status = 'active';
   newSprint.startedAt = new Date();
 
-  // スプリント情報を保存
-  await persistence.saveActiveSprint(newSprint);
-  await persistence.saveGlobalQueue(updatedGlobalTasks);
+  // AIFileWriterでスプリント情報を保存
+  const fileWriter = new AIFileWriter(provider);
+
+  // active-sprint.jsonを保存
+  const activeSprintSavePrompt = `
+以下のアクティブスプリント情報を${activeSprintPath}に保存してください。
+
+\`\`\`json
+${JSON.stringify(newSprint, null, 2)}
+\`\`\`
+
+**重要**: Writeツールを使用してこのファイルを作成してください。
+`.trim();
+
+  await fileWriter.writeFile(
+    activeSprintPath,
+    'アクティブスプリント',
+    activeSprintSavePrompt,
+    {
+      maxTurns: 5,
+      cwd: config.baseRepoPath,
+      permissionMode: 'acceptEdits',
+    }
+  );
+
+  // global-queue.jsonを保存
+  const globalQueueSavePrompt = `
+以下のグローバルタスクキューを${globalQueuePath}に保存してください。
+
+\`\`\`json
+${JSON.stringify(updatedGlobalTasks, null, 2)}
+\`\`\`
+
+**重要**: Writeツールを使用してこのファイルを作成してください。
+`.trim();
+
+  await fileWriter.writeFile(
+    globalQueuePath,
+    'グローバルタスクキュー',
+    globalQueueSavePrompt,
+    {
+      maxTurns: 5,
+      cwd: config.baseRepoPath,
+      permissionMode: 'acceptEdits',
+    }
+  );
 
   return {
     activeSprint: newSprint,

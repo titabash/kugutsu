@@ -14,8 +14,10 @@
 import type { ParallelDevStateType, ParallelDevStateUpdate } from '../state.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 import type { AIProviderConfig } from '../../providers/IAIProvider.js';
-import { DataPersistence } from '../../utils/DataPersistence.js';
+import { AIFileWriter } from '../../utils/AIFileWriter.js';
 import type { StoryMapping } from '../../types/scrum.js';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 
 /**
  * ストーリーマッピングレビュー結果
@@ -66,22 +68,38 @@ export async function reviewStoryMappingNode(
     };
   }
 
-  // データ永続化マネージャーを初期化
-  const persistence = new DataPersistence(config.baseRepoPath);
-  await persistence.initialize();
+  // Define file paths
+  const storyMapJsonPath = path.join(
+    config.baseRepoPath,
+    '.kugutsu',
+    'projects',
+    currentProjectId,
+    'story-mapping',
+    'story-map.json'
+  );
+  const reviewHistoryPath = path.join(
+    config.baseRepoPath,
+    '.kugutsu',
+    'projects',
+    currentProjectId,
+    'story-mapping',
+    'review-history.json'
+  );
 
   // ストーリーマッピングを読み込み
-  const storyMapping = await persistence.loadStoryMapping(currentProjectId);
-
-  if (!storyMapping) {
-    console.log('⚠️ ストーリーマッピングが見つかりません');
+  let storyMapping: StoryMapping;
+  try {
+    const storyMappingContent = await fs.readFile(storyMapJsonPath, 'utf-8');
+    storyMapping = JSON.parse(storyMappingContent);
+  } catch (error) {
+    console.log('⚠️ ストーリーマッピングが見つかりません:', storyMapJsonPath);
     return {
       logs: [
         {
           timestamp: new Date(),
           level: 'warn',
           source: 'story_mapping_review',
-          message: 'ストーリーマッピングなし',
+          message: `ストーリーマッピングなし: ${(error as Error).message}`,
         },
       ],
     };
@@ -94,12 +112,17 @@ export async function reviewStoryMappingNode(
   );
   console.log(`📝 ストーリー数: ${totalStories}`);
 
-  // レビュー履歴を読み込み
-  const reviewHistory = await persistence.loadStoryMappingReviewHistory(
-    currentProjectId
-  );
-  const iteration = (reviewHistory.reviews?.length || 0) + 1;
+  // レビュー履歴を読み込み（存在しない場合はデフォルト値）
+  let reviewHistory: any = { reviews: [] };
+  try {
+    const reviewHistoryContent = await fs.readFile(reviewHistoryPath, 'utf-8');
+    reviewHistory = JSON.parse(reviewHistoryContent);
+  } catch (error) {
+    // 初回レビュー時はファイルが存在しないので、デフォルト値を使用
+    console.log('📝 レビュー履歴なし（初回レビュー）');
+  }
 
+  const iteration = (reviewHistory.reviews?.length || 0) + 1;
   console.log(`🔄 レビュー回数: ${iteration}回目`);
 
   // AIプロバイダーを作成してレビュー実行
@@ -153,9 +176,27 @@ export async function reviewStoryMappingNode(
     reviews: [...(reviewHistory.reviews || []), newReview],
   };
 
-  await persistence.saveStoryMappingReviewHistory(
-    currentProjectId,
-    updatedHistory
+  // AIFileWriterでレビュー履歴を保存（Upsert方式）
+  const fileWriter = new AIFileWriter(provider);
+  const reviewHistorySavePrompt = `
+以下のレビュー履歴を${reviewHistoryPath}に保存してください。
+
+\`\`\`json
+${JSON.stringify(updatedHistory, null, 2)}
+\`\`\`
+
+**重要**: Writeツールを使用してこのファイルを作成してください。
+`.trim();
+
+  await fileWriter.writeFile(
+    reviewHistoryPath,
+    'レビュー履歴',
+    reviewHistorySavePrompt,
+    {
+      maxTurns: 5,
+      cwd: config.baseRepoPath,
+      permissionMode: 'acceptEdits',
+    }
   );
 
   console.log('💾 レビュー履歴を保存しました');

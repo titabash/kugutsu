@@ -158,7 +158,7 @@ ${config.baseRepoPath}
 `;
 
     // Phase 1: Tech stack analysis with retry
-    const maxTurns = config.maxTurns || 50;
+    const maxTurns = config.maxTurns || 30;
     const techStackResult = await RetryManager.executeWithRetry(
       async () => {
         for await (const _message of provider.execute(techStackAnalysisPrompt, {

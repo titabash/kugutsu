@@ -54,7 +54,7 @@ export async function reviewDesignNode(
   state: ParallelDevStateType
 ): Promise<ParallelDevStateUpdate> {
   const { config, currentProjectId } = state;
-  const maxTurns = config.maxTurns || 50;
+  const maxTurns = config.maxTurns || 30;
 
   console.log('🔍 DesignReview: 設計書レビュー開始（3者協調）');
 

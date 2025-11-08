@@ -18,6 +18,7 @@
 import { compileParallelDevGraph } from '../../src/graph/ParallelDevGraph.js';
 import { createInitialState } from '../../src/graph/state.js';
 import * as fs from 'fs/promises';
+import * as fsSync from 'fs';
 import * as path from 'path';
 
 async function runE2EMinimalVerification() {
@@ -56,13 +57,30 @@ async function runE2EMinimalVerification() {
 
     console.log(`✅ Test workspace created: ${testDir}`);
 
-    // Git設定を追加（worktree操作に必要）
+    // Git リポジトリとして初期化（create-next-appが親リポジトリ内で実行された場合はgit initをスキップするため）
     try {
+      console.log('📦 Initializing git repository...');
+
+      // 既存の .git が存在する場合は削除（念のため）
+      const gitDir = path.join(testDir, '.git');
+      if (fsSync.existsSync(gitDir)) {
+        await fs.rm(gitDir, { recursive: true, force: true });
+      }
+
+      // Git リポジトリを初期化
+      execSync('git init', { cwd: testDir, stdio: 'pipe' });
+
+      // Git設定
       execSync('git config user.email "test@example.com"', { cwd: testDir, stdio: 'pipe' });
       execSync('git config user.name "Test User"', { cwd: testDir, stdio: 'pipe' });
-      console.log('✅ Git user config set (for worktree operations)');
+
+      // 初期コミット作成（worktree操作に必要）
+      execSync('git add .', { cwd: testDir, stdio: 'pipe' });
+      execSync('git commit -m "Initial commit"', { cwd: testDir, stdio: 'pipe' });
+
+      console.log('✅ Git repository initialized with initial commit');
     } catch (error) {
-      console.error('⚠️  Git config failed:', error instanceof Error ? error.message : String(error));
+      console.error('⚠️  Git initialization failed:', error instanceof Error ? error.message : String(error));
       console.log('Continuing anyway (may affect worktree operations)...');
     }
     console.log('');
@@ -238,6 +256,15 @@ async function runE2EMinimalVerification() {
       console.log('   Set KEEP_TEST_WORKSPACE=0 to enable auto-cleanup');
     } else {
       try {
+        // Git worktree メタデータをクリーンアップ（test-e2e-minimal 内の .git/worktrees）
+        const { execSync } = await import('child_process');
+        try {
+          execSync('git worktree prune', { cwd: testDir, stdio: 'pipe' });
+          console.log(`\n🧹 Git worktree メタデータをクリーンアップしました`);
+        } catch (pruneError) {
+          // Ignore prune errors
+        }
+
         // ディレクトリ内の生成ファイルのみ削除（.gitkeepは保持）
         const entries = await fs.readdir(testDir);
 
@@ -251,7 +278,7 @@ async function runE2EMinimalVerification() {
           await fs.rm(fullPath, { recursive: true, force: true });
         }
 
-        console.log(`\n🗑️  Test workspace cleaned up: ${testDir}`);
+        console.log(`🗑️  Test workspace cleaned up: ${testDir}`);
         console.log('   (Directory structure preserved with .gitkeep)');
       } catch (cleanupError) {
         console.warn(`\n⚠️  Cleanup warning: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`);

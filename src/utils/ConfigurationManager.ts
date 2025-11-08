@@ -45,7 +45,7 @@ const DEFAULT_CONFIG: KugutsuConfig = {
   },
   parallelDev: {
     maxEngineers: 3,
-    maxTurns: 30,
+    maxTurns: 50,
     baseBranch: 'main',
     worktreeBasePath: './worktrees',
     cleanup: false,

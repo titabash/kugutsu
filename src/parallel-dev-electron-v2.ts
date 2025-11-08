@@ -39,7 +39,7 @@ function parseArgs(args: string[]): CLIConfig {
     baseRepoPath: process.cwd(),
     worktreeBasePath: path.join(process.cwd(), 'worktrees'),
     maxEngineers: 3,
-    maxTurns: 30,
+    maxTurns: 50,
     baseBranch: getCurrentBranch(process.cwd()) || 'main',
     cleanup: false,
     devTools: false,

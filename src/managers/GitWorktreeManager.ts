@@ -197,6 +197,52 @@ export class GitWorktreeManager {
       return { path: worktreePath, branchName };
 
     } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+
+      // "already registered" エラーの場合は prune してリトライ
+      if (errorMsg.includes('already registered')) {
+        console.log(`🔄 'already registered' エラーを検出。prune後にリトライします...`);
+
+        try {
+          // prune を実行してゴミworktreeの登録をクリーンアップ
+          await this.pruneWorktrees();
+
+          // worktreeディレクトリが残っている場合は削除
+          if (fs.existsSync(worktreePath)) {
+            await this.removeWorktree(taskId);
+          }
+
+          // ブランチが存在するかチェック
+          let retryBranchExists = false;
+          try {
+            execSync(`git rev-parse --quiet --verify ${branchName}`, {
+              cwd: this.baseRepoPath,
+              stdio: 'pipe'
+            });
+            retryBranchExists = true;
+          } catch {
+            // ブランチが存在しない場合
+          }
+
+          // リトライ
+          const command = retryBranchExists
+            ? ['git', 'worktree', 'add', worktreePath, branchName]
+            : ['git', 'worktree', 'add', '-b', branchName, worktreePath, this.baseBranch];
+
+          console.log(`🔄 Worktree作成をリトライ中: ${branchName} -> ${worktreePath}`);
+          execSync(command.join(' '), {
+            cwd: this.baseRepoPath,
+            stdio: 'pipe'
+          });
+
+          console.log(`✅ Worktree作成完了（リトライ成功）: ${worktreePath}`);
+          return { path: worktreePath, branchName };
+        } catch (retryError) {
+          console.error(`❌ Worktree作成リトライエラー (task-${taskId}):`, retryError);
+          throw new Error(`Failed to create worktree for task ${taskId} after retry: ${retryError}`);
+        }
+      }
+
       console.error(`❌ Worktree作成エラー (task-${taskId}):`, error);
       throw new Error(`Failed to create worktree for task ${taskId}: ${error}`);
     }
@@ -275,6 +321,24 @@ export class GitWorktreeManager {
     } catch (error) {
       console.error(`❌ Worktree削除エラー (task-${taskId}):`, error);
       // 削除に失敗してもエラーを投げない（継続可能な状態を維持）
+    }
+  }
+
+  /**
+   * 不要なworktree参照を削除（prune）
+   * ディレクトリが削除されたがgitに登録が残っているworktreeをクリーンアップ
+   */
+  async pruneWorktrees(): Promise<void> {
+    try {
+      console.log('🧹 Worktree参照をクリーンアップ中...');
+      execSync('git worktree prune', {
+        cwd: this.baseRepoPath,
+        stdio: 'pipe'
+      });
+      console.log('✅ Worktree参照のクリーンアップ完了');
+    } catch (error) {
+      console.warn('⚠️ Worktree prune に失敗:', error);
+      // エラーを投げずに継続（pruneの失敗は致命的ではない）
     }
   }
 

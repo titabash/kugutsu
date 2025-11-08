@@ -8,6 +8,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { mkdtemp, rm } from 'fs/promises';
 import { tmpdir } from 'os';
+import { execSync } from 'child_process';
 import type { TaskArtifact, TechStack, Requirements } from '../../src/types/artifacts.js';
 import type { Task, TaskStatus } from '../../src/graph/types.js';
 import type { MockAIProvider } from '../../src/providers/MockAIProvider.js';
@@ -36,6 +37,21 @@ export async function setupTestEnvironment(prefix = 'integration-test-'): Promis
 
   const cleanup = async () => {
     process.chdir(originalCwd);
+
+    // Clean up git worktree metadata in the main repository
+    // This prevents "already registered" errors when test-e2e-* directories are deleted
+    try {
+      execSync('git worktree prune', {
+        cwd: originalCwd,
+        stdio: 'pipe'
+      });
+      console.log('✅ Git worktree メタデータをクリーンアップしました');
+    } catch (error) {
+      // Ignore prune errors (not critical for test cleanup)
+      console.warn(`⚠️ Git worktree prune warning: ${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    // Remove temp directory
     try {
       await rm(tempDir, { recursive: true, force: true });
     } catch (error) {

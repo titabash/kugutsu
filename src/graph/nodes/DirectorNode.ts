@@ -122,7 +122,7 @@ ${state.userRequest}
 
     // Execute AI to write files using Write tool
     for await (const message of provider.execute(prompt, {
-      maxTurns: state.config.maxTurns || 10,
+      maxTurns: state.config.maxTurns || 30,
       cwd: state.config.baseRepoPath,
       allowedTools: ['Write', 'Read'],
       permissionMode: 'acceptEdits',

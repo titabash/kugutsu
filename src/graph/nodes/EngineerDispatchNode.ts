@@ -166,12 +166,26 @@ export async function engineerDispatchNode(
 
         console.log(`✅ タスク ${task.id} → in_progress: ${result.path}`);
       } catch (error) {
-        // Failed to create worktree
+        // Failed to create worktree - transition task to failed state
+        const errorMessage = error instanceof Error ? error.message : String(error);
+
+        const failedTask = TaskStateMachine.transition(task, 'failed', {
+          error: errorMessage
+        });
+
+        // Replace if exists, otherwise add
+        const existingIndex = updatedTasks.findIndex((t) => t.id === failedTask.id);
+        if (existingIndex >= 0) {
+          updatedTasks[existingIndex] = failedTask;
+        } else {
+          updatedTasks.push(failedTask);
+        }
+
         logs.push({
           timestamp: new Date(),
           level: 'error',
           source: 'EngineerDispatchNode',
-          message: `タスク ${task.id} のworktree作成に失敗: ${error instanceof Error ? error.message : String(error)}`,
+          message: `タスク ${task.id} のworktree作成に失敗: ${errorMessage}`,
           data: {
             taskId: task.id,
             error,

@@ -30,7 +30,7 @@ export async function checkModeNode(
   state: ParallelDevStateType
 ): Promise<ParallelDevStateUpdate> {
   const { userRequest, config } = state;
-  const maxTurns = config.maxTurns || 50;
+  const maxTurns = config.maxTurns || 30;
 
   console.log('🔍 CheckMode: ユーザーリクエストを分析しています...');
   console.log(`📝 リクエスト: ${userRequest}`);

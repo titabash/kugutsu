@@ -36,7 +36,7 @@ export async function reviewNode(
   taskId: string
 ): Promise<ParallelDevStateUpdate> {
   const { config, tasks, tasksPath } = state;
-  const maxTurns = config.maxTurns || 50;
+  const maxTurns = config.maxTurns || 30;
 
   console.log(`🔍 Review: タスク ${taskId} をレビューしています...`);
 

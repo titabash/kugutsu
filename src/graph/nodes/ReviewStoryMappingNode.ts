@@ -51,7 +51,7 @@ export async function reviewStoryMappingNode(
   state: ParallelDevStateType
 ): Promise<ParallelDevStateUpdate> {
   const { config, currentProjectId } = state;
-  const maxTurns = config.maxTurns || 50;
+  const maxTurns = config.maxTurns || 30;
 
   console.log('📖 StoryMappingReview: ストーリーマッピングレビュー開始');
 

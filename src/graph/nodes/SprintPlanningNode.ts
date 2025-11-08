@@ -32,7 +32,7 @@ export async function sprintPlanningNode(
   state: ParallelDevStateType
 ): Promise<ParallelDevStateUpdate> {
   const { globalTasks, projects, currentProjectId, config } = state;
-  const maxTurns = config.maxTurns || 50;
+  const maxTurns = config.maxTurns || 30;
 
   console.log('📅 SprintPlanning: スプリント計画を作成しています...');
 

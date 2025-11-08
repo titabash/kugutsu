@@ -87,7 +87,7 @@ export async function taskBreakdownNode(
   state: ParallelDevStateType
 ): Promise<ParallelDevStateUpdate> {
   const { config, currentProjectId } = state;
-  const maxTurns = config.maxTurns || 50;
+  const maxTurns = config.maxTurns || 30;
 
   console.log('📋 TaskBreakdown: タスク分解開始');
 

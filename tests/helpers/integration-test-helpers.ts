@@ -36,7 +36,12 @@ export async function setupTestEnvironment(prefix = 'integration-test-'): Promis
 
   const cleanup = async () => {
     process.chdir(originalCwd);
-    await rm(tempDir, { recursive: true, force: true });
+    try {
+      await rm(tempDir, { recursive: true, force: true });
+    } catch (error) {
+      // Ignore cleanup errors (directory may still be in use)
+      console.warn(`⚠️ Cleanup warning: ${error instanceof Error ? error.message : String(error)}`);
+    }
   };
 
   return {
@@ -273,37 +278,60 @@ export function createReviewMockResponse(
   comments: string[] = []
 ): any {
   const reviewStatus = status === 'approved' ? 'APPROVED' : 'CHANGES_REQUESTED';
-  const reviewMessage =
-    status === 'approved'
-      ? 'REVIEW_STATUS: APPROVED\n\nコードは良好です。'
-      : `REVIEW_STATUS: CHANGES_REQUESTED\n\n以下の修正が必要です:\n${comments.map((c, i) => `${i + 1}. ${c}`).join('\n')}`;
+
+  // Create separate assistant messages for each comment
+  // ReviewNode collects each assistant message as a separate comment
+  const messages: any[] = [];
+
+  if (status === 'approved') {
+    // For approved reviews, send a single message
+    messages.push(createMockMessage.assistant('REVIEW_STATUS: APPROVED\n\nコードは良好です。'));
+  } else {
+    // For changes_requested, send each comment as a separate message
+    // Include CHANGES_REQUESTED keyword in the first comment for status detection
+    if (comments.length > 0) {
+      comments.forEach((comment, index) => {
+        // Add CHANGES_REQUESTED to the first comment so ReviewNode detects the status
+        const commentText = index === 0
+          ? `CHANGES_REQUESTED: ${comment}`
+          : comment;
+        messages.push(createMockMessage.assistant(commentText));
+      });
+    } else {
+      // If no comments provided, send a default message with CHANGES_REQUESTED
+      messages.push(createMockMessage.assistant('CHANGES_REQUESTED: 修正が必要です。'));
+    }
+  }
+
+  // Add Write tool operation for review.json
+  messages.push(
+    createMockMessage.system({
+      toolUse: {
+        tool: 'Write',
+        arguments: {
+          file_path: path.join(kugutsuDir, 'tasks', taskId, 'review.json'),
+          content: JSON.stringify(
+            {
+              taskId,
+              status,
+              reviewedBy: 'TechLeadAI',
+              reviewedAt: new Date().toISOString(),
+              comments,
+              summary: `レビュー結果: ${status}`,
+              suggestions: comments,
+            },
+            null,
+            2
+          ),
+        },
+      },
+    })
+  );
+
+  messages.push(createMockMessage.result(true));
 
   return {
-    messages: [
-      createMockMessage.assistant(reviewMessage),
-      createMockMessage.system({
-        toolUse: {
-          tool: 'Write',
-          arguments: {
-            file_path: path.join(kugutsuDir, 'tasks', taskId, 'review.json'),
-            content: JSON.stringify(
-              {
-                taskId,
-                status,
-                reviewedBy: 'TechLeadAI',
-                reviewedAt: new Date().toISOString(),
-                comments,
-                summary: `レビュー結果: ${status}`,
-                suggestions: comments,
-              },
-              null,
-              2
-            ),
-          },
-        },
-      }),
-      createMockMessage.result(true),
-    ],
+    messages,
     simulateTools: true,
   };
 }

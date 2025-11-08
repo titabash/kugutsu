@@ -118,6 +118,17 @@ export async function conflictResolverNode(
     for (const task of tasksToResolve) {
       if (!task.branchName) {
         console.log(`⏭️ タスク ${task.id} をスキップ（ブランチ情報なし）`);
+        logs.push({
+          timestamp: new Date(),
+          level: 'warn',
+          source: 'ConflictResolverNode',
+          message: `タスク ${task.id} をスキップ（ブランチ情報なし）`,
+          data: {
+            taskId: task.id,
+            reason: 'missing_branch_name',
+          },
+          taskId: task.id,
+        });
         continue;
       }
 

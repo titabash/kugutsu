@@ -206,6 +206,21 @@ export async function mergeCoordinatorNode(
           });
 
           console.log(`✅ マージ成功: ${mergeTask.taskId}`);
+
+          // マージ成功後のクリーンアップ（config.cleanupがfalseでない限り実行）
+          if (config.cleanup !== false) {
+            try {
+              await gitWorktreeManager.cleanupCompletedTask(
+                mergeTask.taskId,
+                { deleteBranch: true }
+              );
+              console.log(`🧹 クリーンアップ完了: ${mergeTask.taskId}`);
+            } catch (cleanupError) {
+              console.warn(`⚠️ クリーンアップに失敗しましたが、処理を続行します: ${cleanupError}`);
+            }
+          } else {
+            console.log(`📌 Worktreeとブランチを保持: ${mergeTask.taskId}`);
+          }
         } catch (mergeError) {
           // Merge conflict detected
           const errorOutput = mergeError instanceof Error ? mergeError.message : String(mergeError);

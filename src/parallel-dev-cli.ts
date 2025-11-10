@@ -25,7 +25,7 @@ interface CLIConfig {
   maxEngineers: number;
   maxTurns: number;
   baseBranch: string;
-  cleanup: boolean;
+  cleanup: boolean; // true = cleanup (default), false = keep worktrees
   showHelp: boolean;
   showVersion: boolean;
   provider: 'claude' | 'codex' | 'mock';
@@ -43,7 +43,7 @@ function parseArgs(args: string[]): CLIConfig {
     maxEngineers: 3,
     maxTurns: 50,
     baseBranch: getCurrentBranch(process.cwd()) || 'main',
-    cleanup: false,
+    cleanup: true, // Default: cleanup after merge
     showHelp: false,
     showVersion: false,
     provider: 'mock', // Default to mock for safety
@@ -85,8 +85,8 @@ function parseArgs(args: string[]): CLIConfig {
         config.baseBranch = args[++i];
         break;
 
-      case '--cleanup':
-        config.cleanup = true;
+      case '--keep-worktrees':
+        config.cleanup = false;
         break;
 
       case '--visual-ui':
@@ -156,7 +156,7 @@ function showUsage(): void {
   --max-engineers <num>         最大同時エンジニア数 (デフォルト: 3, 範囲: 1-10)
   --max-turns <num>             タスクあたりの最大ターン数 (デフォルト: 30)
   --base-branch <branch>        ベースブランチ (デフォルト: 現在のブランチ)
-  --cleanup                     実行後にWorktreeを削除
+  --keep-worktrees              実行後もWorktreeとブランチを保持（デバッグ用）
   --visual-ui                   ターミナル分割表示を使用
   --use-remote                  リモートリポジトリを使用 (未実装)
   --provider <claude|codex|mock> AIプロバイダー (デフォルト: mock)
@@ -176,7 +176,10 @@ function showUsage(): void {
   kugutsu "バグ修正: ログイン時のエラーハンドリング" --provider claude --max-engineers 2
 
   # 環境変数でプロバイダーを指定
-  KUGUTSU_PROVIDER=claude kugutsu "新しいAPI endpointを3つ追加" --cleanup
+  KUGUTSU_PROVIDER=claude kugutsu "新しいAPI endpointを3つ追加"
+
+  # デバッグのためWorktreeを保持
+  kugutsu "バグ調査" --keep-worktrees
 
 注意:
   このCLI版はElectron UIを使用しません。
@@ -348,7 +351,7 @@ async function main(): Promise<void> {
   console.log(`🌿 ベースブランチ: ${cliConfig.baseBranch}`);
   console.log(`🤖 AIプロバイダー: ${cliConfig.provider}`);
   console.log(`🖥️  UIモード: ${cliConfig.visualUI ? 'Terminal分割' : '標準'}`);
-  console.log(`🧹 実行後クリーンアップ: ${cliConfig.cleanup ? 'はい' : 'いいえ'}`);
+  console.log(`🧹 実行後クリーンアップ: ${cliConfig.cleanup ? 'はい（自動削除）' : 'いいえ（保持）'}`);
   console.log('');
 
   // ===== Signal Handlers =====

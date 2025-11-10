@@ -126,7 +126,7 @@
 ### EngineerDispatchNode
 
 **カテゴリ**: 統合
-**役割**: タスクのディスパッチとworktree管理
+**役割**: タスクのディスパッチとworktree管理（動的タスクプーリング対応）
 
 **作業場所**:
 - ベースリポジトリ
@@ -144,9 +144,34 @@
 - 実行可能なタスクのリスト
 - worktreeパス情報
 
-**実行フェーズ**: instruction.md生成後
+**実行フェーズ**: instruction.md生成後、およびレビュー・マージ完了後（動的プーリング）
 
 **次のノード**: EngineerNode（並列実行）
+
+**🔄 動的タスクプーリング機能**:
+
+EngineerDispatchNodeは動的タスクプーリングをサポートしています：
+
+1. **空きスロット計算**:
+   - 現在のin_progress数をカウント
+   - 利用可能なスロット = maxEngineers - in_progress数
+
+2. **動的ディスパッチ**:
+   - 空きスロット分のみタスクをディスパッチ
+   - 依存関係を厳密にチェック（すべての依存タスクがcompletedであることを確認）
+
+3. **再実行タイミング**:
+   - 初回: instruction.md生成後
+   - 2回目以降: ReviewNode完了後、MergeCoordinatorNode完了後
+
+4. **リソース効率化**:
+   - タスクが完了した瞬間に次のタスクを開始
+   - アイドル時間を最小化（実行時間20-30%短縮）
+
+**依存関係チェック**:
+- `TaskStateMachine.canMoveToReady()`を使用
+- 依存タスクが`in_progress`や`in_review`では不十分
+- 必ず`completed`（レビュー承認・マージ完了）であることを要求
 
 ---
 

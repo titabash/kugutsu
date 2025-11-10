@@ -209,10 +209,69 @@ export class StateStreamManager {
   }
 
   /**
-   * Get current node from state (if available)
+   * Current node being executed (set via notifyNodeExecution)
+   */
+  private currentNode: string | null = null;
+
+  /**
+   * Notify the StateStreamManager about node execution from LangGraph
+   * This replaces the previous log-based inference approach
+   *
+   * @param nodeName - Name of the node being executed
+   * @param status - Execution status ('started' | 'completed' | 'failed')
+   * @param state - Current state (optional, for additional context)
+   */
+  public async notifyNodeExecution(
+    nodeName: string,
+    status: 'started' | 'completed' | 'failed',
+    state?: ParallelDevStateType
+  ): Promise<void> {
+    if (!this.window || this.destroyed) return;
+
+    if (status === 'started') {
+      this.currentNode = nodeName;
+
+      // Add node-started event to buffer
+      this.addToBuffer({
+        type: 'node-started',
+        data: {
+          nodeName,
+          timestamp: Date.now(),
+        },
+        timestamp: Date.now(),
+        priority: 'high',
+      });
+    } else if (status === 'completed' || status === 'failed') {
+      // Add node-completed event to buffer
+      this.addToBuffer({
+        type: 'node-completed',
+        data: {
+          nodeName,
+          status,
+          timestamp: Date.now(),
+        },
+        timestamp: Date.now(),
+        priority: 'high',
+      });
+
+      // Clear current node after completion
+      if (this.currentNode === nodeName) {
+        this.currentNode = null;
+      }
+    }
+  }
+
+  /**
+   * Get current node (now directly set via notifyNodeExecution)
+   * @deprecated Use notifyNodeExecution instead of log-based inference
    */
   private getCurrentNode(state: ParallelDevStateType): string | null {
-    // Check if there's a log entry indicating current node
+    // Return the directly set current node (from LangGraph debug events)
+    if (this.currentNode) {
+      return this.currentNode;
+    }
+
+    // Fallback: Check logs (deprecated, for backward compatibility)
     const recentLogs = state.logs.slice(-10);
     for (const log of recentLogs.reverse()) {
       if (log.source && log.source !== 'system') {

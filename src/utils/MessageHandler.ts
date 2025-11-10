@@ -6,7 +6,6 @@
  */
 
 import type { AIMessage } from '../providers/IAIProvider.js';
-import type { ParallelProgressTracker } from './ParallelProgressTracker.js';
 
 /**
  * MessageHandler のオプション
@@ -90,7 +89,6 @@ export class MessageHandler {
   private dotCounter = 0;
   private hasError = false;
   private errorDetails?: ErrorDetails;
-  private progressTracker?: ParallelProgressTracker;
 
   constructor(options: MessageHandlerOptions) {
     this.options = options;
@@ -404,24 +402,6 @@ export class MessageHandler {
   }
 
   /**
-   * プログレストラッカーを設定
-   * @param tracker ParallelProgressTracker インスタンス
-   */
-  public setProgressTracker(tracker: ParallelProgressTracker): void {
-    this.progressTracker = tracker;
-  }
-
-  /**
-   * プログレストラッカーに進捗を通知
-   * タスクIDが設定されている場合のみ通知されます
-   */
-  public notifyProgress(): void {
-    if (this.progressTracker && this.options.taskId) {
-      this.progressTracker.updateProgress(this.options.taskId, this.turnCount);
-    }
-  }
-
-  /**
    * 現在のターン数を取得
    * @returns 現在のターン数
    */
@@ -435,6 +415,5 @@ export class MessageHandler {
    */
   private incrementTurnCount(): void {
     this.turnCount++;
-    this.notifyProgress();
   }
 }

@@ -31,14 +31,37 @@ import { MessageHandler } from '../../utils/MessageHandler.js';
  * 4. Check for security issues
  * 5. Approve or request changes
  * 6. Transition task: in_review → completed (approved) or in_progress (changes requested)
+ *
+ * **Send API Compatible:**
+ * This node is designed to be called via Send API with `currentTaskId` in state.
+ * The taskId is retrieved from `state.currentTaskId` for parallel execution.
+ *
+ * **Backward Compatibility:**
+ * For backward compatibility with tests, taskId can also be passed as a second parameter.
  */
 export async function reviewNode(
   state: ParallelDevStateType,
-  taskId: string
+  taskIdParam?: string
 ): Promise<ParallelDevStateUpdate> {
-  const { config, tasks, tasksPath, activeSprint, globalTasks } = state;
+  const { config, tasks, tasksPath, activeSprint, globalTasks, currentTaskId } = state;
   const maxTurns = config.maxTurns || 50;
   const startTime = Date.now();
+
+  // Retrieve task ID from parameter (backward compatibility) or state (Send API pattern)
+  const taskId = taskIdParam || currentTaskId;
+  if (!taskId) {
+    console.error('❌ taskId is not provided (neither as parameter nor in state.currentTaskId)');
+    return {
+      logs: [
+        {
+          timestamp: new Date(),
+          level: 'error',
+          source: 'ReviewNode',
+          message: 'taskId is not provided (neither as parameter nor in state.currentTaskId)',
+        },
+      ],
+    };
+  }
 
   // アクティブスプリントIDを取得
   if (!activeSprint?.id) {

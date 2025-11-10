@@ -10,6 +10,7 @@ import { compileUnifiedScrumWorkflowGraph } from '../graph/ParallelDevGraph.js';
 import { createInitialState, type ParallelDevStateType } from '../graph/state.js';
 import type { ParallelDevConfig } from '../graph/types.js';
 import { StateStreamManager } from './StateStreamManager.js';
+import { UnifiedProgressManager } from '../utils/UnifiedProgressManager.js';
 
 /**
  * Orchestrator configuration
@@ -39,6 +40,7 @@ export interface OrchestratorConfig {
 export class ParallelDevOrchestrator {
   private window: BrowserWindow | null = null;
   private stateStreamManager: StateStreamManager | null = null;
+  private progressManager: UnifiedProgressManager | null = null;
 
   constructor() {
     // Initialize StateStreamManager
@@ -48,6 +50,50 @@ export class ParallelDevOrchestrator {
       maxBufferSize: 100,
       maxLogBuffer: 1000,
     });
+
+    // Initialize UnifiedProgressManager
+    this.progressManager = new UnifiedProgressManager();
+
+    // Connect UnifiedProgressManager to StateStreamManager
+    this.setupProgressCallbacks();
+  }
+
+  /**
+   * Setup callbacks to connect UnifiedProgressManager with StateStreamManager
+   */
+  private setupProgressCallbacks(): void {
+    if (!this.progressManager || !this.stateStreamManager) return;
+
+    // Forward node started events to StateStreamManager
+    this.progressManager.onNodeStarted(async (execution) => {
+      console.log(`📍 [ProgressManager] Node started: ${execution.nodeName}${execution.taskId ? ` (task: ${execution.taskId})` : ''}`);
+
+      // Forward to StateStreamManager (already handled via notifyNodeExecution)
+      // This provides redundancy and validation
+    });
+
+    // Forward node completed events to StateStreamManager
+    this.progressManager.onNodeCompleted(async (execution) => {
+      console.log(`✅ [ProgressManager] Node completed: ${execution.nodeName}${execution.taskId ? ` (task: ${execution.taskId})` : ''} - ${execution.status}`);
+
+      // Forward to StateStreamManager (already handled via notifyNodeExecution)
+      // This provides redundancy and validation
+    });
+
+    // Log task progress updates
+    this.progressManager.onTaskProgress((progress) => {
+      console.log(`📊 [ProgressManager] Task progress: ${progress.taskId} - ${progress.progress}% (${progress.status})`);
+
+      // Optionally, send task-specific progress events to Electron UI
+      // (currently handled via state updates, but can be enhanced)
+    });
+  }
+
+  /**
+   * Get current progress manager (for external access)
+   */
+  getProgressManager(): UnifiedProgressManager | null {
+    return this.progressManager;
   }
 
   /**
@@ -97,60 +143,43 @@ export class ParallelDevOrchestrator {
       }
 
       // Execute graph with streaming
+      // Enable multiple stream modes: values (state updates), debug (node execution), tasks (task tracking)
       console.log('▶️ ワークフロー実行開始');
       let finalState: ParallelDevStateType = initialState;
 
-      const stream = await graph.stream(initialState);
+      const stream = await graph.stream(initialState, {
+        streamMode: ["values", "debug", "tasks"] as const,
+      });
+
       for await (const event of stream) {
-        // event is { [nodeName]: stateUpdate }
-        console.log(`📦 イベント受信:`, Object.keys(event));
+        // Handle different stream modes
+        // When multiple streamModes are specified, LangGraph may return events in different formats
+        // We need to detect the event type and route to appropriate handlers
 
-        // Get the latest state from the event
-        // LangGraph stream returns { nodeName: partialState }
-        const nodeNames = Object.keys(event);
-        for (const nodeName of nodeNames) {
-          const stateUpdate = event[nodeName];
+        // Check if this is a debug event
+        if (event && typeof event === 'object' && 'type' in event && 'payload' in event) {
+          // Debug event: { type, timestamp, step, payload }
+          await this.handleDebugEvent(event, finalState);
+          continue;
+        }
 
-          // Merge state update into finalState
-          finalState = {
-            ...finalState,
-            ...stateUpdate,
-            // Merge arrays properly
-            tasks: stateUpdate.tasks
-              ? this.mergeTasks(finalState.tasks, stateUpdate.tasks)
-              : finalState.tasks,
-            completedTasks: stateUpdate.completedTasks
-              ? [...finalState.completedTasks, ...stateUpdate.completedTasks]
-              : finalState.completedTasks,
-            failedTasks: stateUpdate.failedTasks
-              ? [...finalState.failedTasks, ...stateUpdate.failedTasks]
-              : finalState.failedTasks,
-            reviews: stateUpdate.reviews
-              ? [...finalState.reviews, ...stateUpdate.reviews]
-              : finalState.reviews,
-            mergeQueue: stateUpdate.mergeQueue
-              ? this.mergeMergeQueue(finalState.mergeQueue, stateUpdate.mergeQueue)
-              : finalState.mergeQueue,
-            logs: stateUpdate.logs
-              ? [...finalState.logs, ...stateUpdate.logs]
-              : finalState.logs,
-            worktrees: stateUpdate.worktrees
-              ? new Map([...finalState.worktrees, ...stateUpdate.worktrees])
-              : finalState.worktrees,
-            metadata: stateUpdate.metadata
-              ? { ...finalState.metadata, ...stateUpdate.metadata }
-              : finalState.metadata,
-          };
+        // Check if this is a task event
+        if (event && typeof event === 'object' && 'id' in event && 'name' in event) {
+          // Task event: { id, name, input, result, triggers, interrupts }
+          await this.handleTaskEvent(event, finalState);
+          continue;
+        }
+
+        // Otherwise, treat as value event (default stream mode)
+        // Value event: { [nodeName]: stateUpdate }
+        if (event && typeof event === 'object') {
+          const previousState = finalState;
+          finalState = await this.handleValueEvent(event, finalState);
 
           // Update currentState for error handling
           currentState = finalState;
-
-          // Stream state update to UI via StateStreamManager
-          if (this.stateStreamManager) {
-            await this.stateStreamManager.processStateUpdate(finalState);
-          }
-
-          console.log(`✅ ノード完了: ${nodeName}`);
+        } else {
+          console.warn(`⚠️ Unknown event format:`, event);
         }
       }
 
@@ -214,12 +243,143 @@ export class ParallelDevOrchestrator {
   }
 
   /**
-   * Cleanup and destroy StateStreamManager
+   * Handle debug stream events from LangGraph
+   * Debug events provide detailed execution information including node start/end times
+   */
+  private async handleDebugEvent(
+    event: any,
+    finalState: ParallelDevStateType
+  ): Promise<void> {
+    // Debug event structure: { type, timestamp, step, payload }
+    const { type, payload, step } = event;
+
+    // Process via UnifiedProgressManager
+    if (this.progressManager) {
+      this.progressManager.processDebugEvent(event);
+    }
+
+    if (type === 'task') {
+      // Task execution events
+      const { name: nodeName, input, metadata } = payload || {};
+
+      if (nodeName) {
+        console.log(`🔍 [Debug] Node started: ${nodeName} (step ${step})`);
+
+        // Notify StateStreamManager about node execution
+        if (this.stateStreamManager) {
+          await this.stateStreamManager.notifyNodeExecution(nodeName, 'started', finalState);
+        }
+      }
+    } else if (type === 'checkpoint') {
+      // Checkpoint events (node completion)
+      console.log(`🔍 [Debug] Checkpoint at step ${step}`);
+    }
+  }
+
+  /**
+   * Handle task stream events from LangGraph
+   * Task events provide information about individual task execution within nodes
+   */
+  private async handleTaskEvent(
+    event: any,
+    finalState: ParallelDevStateType
+  ): Promise<void> {
+    // Task event structure: { id, name, input, result, triggers, interrupts }
+    const { id, name, input, result } = event;
+
+    // Process via UnifiedProgressManager
+    if (this.progressManager) {
+      this.progressManager.processTaskEvent(event);
+    }
+
+    console.log(`📋 [Task] ${name} (${id}):`, result ? 'completed' : 'started');
+
+    // Extract task ID from input if available (for Send API parallel execution)
+    const taskId = input?.currentTaskId;
+    if (taskId) {
+      console.log(`   └─ Processing task: ${taskId}`);
+    }
+  }
+
+  /**
+   * Handle value stream events from LangGraph (state updates)
+   * This is the traditional stream mode that returns state updates
+   */
+  private async handleValueEvent(
+    event: any,
+    finalState: ParallelDevStateType
+  ): Promise<ParallelDevStateType> {
+    // Value event structure: { [nodeName]: stateUpdate }
+    const nodeNames = Object.keys(event);
+
+    for (const nodeName of nodeNames) {
+      const stateUpdate = event[nodeName];
+
+      // Merge state update into finalState
+      finalState = {
+        ...finalState,
+        ...stateUpdate,
+        // Merge arrays properly
+        tasks: stateUpdate.tasks
+          ? this.mergeTasks(finalState.tasks, stateUpdate.tasks)
+          : finalState.tasks,
+        completedTasks: stateUpdate.completedTasks
+          ? [...finalState.completedTasks, ...stateUpdate.completedTasks]
+          : finalState.completedTasks,
+        failedTasks: stateUpdate.failedTasks
+          ? [...finalState.failedTasks, ...stateUpdate.failedTasks]
+          : finalState.failedTasks,
+        reviews: stateUpdate.reviews
+          ? [...finalState.reviews, ...stateUpdate.reviews]
+          : finalState.reviews,
+        mergeQueue: stateUpdate.mergeQueue
+          ? this.mergeMergeQueue(finalState.mergeQueue, stateUpdate.mergeQueue)
+          : finalState.mergeQueue,
+        logs: stateUpdate.logs
+          ? [...finalState.logs, ...stateUpdate.logs]
+          : finalState.logs,
+        worktrees: stateUpdate.worktrees
+          ? new Map([...finalState.worktrees, ...stateUpdate.worktrees])
+          : finalState.worktrees,
+        metadata: stateUpdate.metadata
+          ? { ...finalState.metadata, ...stateUpdate.metadata }
+          : finalState.metadata,
+      };
+
+      // Extract taskId from state (for Send API parallel execution)
+      const taskId = stateUpdate.currentTaskId || finalState.currentTaskId;
+
+      // Process via UnifiedProgressManager
+      if (this.progressManager) {
+        this.progressManager.processValueEvent(nodeName, taskId);
+      }
+
+      // Stream state update to UI via StateStreamManager
+      if (this.stateStreamManager) {
+        await this.stateStreamManager.processStateUpdate(finalState);
+
+        // Notify StateStreamManager about node completion
+        await this.stateStreamManager.notifyNodeExecution(nodeName, 'completed', finalState);
+      }
+
+      console.log(`✅ ノード完了: ${nodeName}${taskId ? ` (task: ${taskId})` : ''}`);
+    }
+
+    return finalState;
+  }
+
+  /**
+   * Cleanup and destroy StateStreamManager and UnifiedProgressManager
    */
   destroy(): void {
     if (this.stateStreamManager) {
       this.stateStreamManager.destroy();
       this.stateStreamManager = null;
+    }
+
+    if (this.progressManager) {
+      this.progressManager.clear();
+      this.progressManager = null;
     }
   }
 }

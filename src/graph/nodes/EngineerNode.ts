@@ -33,13 +33,36 @@ import { MessageHandler } from '../../utils/MessageHandler.js';
  * 4. Handle errors
  * 5. Preserve session for conflict resolution
  * 6. Transition task: in_progress → in_review (success) or failed (error)
+ *
+ * **Send API Compatible:**
+ * This node is designed to be called via Send API with `currentTaskId` in state.
+ * The taskId is retrieved from `state.currentTaskId` for parallel execution.
+ *
+ * **Backward Compatibility:**
+ * For backward compatibility with tests, taskId can also be passed as a second parameter.
  */
 export async function engineerNode(
   state: ParallelDevStateType,
-  taskId: string
+  taskIdParam?: string
 ): Promise<ParallelDevStateUpdate> {
-  const { config, tasks, tasksPath, activeSprint } = state;
+  const { config, tasks, tasksPath, activeSprint, currentTaskId } = state;
   const startTime = Date.now();
+
+  // Retrieve task ID from parameter (backward compatibility) or state (Send API pattern)
+  const taskId = taskIdParam || currentTaskId;
+  if (!taskId) {
+    console.error('❌ taskId is not provided (neither as parameter nor in state.currentTaskId)');
+    return {
+      logs: [
+        {
+          timestamp: new Date(),
+          level: 'error',
+          source: 'EngineerNode',
+          message: 'taskId is not provided (neither as parameter nor in state.currentTaskId)',
+        },
+      ],
+    };
+  }
 
   // アクティブスプリントIDを取得
   if (!activeSprint?.id) {

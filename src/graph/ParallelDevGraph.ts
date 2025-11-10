@@ -4,7 +4,7 @@
  * Main workflow graph using LangGraphJS
  */
 
-import { StateGraph, MemorySaver } from '@langchain/langgraph';
+import { StateGraph, MemorySaver, Send } from '@langchain/langgraph';
 import { ParallelDevState, type ParallelDevStateType } from './state.js';
 import { productOwnerNode } from './nodes/ProductOwnerNode.js';
 import { engineerDispatchNode } from './nodes/EngineerDispatchNode.js';
@@ -23,7 +23,6 @@ import { taskBreakdownNode } from './nodes/TaskBreakdownNode.js';
 import { analyzeComplexityNode } from './nodes/AnalyzeComplexityNode.js';
 import { instructionGeneratorNode } from './nodes/InstructionGeneratorNode.js';
 import { TaskStateMachine } from '../utils/TaskStateMachine.js';
-import { ParallelProgressTracker } from '../utils/ParallelProgressTracker.js';
 
 /**
  * Create the Unified Scrum Workflow Graph
@@ -73,183 +72,67 @@ export function createUnifiedScrumWorkflowGraph() {
     .addNode('engineer_dispatch', engineerDispatchNode)
 
     // ================================================
-    // Engineer Wrapper: Parallel Task Execution
+    // Engineer Node: Individual Task Execution (Send API Compatible)
     // ================================================
-    .addNode('engineer', async (state: ParallelDevStateType) => {
-      const inProgressTasks = state.tasks.filter((t) => t.status === 'in_progress');
+    .addNode('engineer', engineerNode)
 
-      if (inProgressTasks.length === 0) {
-        return {
-          logs: [
-            {
-              timestamp: new Date(),
-              level: 'info',
-              source: 'EngineerWrapper',
-              message: '実行可能なタスクがありません',
-            },
-          ],
-        };
-      }
+    // ================================================
+    // Engineer Aggregator: Fan-in from parallel engineer executions
+    // ================================================
+    .addNode('engineer_aggregator', (state: ParallelDevStateType) => {
+      const inReviewTasks = state.tasks.filter(t => t.status === 'in_review');
+      const failedTasks = state.tasks.filter(t => t.status === 'failed');
+      const inProgressTasks = state.tasks.filter(t => t.status === 'in_progress');
 
-      // ✨ 並列実行ステータスボードを作成
-      const tracker = new ParallelProgressTracker(`🚀 ${inProgressTasks.length}個のタスクを並列実装中`);
-
-      // タスクをトラッカーに追加
       console.log(`\n${'='.repeat(70)}`);
-      console.log(`👷 並列実装開始: ${inProgressTasks.length}タスク`);
-      for (const task of inProgressTasks) {
-        console.log(`   - [${task.id}] ${task.title}`);
-        tracker.addTask(task.id, task.title, state.config.maxTurns);
-      }
+      console.log(`📊 Engineer Aggregator: 並列実装結果を集約`);
+      console.log(`   ✅ レビュー待ち: ${inReviewTasks.length}タスク`);
+      console.log(`   ❌ 失敗: ${failedTasks.length}タスク`);
+      console.log(`   🔄 実装中: ${inProgressTasks.length}タスク`);
       console.log(`${'='.repeat(70)}\n`);
 
-      // Execute all in-progress tasks in parallel (with allSettled to continue on failures)
-      const taskResults = await Promise.allSettled(
-        inProgressTasks.map((task) => engineerNode(state, task.id))
-      );
-
-      // Accumulate all results
-      const results = {
-        tasks: [] as any[],
-        completedTasks: [] as any[],
-        failedTasks: [] as any[],
-        logs: [] as any[],
-        metadata: {},
-      };
-
-      for (let i = 0; i < taskResults.length; i++) {
-        const settledResult = taskResults[i];
-        const task = inProgressTasks[i];
-
-        if (settledResult.status === 'fulfilled') {
-          // タスク実行成功
-          const result = settledResult.value;
-          if (result.tasks) results.tasks.push(...result.tasks);
-          if (result.completedTasks) results.completedTasks.push(...result.completedTasks);
-          if (result.failedTasks) results.failedTasks.push(...result.failedTasks);
-          if (result.logs) results.logs.push(...result.logs);
-          if (result.metadata) results.metadata = { ...results.metadata, ...result.metadata };
-
-          // ✨ トラッカーに成功を通知
-          const success = !result.failedTasks || result.failedTasks.length === 0;
-          tracker.completeTask(task.id, success);
-        } else {
-          // タスク実行失敗
-          results.logs.push({
+      return {
+        logs: [
+          {
             timestamp: new Date(),
-            level: 'error' as const,
-            source: 'EngineerWrapper',
-            message: `タスク実行エラー: ${settledResult.reason?.message || settledResult.reason}`,
-            data: { error: settledResult.reason },
-          });
-
-          // ✨ トラッカーに失敗を通知
-          tracker.failTask(task.id, settledResult.reason?.message);
-        }
-      }
-
-      // ✨ トラッカーを終了
-      await tracker.close();
-
-      // 並列実装終了ログ
-      const successCount = results.tasks.filter(t => t.status === 'in_review').length;
-      const failedCount = results.failedTasks?.length || 0;
-      console.log(`\n${'='.repeat(70)}`);
-      console.log(`📊 並列実装完了: 成功 ${successCount}/${inProgressTasks.length}, 失敗 ${failedCount}/${inProgressTasks.length}`);
-      console.log(`${'='.repeat(70)}\n`);
-
-      return results;
+            level: 'info',
+            source: 'EngineerAggregator',
+            message: `並列実装完了: レビュー待ち ${inReviewTasks.length}, 失敗 ${failedTasks.length}, 実装中 ${inProgressTasks.length}`,
+          },
+        ],
+      };
     })
 
     // ================================================
-    // Review Wrapper: Parallel Code Review
-    // ⚠️ FIXED: Changed from status === 'completed' to status === 'in_review'
+    // Review Node: Individual Task Review (Send API Compatible)
     // ================================================
-    .addNode('review', async (state: ParallelDevStateType) => {
-      const completedTasks = state.tasks.filter(
-        (t) =>
-          t.status === 'in_review' && // ✅ FIXED: was 'completed'
-          !state.reviews.some((r) => r.taskId === t.id)
-      );
+    .addNode('review', reviewNode)
 
-      if (completedTasks.length === 0) {
-        return {
-          logs: [
-            {
-              timestamp: new Date(),
-              level: 'info',
-              source: 'ReviewWrapper',
-              message: 'レビュー対象のタスクがありません',
-            },
-          ],
-        };
-      }
+    // ================================================
+    // Review Aggregator: Fan-in from parallel review executions
+    // ================================================
+    .addNode('review_aggregator', (state: ParallelDevStateType) => {
+      const completedTasks = state.tasks.filter(t => t.status === 'completed');
+      const inProgressTasks = state.tasks.filter(t => t.status === 'in_progress');
+      const reviewCount = state.reviews.length;
 
-      // ✨ 並列実行ステータスボードを作成
-      const tracker = new ParallelProgressTracker(`🔍 ${completedTasks.length}個のタスクを並列レビュー中`);
-
-      // タスクをトラッカーに追加
       console.log(`\n${'='.repeat(70)}`);
-      console.log(`🔍 並列レビュー開始: ${completedTasks.length}タスク`);
-      for (const task of completedTasks) {
-        console.log(`   - [${task.id}] ${task.title}`);
-        tracker.addTask(task.id, task.title, state.config.maxTurns);
-      }
+      console.log(`📊 Review Aggregator: 並列レビュー結果を集約`);
+      console.log(`   ✅ 承認済み: ${completedTasks.length}タスク`);
+      console.log(`   🔄 修正要求: ${inProgressTasks.length}タスク`);
+      console.log(`   📝 レビュー総数: ${reviewCount}`);
       console.log(`${'='.repeat(70)}\n`);
 
-      // Review all completed tasks in parallel (with allSettled to continue on failures)
-      const reviewResults = await Promise.allSettled(
-        completedTasks.map((task) => reviewNode(state, task.id))
-      );
-
-      // Accumulate all results
-      const results = {
-        tasks: [] as any[],
-        completedTasks: [] as any[],
-        reviews: [] as any[],
-        logs: [] as any[],
-      };
-
-      for (let i = 0; i < reviewResults.length; i++) {
-        const settledResult = reviewResults[i];
-        const task = completedTasks[i];
-
-        if (settledResult.status === 'fulfilled') {
-          // レビュー成功
-          const result = settledResult.value;
-          if (result.tasks) results.tasks.push(...result.tasks);
-          if (result.completedTasks) results.completedTasks.push(...result.completedTasks);
-          if (result.reviews) results.reviews.push(...result.reviews);
-          if (result.logs) results.logs.push(...result.logs);
-
-          // ✨ トラッカーに成功を通知
-          tracker.completeTask(task.id, true);
-        } else {
-          // レビュー失敗
-          results.logs.push({
+      return {
+        logs: [
+          {
             timestamp: new Date(),
-            level: 'error' as const,
-            source: 'ReviewWrapper',
-            message: `レビュー実行エラー: ${settledResult.reason?.message || settledResult.reason}`,
-            data: { error: settledResult.reason },
-          });
-
-          // ✨ トラッカーに失敗を通知
-          tracker.failTask(task.id, settledResult.reason?.message);
-        }
-      }
-
-      // ✨ トラッカーを終了
-      await tracker.close();
-
-      // 並列レビュー終了ログ
-      const approvedCount = results.tasks.filter(t => t.status === 'completed').length;
-      const changesRequestedCount = results.tasks.filter(t => t.status === 'in_progress').length;
-      console.log(`\n${'='.repeat(70)}`);
-      console.log(`📊 並列レビュー完了: 承認 ${approvedCount}/${completedTasks.length}, 修正要求 ${changesRequestedCount}/${completedTasks.length}`);
-      console.log(`${'='.repeat(70)}\n`);
-
-      return results;
+            level: 'info',
+            source: 'ReviewAggregator',
+            message: `並列レビュー完了: 承認済み ${completedTasks.length}, 修正要求 ${inProgressTasks.length}`,
+          },
+        ],
+      };
     })
 
     // ================================================
@@ -327,7 +210,7 @@ export function createUnifiedScrumWorkflowGraph() {
   // Instruction generator → engineer dispatch
   workflow.addEdge('instruction_generator', 'engineer_dispatch');
 
-  // Engineer dispatch → conditional (feedback routing or normal flow)
+  // Engineer dispatch → conditional (feedback routing or Send API fan-out)
   workflow.addConditionalEdges(
     'engineer_dispatch',
     (state: ParallelDevStateType) => {
@@ -338,25 +221,72 @@ export function createUnifiedScrumWorkflowGraph() {
         return `feedback_${target}`;
       }
 
-      // Normal flow
+      // Send API fan-out: Create Send objects for each in-progress task
       const inProgressTasks = state.tasks.filter((t) => t.status === 'in_progress');
-      return inProgressTasks.length > 0 ? 'has_tasks' : 'no_tasks';
+
+      if (inProgressTasks.length === 0) {
+        console.log('[Graph] No tasks to execute, proceeding to sprint review');
+        return '__end__'; // Special marker for "no tasks" case
+      }
+
+      console.log(`[Graph] 📤 Fan-out: Sending ${inProgressTasks.length} tasks to parallel engineer nodes`);
+      for (const task of inProgressTasks) {
+        console.log(`   - [${task.id}] ${task.title}`);
+      }
+
+      // Return array of Send objects (fan-out)
+      return inProgressTasks.map(task =>
+        new Send('engineer', { ...state, currentTaskId: task.id })
+      );
     },
     {
-      has_tasks: 'engineer',
-      no_tasks: 'sprint_review',
+      // Normal routes
+      __end__: 'sprint_review',
       // Feedback routes
       feedback_product_owner: 'product_owner',
       feedback_engineer_dispatch: 'engineer_dispatch',
     }
   );
 
-  // Engineer → review
-  workflow.addEdge('engineer', 'review');
+  // Engineer → engineer_aggregator (fan-in)
+  workflow.addEdge('engineer', 'engineer_aggregator');
 
-  // Review → conditional (dynamic task pooling)
+  // Engineer aggregator → conditional (Send API fan-out for review)
   workflow.addConditionalEdges(
-    'review',
+    'engineer_aggregator',
+    (state: ParallelDevStateType) => {
+      // Get tasks ready for review (in_review status, not yet reviewed)
+      const tasksToReview = state.tasks.filter(t =>
+        t.status === 'in_review' &&
+        !state.reviews.some(r => r.taskId === t.id)
+      );
+
+      if (tasksToReview.length === 0) {
+        console.log('[Graph] No tasks to review, proceeding to merge');
+        return '__end__'; // Special marker for "no tasks" case
+      }
+
+      console.log(`[Graph] 📤 Fan-out: Sending ${tasksToReview.length} tasks to parallel review nodes`);
+      for (const task of tasksToReview) {
+        console.log(`   - [${task.id}] ${task.title}`);
+      }
+
+      // Return array of Send objects (fan-out)
+      return tasksToReview.map(task =>
+        new Send('review', { ...state, currentTaskId: task.id })
+      );
+    },
+    {
+      __end__: 'merge_coordinator',
+    }
+  );
+
+  // Review → review_aggregator (fan-in)
+  workflow.addEdge('review', 'review_aggregator');
+
+  // Review aggregator → conditional (dynamic task pooling)
+  workflow.addConditionalEdges(
+    'review_aggregator',
     (state: ParallelDevStateType) => {
       // 🔄 Dynamic Task Pooling: Check for ready tasks and available slots
       const readyTasks = state.tasks.filter(t =>

@@ -601,6 +601,21 @@ export const ParallelDevState = Annotation.Root({
     },
     default: () => 10,
   }),
+
+  /**
+   * Current Task ID (for parallel execution with Send API)
+   *
+   * This field is used when a node is executed in parallel via Send API.
+   * Each parallel node instance receives a specific task ID to process.
+   *
+   * Reducer: Replace (default)
+   */
+  currentTaskId: Annotation<string | null>({
+    reducer: (state: string | null, update: string | null) => {
+      return update ?? state;
+    },
+    default: () => null,
+  }),
 });
 
 /**
@@ -681,6 +696,8 @@ export function createInitialState(
     feedbackHistory: [],
     nodeRetryCounters: {},
     maxGlobalRetries: 10,
+    // Send API fields
+    currentTaskId: null,
   };
 }
 

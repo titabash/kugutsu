@@ -59,7 +59,7 @@ export class ClaudeAgentProvider implements IAIProvider {
     options: ExecuteOptions = {}
   ): AsyncIterable<AIMessage> {
     const {
-      maxTurns = 30,
+      maxTurns = 50,
       cwd = process.cwd(),
       allowedTools,
       disallowedTools,

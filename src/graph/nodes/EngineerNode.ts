@@ -528,9 +528,23 @@ ${dependenciesSection}
         // ここでエラーを検出して例外をスローすることで、RetryManagerが正しく動作する
         if (handler.getHasError()) {
           const details = handler.getErrorDetails();
-          const errorMsg = details?.subtype === 'error_max_turns'
-            ? `AI実行がmaxTurns制限に到達しました: ${details?.message || '詳細不明'}`
-            : `AI実行中にエラーが発生しました: ${details?.message || '詳細不明'}`;
+
+          // エラーメッセージの構築（より詳細な情報を含める）
+          let errorMsg: string;
+          if (details?.message) {
+            // MessageHandler が正しく errors 配列を解析できた場合
+            errorMsg = details.subtype === 'error_max_turns'
+              ? `AI実行がmaxTurns制限に到達しました: ${details.message}`
+              : `AI実行中にエラーが発生しました: ${details.message}`;
+          } else if (details?.errors && details.errors.length > 0) {
+            // errors 配列が直接利用可能な場合
+            errorMsg = `AI実行中にエラーが発生しました: ${details.errors.join('; ')}`;
+          } else {
+            // フォールバック: サブタイプのみ
+            errorMsg = `AI実行中にエラーが発生しました (subtype: ${details?.subtype || 'unknown'})`;
+            console.warn(`⚠️  エラー詳細が取得できませんでした。ErrorDetails:`, JSON.stringify(details, null, 2));
+          }
+
           throw new Error(errorMsg);
         }
 
@@ -555,7 +569,13 @@ ${dependenciesSection}
       // タスクをfailedに遷移
       const task = tasks.find((t) => t.id === taskId);
       if (task) {
-        const failedTask = TaskStateMachine.transition(task, 'failed');
+        // ⚠️ 重要: TaskStateMachine の警告を回避するため、遷移前に error を設定
+        const taskWithError: Task = {
+          ...task,
+          error: executionResult.error || new Error(`AI実行失敗 (分類: ${classifiedError.severity})`),
+        };
+
+        const failedTask = TaskStateMachine.transition(taskWithError, 'failed');
 
         // tasks.jsonを更新 using AI
         await AIFileWriter.updateTaskInTasksJson(

@@ -131,7 +131,7 @@ export class PrerequisiteChecker {
     } catch (error) {
       return {
         success: false,
-        responsibleNode: 'task_breakdown',
+        responsibleNode: 'instruction_generator',
         error: `instruction.md が見つかりません: ${instructionPath}`,
         missingFiles: [instructionPath],
       };

@@ -175,12 +175,12 @@ export async function techLeadDesignNode(
   const designDocsPrompt = buildDesignDocsPrompt(storyMapping, designDocsPath);
 
   const handler1 = new MessageHandler({
-    maxTurns: config.maxTurns || 30,
+    maxTurns: config.maxTurns || 50,
     nodeName: 'TechLeadDesign - Design Docs',
   });
 
   for await (const message of provider.execute(designDocsPrompt, {
-    maxTurns: config.maxTurns || 30,
+    maxTurns: config.maxTurns || 50,
     cwd: config.baseRepoPath,
     allowedTools: ['Write', 'Read', 'Glob'],
     permissionMode: 'acceptEdits',
@@ -198,12 +198,12 @@ export async function techLeadDesignNode(
   const uiuxPrompt = buildUIUXDesignPrompt(storyMapping, screensJsonPath, wireframesMdPath);
 
   const handler2 = new MessageHandler({
-    maxTurns: config.maxTurns || 30,
+    maxTurns: config.maxTurns || 50,
     nodeName: 'TechLeadDesign - UI/UX Design',
   });
 
   for await (const message of provider.execute(uiuxPrompt, {
-    maxTurns: config.maxTurns || 30,
+    maxTurns: config.maxTurns || 50,
     cwd: config.baseRepoPath,
     allowedTools: ['Write'],
     permissionMode: 'acceptEdits',
@@ -222,12 +222,12 @@ export async function techLeadDesignNode(
   const dbPrompt = buildDatabaseDesignPrompt(storyMapping, schemaJsonPath, erDiagramMdPath);
 
   const handler3 = new MessageHandler({
-    maxTurns: config.maxTurns || 30,
+    maxTurns: config.maxTurns || 50,
     nodeName: 'TechLeadDesign - Database Design',
   });
 
   for await (const message of provider.execute(dbPrompt, {
-    maxTurns: config.maxTurns || 30,
+    maxTurns: config.maxTurns || 50,
     cwd: config.baseRepoPath,
     allowedTools: ['Write'],
     permissionMode: 'acceptEdits',
@@ -255,12 +255,12 @@ export async function techLeadDesignNode(
   const apiPrompt = buildAPIDesignPrompt(storyMapping, dbSchema, apiSpecJsonPath, apiSpecMdPath);
 
   const handler4 = new MessageHandler({
-    maxTurns: config.maxTurns || 30,
+    maxTurns: config.maxTurns || 50,
     nodeName: 'TechLeadDesign - API Design',
   });
 
   for await (const message of provider.execute(apiPrompt, {
-    maxTurns: config.maxTurns || 30,
+    maxTurns: config.maxTurns || 50,
     cwd: config.baseRepoPath,
     allowedTools: ['Write'],
     permissionMode: 'acceptEdits',

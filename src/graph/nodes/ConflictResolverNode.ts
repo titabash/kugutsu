@@ -31,7 +31,7 @@ export async function conflictResolverNode(
   state: ParallelDevStateType
 ): Promise<ParallelDevStateUpdate> {
   const { config, tasksPath } = state;
-  const maxTurns = config.maxTurns || 30;
+  const maxTurns = config.maxTurns || 50;
 
   console.log('🔧 Conflict Resolver: コンフリクトを解消しています...');
 

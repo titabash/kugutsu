@@ -142,7 +142,7 @@ ${JSON.stringify(feedback.details, null, 2)}
       console.log('⚠️ 技術スタック情報が見つかりません（CheckModeNodeで初期化されます）');
     }
 
-    const maxTurns = config.maxTurns || 30;
+    const maxTurns = config.maxTurns || 50;
 
     // Phase 2: Requirements Analysis
     // Use relative path from baseRepoPath for AI prompts
@@ -209,9 +209,20 @@ MECE原則（漏れなく、重複なく）に基づいて要求を分析し、�
         // エラーチェック（Claude Agent SDK仕様準拠）
         if (handler.getHasError()) {
           const details = handler.getErrorDetails();
-          const errorMsg = details?.subtype === 'error_max_turns'
-            ? `AI実行がmaxTurns制限に到達しました: ${details?.message || '詳細不明'}`
-            : `AI実行中にエラーが発生しました: ${details?.message || '詳細不明'}`;
+
+          // エラーメッセージの構築
+          let errorMsg: string;
+          if (details?.message) {
+            errorMsg = details.subtype === 'error_max_turns'
+              ? `AI実行がmaxTurns制限に到達しました: ${details.message}`
+              : `AI実行中にエラーが発生しました: ${details.message}`;
+          } else if (details?.errors && details.errors.length > 0) {
+            errorMsg = `AI実行中にエラーが発生しました: ${details.errors.join('; ')}`;
+          } else {
+            errorMsg = `AI実行中にエラーが発生しました (subtype: ${details?.subtype || 'unknown'})`;
+            console.warn(`⚠️  エラー詳細が取得できませんでした。ErrorDetails:`, JSON.stringify(details, null, 2));
+          }
+
           throw new Error(errorMsg);
         }
 
@@ -338,9 +349,20 @@ ${userRequest}
         // エラーチェック（Claude Agent SDK仕様準拠）
         if (handler.getHasError()) {
           const details = handler.getErrorDetails();
-          const errorMsg = details?.subtype === 'error_max_turns'
-            ? `AI実行がmaxTurns制限に到達しました: ${details?.message || '詳細不明'}`
-            : `AI実行中にエラーが発生しました: ${details?.message || '詳細不明'}`;
+
+          // エラーメッセージの構築
+          let errorMsg: string;
+          if (details?.message) {
+            errorMsg = details.subtype === 'error_max_turns'
+              ? `AI実行がmaxTurns制限に到達しました: ${details.message}`
+              : `AI実行中にエラーが発生しました: ${details.message}`;
+          } else if (details?.errors && details.errors.length > 0) {
+            errorMsg = `AI実行中にエラーが発生しました: ${details.errors.join('; ')}`;
+          } else {
+            errorMsg = `AI実行中にエラーが発生しました (subtype: ${details?.subtype || 'unknown'})`;
+            console.warn(`⚠️  エラー詳細が取得できませんでした。ErrorDetails:`, JSON.stringify(details, null, 2));
+          }
+
           throw new Error(errorMsg);
         }
 

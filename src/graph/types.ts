@@ -121,9 +121,9 @@ export interface Task {
   updatedAt?: Date;
 
   /**
-   * Error message if task failed
+   * Error message or Error object if task failed
    */
-  error?: string;
+  error?: string | Error;
 }
 
 /**

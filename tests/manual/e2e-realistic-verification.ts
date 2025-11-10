@@ -317,21 +317,26 @@ Please implement with proper TypeScript types and basic error handling.
       console.log('   Set KEEP_TEST_WORKSPACE=0 to enable auto-cleanup');
     } else {
       try {
-        // ディレクトリ内の生成ファイルのみ削除（.gitkeepは保持）
-        const entries = await fs.readdir(testDir);
-
-        for (const entry of entries) {
-          // .gitkeepは残す
-          if (entry === '.gitkeep') {
-            continue;
-          }
-
-          const fullPath = path.join(testDir, entry);
-          await fs.rm(fullPath, { recursive: true, force: true });
+        // Git worktree メタデータをクリーンアップ（test-e2e-realistic 内の .git/worktrees）
+        const { execSync } = await import('child_process');
+        try {
+          execSync('git worktree prune', { cwd: testDir, stdio: 'pipe' });
+          console.log(`\n🧹 Git worktree メタデータをクリーンアップしました`);
+        } catch (pruneError) {
+          // Ignore prune errors
         }
 
-        console.log(`\n🗑️  Test workspace cleaned up: ${testDir}`);
-        console.log('   (Directory structure preserved with .gitkeep)');
+        // worktreesディレクトリのみ削除（リポジトリ本体は保持）
+        const worktreesPath = path.join(testDir, 'worktrees');
+        try {
+          await fs.rm(worktreesPath, { recursive: true, force: true });
+          console.log(`🗑️  Worktrees cleaned up: ${worktreesPath}`);
+        } catch (rmError) {
+          // worktreesディレクトリが存在しない場合は無視
+        }
+
+        console.log(`✅ Repository preserved: ${testDir}`);
+        console.log('   (Only worktrees directory removed)');
       } catch (cleanupError) {
         console.warn(`\n⚠️  Cleanup warning: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`);
         console.log(`   You may need to manually clean: ${testDir}`);

@@ -31,7 +31,7 @@ export async function sprintReviewNode(
   state: ParallelDevStateType
 ): Promise<ParallelDevStateUpdate> {
   const { activeSprint, globalTasks, config } = state;
-  const maxTurns = config.maxTurns || 30;
+  const maxTurns = config.maxTurns || 50;
 
   console.log('🔍 SprintReview: スプリント完了確認中...');
 

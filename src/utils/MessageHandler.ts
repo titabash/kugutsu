@@ -39,14 +39,19 @@ export interface MessageHandlerOptions {
  */
 export interface ErrorDetails {
   /**
-   * エラーサブタイプ（error_max_turns | error_during_execution）
+   * エラーサブタイプ（error_max_turns | error_during_execution | error_max_budget_usd）
    */
   subtype?: string;
 
   /**
-   * エラーメッセージ
+   * エラーメッセージ（複数のエラーメッセージを結合したもの）
    */
   message?: string;
+
+  /**
+   * エラーメッセージ配列（Claude Agent SDK の生の errors フィールド）
+   */
+  errors?: string[];
 }
 
 /**
@@ -122,9 +127,17 @@ export class MessageHandler {
         // resultメッセージでエラーを検出（Claude Agent SDK仕様準拠）
         if (message.content && !message.content.success) {
           this.hasError = true;
+
+          // Claude Agent SDK の errors フィールド（配列）から取得
+          const errors = message.content.errors || [];
+          const errorMessage = errors.length > 0
+            ? errors.join('; ')
+            : `エラーが発生しました (subtype: ${message.content.subtype})`;
+
           this.errorDetails = {
             subtype: message.content.subtype,
-            message: message.content.error,
+            message: errorMessage,
+            errors: errors,
           };
         }
         break;
@@ -287,8 +300,12 @@ export class MessageHandler {
       }
     } else {
       console.log(`❌ ${this.options.nodeName} 失敗`);
-      if (message.content?.error) {
-        console.error(`   エラー: ${message.content.error}`);
+      // Claude Agent SDK の errors フィールド（配列）から表示
+      const errors = message.content?.errors || [];
+      if (errors.length > 0) {
+        console.error(`   エラー: ${errors.join('; ')}`);
+      } else if (message.content?.subtype) {
+        console.error(`   エラーサブタイプ: ${message.content.subtype}`);
       }
     }
 

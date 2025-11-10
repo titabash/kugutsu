@@ -125,8 +125,18 @@ export class TaskStateMachine {
         // エラー情報が設定されていることを確認
         if (!updatedTask.error) {
           console.warn(
-            `Warning: Task ${task.id} transitioning to failed without error message`
+            `⚠️  Warning: Task ${task.id} transitioning to failed without error message. Setting default error.`
           );
+          console.warn(`   Task details:`, JSON.stringify({
+            id: task.id,
+            title: task.title,
+            status: task.status,
+            worktreePath: task.worktreePath,
+            sessionId: task.sessionId,
+          }, null, 2));
+
+          // デフォルトのエラーを設定（エラー情報の欠落を防ぐ）
+          updatedTask.error = new Error('タスク実行中にエラーが発生しましたが、詳細情報が取得できませんでした');
         }
         break;
 

@@ -4,11 +4,14 @@
  * スプリントスコープのタスクについて並列でinstruction.mdを生成するノード
  */
 
+import * as fs from 'fs';
+import * as path from 'path';
 import type { ParallelDevStateType, ParallelDevStateUpdate } from '../state.js';
 import type { ParallelDevConfig, LogEntry } from '../types.js';
 import type { GlobalTask } from '../../types/index.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 import type { AIProviderConfig } from '../../providers/IAIProvider.js';
+import { MessageHandler } from '../../utils/MessageHandler.js';
 
 /**
  * Wrapper Node: スプリントスコープのタスクについて並列でinstruction.md生成
@@ -48,12 +51,20 @@ export async function instructionGeneratorNode(
 
   console.log(`📝 ${sprintTasks.length}個のタスクのinstruction.mdを並列生成中...`);
 
-  // 並列実行（Promise.allSettled）
-  const results = await Promise.allSettled(
-    sprintTasks.map(task =>
-      generateInstructionForTask(state, task, state.config)
-    )
-  );
+  // 並列処理の同時実行数制限（競合を防ぐため）
+  const BATCH_SIZE = 3; // 同時に3タスクまで実行
+  const results: PromiseSettledResult<void>[] = [];
+
+  for (let i = 0; i < sprintTasks.length; i += BATCH_SIZE) {
+    const batch = sprintTasks.slice(i, i + BATCH_SIZE);
+    console.log(`📦 バッチ ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(sprintTasks.length / BATCH_SIZE)}: ${batch.length}個のタスクを処理中...`);
+
+    const batchResults = await Promise.allSettled(
+      batch.map(task => generateInstructionForTask(state, task, state.config))
+    );
+
+    results.push(...batchResults);
+  }
 
   // 結果を集約
   const logs: LogEntry[] = [];
@@ -161,6 +172,13 @@ ${context}
   `.trim();
 
   // AI-First: AIがWriteツールで直接ファイル作成
+  const messageHandler = new MessageHandler({
+    maxTurns: config.maxTurns || 10,
+    nodeName: 'InstructionGenerator',
+    taskId: task.id,
+    verbose: false,
+  });
+
   for await (const message of provider.execute(prompt, {
     maxTurns: config.maxTurns || 10,
     cwd: config.baseRepoPath,
@@ -168,8 +186,28 @@ ${context}
     permissionMode: 'acceptEdits',
     includePartialMessages: true,
   })) {
-    // AIがWriteツールでファイル作成するため、コンテンツ収集は不要
+    // MessageHandlerでメッセージを処理
+    await messageHandler.handleMessage(message);
   }
+
+  // ファイル作成の検証
+  const fullInstructionPath = path.join(config.baseRepoPath, instructionPath);
+  const fileExists = fs.existsSync(fullInstructionPath);
+
+  if (!fileExists) {
+    const errorDetails = messageHandler.getErrorDetails();
+    const errorMessage = errorDetails
+      ? `AI実行エラー: ${errorDetails.message || errorDetails.subtype || 'Unknown error'}`
+      : 'AIがファイル作成をスキップした可能性があります';
+
+    throw new Error(
+      `instruction.md の作成に失敗しました (タスク: ${task.id})\n` +
+      `ファイルパス: ${instructionPath}\n` +
+      `詳細: ${errorMessage}`
+    );
+  }
+
+  console.log(`✅ Task ${task.id} のinstruction.md作成成功: ${instructionPath}`);
 }
 
 /**

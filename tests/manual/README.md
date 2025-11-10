@@ -220,14 +220,23 @@ claude auth status
 
 ### 自動クリーンアップ（デフォルト）
 
-通常実行では、テスト完了後に自動的にワークスペースが削除されます:
+通常実行では、テスト完了後にワークツリーのみが削除され、リポジトリ本体は保持されます:
 
 ```bash
 npm run verify:e2e-minimal
 
 # 実行後
-🗑️  Test workspace cleaned up: ./test-e2e-minimal
+🧹 Git worktree メタデータをクリーンアップしました
+🗑️  Worktrees cleaned up: ./test-e2e-minimal/worktrees
+✅ Repository preserved: ./test-e2e-minimal
+   (Only worktrees directory removed)
 ```
+
+**クリーンアップ内容:**
+- ✅ `worktrees/` ディレクトリを削除
+- ✅ Git worktreeメタデータをクリーンアップ（`.git/worktrees/`）
+- ✅ リポジトリ本体（`.git/`）は保持
+- ✅ Next.jsアプリファイルは保持
 
 ### ワークスペースを保持（デバッグ用）
 
@@ -249,26 +258,25 @@ KEEP_TEST_WORKSPACE=1 npm run verify:e2e-minimal
 
 ### 手動クリーンアップ
 
-保持したワークスペース内の生成ファイルを削除する場合:
+テスト実行後に手動でファイルを削除したい場合:
 
 ```bash
-# test-e2e-minimal内の生成ファイルを削除（.gitkeepは保持）
+# worktreesディレクトリのみ削除
+rm -rf test-e2e-minimal/worktrees
+rm -rf test-e2e-realistic/worktrees
+
+# リポジトリ全体を削除したい場合（リセット）
+rm -rf test-e2e-minimal/.git test-e2e-minimal/.kugutsu test-e2e-minimal/worktrees
+rm -rf test-e2e-realistic/.git test-e2e-realistic/.kugutsu test-e2e-realistic/worktrees
+
+# Next.jsアプリファイルも含めて完全にクリーンアップ
 cd test-e2e-minimal
-rm -rf .git .kugutsu worktrees README.md package.json src tests
+find . -mindepth 1 ! -name '.gitkeep' -delete
 cd ..
 
-# test-e2e-realistic内の生成ファイルを削除（.gitkeepは保持）
 cd test-e2e-realistic
-rm -rf .git .kugutsu worktrees README.md package.json src tests
+find . -mindepth 1 ! -name '.gitkeep' -delete
 cd ..
-```
-
-または、より簡単に:
-
-```bash
-# すべてのファイルを削除（.gitkeepのみ残す）
-find test-e2e-minimal -mindepth 1 ! -name '.gitkeep' -delete
-find test-e2e-realistic -mindepth 1 ! -name '.gitkeep' -delete
 ```
 
 ---

@@ -94,7 +94,7 @@ async function runE2EMinimalVerification() {
     // 初期状態作成
     const initialState = createInitialState(taskRequest, {
       maxEngineers: 5,
-      maxTurns: 30,
+      maxTurns: 50,
       baseBranch: 'main',
       baseRepoPath: testDir,
       worktreeBasePath: path.join(testDir, 'worktrees'),
@@ -103,7 +103,7 @@ async function runE2EMinimalVerification() {
 
     console.log('🔧 Configuration:');
     console.log(`  - Max Engineers: 5`);
-    console.log(`  - Max Turns: 30`);
+    console.log(`  - Max Turns: 50`);
     console.log(`  - Base Repo: ${testDir}`);
     console.log(`  - Provider: claude (logged-in session)`);
     console.log('');
@@ -265,21 +265,17 @@ async function runE2EMinimalVerification() {
           // Ignore prune errors
         }
 
-        // ディレクトリ内の生成ファイルのみ削除（.gitkeepは保持）
-        const entries = await fs.readdir(testDir);
-
-        for (const entry of entries) {
-          // .gitkeepは残す
-          if (entry === '.gitkeep') {
-            continue;
-          }
-
-          const fullPath = path.join(testDir, entry);
-          await fs.rm(fullPath, { recursive: true, force: true });
+        // worktreesディレクトリのみ削除（リポジトリ本体は保持）
+        const worktreesPath = path.join(testDir, 'worktrees');
+        try {
+          await fs.rm(worktreesPath, { recursive: true, force: true });
+          console.log(`🗑️  Worktrees cleaned up: ${worktreesPath}`);
+        } catch (rmError) {
+          // worktreesディレクトリが存在しない場合は無視
         }
 
-        console.log(`🗑️  Test workspace cleaned up: ${testDir}`);
-        console.log('   (Directory structure preserved with .gitkeep)');
+        console.log(`✅ Repository preserved: ${testDir}`);
+        console.log('   (Only worktrees directory removed)');
       } catch (cleanupError) {
         console.warn(`\n⚠️  Cleanup warning: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`);
         console.log(`   You may need to manually clean: ${testDir}`);

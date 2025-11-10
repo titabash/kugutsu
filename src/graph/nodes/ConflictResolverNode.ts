@@ -115,8 +115,41 @@ export async function conflictResolverNode(
     const provider = AIProviderFactory.create(providerConfig);
 
     const logs: any[] = [];
+    const MAX_CONFLICT_RESOLVER_ATTEMPTS = 3; // 最大再試行回数
 
     for (const task of tasksToResolve) {
+      // 再試行回数のチェック（デフォルト: 0）
+      const attemptCount = task.conflictResolverAttemptCount || 0;
+      if (attemptCount >= MAX_CONFLICT_RESOLVER_ATTEMPTS) {
+        console.log(`❌ タスク ${task.id} をスキップ（再試行上限 ${MAX_CONFLICT_RESOLVER_ATTEMPTS}回 に到達）`);
+
+        // タスクを failed に変更
+        await AIFileWriter.updateTaskInTasksJson(
+          provider,
+          tasksPath || '.kugutsu/tasks.json',
+          task.id,
+          {
+            status: 'failed',
+            updatedAt: new Date().toISOString(),
+          },
+          config.baseRepoPath
+        );
+
+        logs.push({
+          timestamp: new Date(),
+          level: 'error',
+          source: 'ConflictResolverNode',
+          message: `タスク ${task.id} を失敗に変更（再試行上限 ${MAX_CONFLICT_RESOLVER_ATTEMPTS}回）`,
+          data: {
+            taskId: task.id,
+            reason: 'max_attempts_reached',
+            attemptCount,
+          },
+          taskId: task.id,
+        });
+        continue;
+      }
+
       if (!task.branchName) {
         console.log(`⏭️ タスク ${task.id} をスキップ（ブランチ情報なし）`);
         logs.push({
@@ -217,14 +250,19 @@ ${config.worktreeBasePath}/${task.id}
         console.log(`📝 conflicts.json を更新しました (resolved): ${task.id}`);
 
         // Update tasks.json - change status back to 'reviewed' for re-merge using AI
+        // 再試行回数をインクリメント
         const taskToUpdate = tasks.find((t) => t.id === task.id);
         if (taskToUpdate) {
+          const newAttemptCount = (task.conflictResolverAttemptCount || 0) + 1;
+          console.log(`🔄 再試行回数を更新: ${task.id} (${newAttemptCount}/${MAX_CONFLICT_RESOLVER_ATTEMPTS}回)`);
+
           await AIFileWriter.updateTaskInTasksJson(
             provider,
             tasksPath || '.kugutsu/tasks.json',
             task.id,
             {
               status: 'reviewed',
+              conflictResolverAttemptCount: newAttemptCount,
               updatedAt: new Date().toISOString(),
             },
             config.baseRepoPath
@@ -245,6 +283,33 @@ ${config.worktreeBasePath}/${task.id}
       } catch (error) {
         console.error(`❌ コンフリクト解消エラー: ${task.id}`, error);
 
+        // エラー時も再試行回数をインクリメント
+        const newAttemptCount = (task.conflictResolverAttemptCount || 0) + 1;
+        console.log(`🔄 再試行回数を更新（エラー）: ${task.id} (${newAttemptCount}/${MAX_CONFLICT_RESOLVER_ATTEMPTS}回)`);
+
+        // 上限に達した場合は failed に設定
+        const newStatus = newAttemptCount >= MAX_CONFLICT_RESOLVER_ATTEMPTS ? 'failed' : 'conflict_detected';
+
+        try {
+          await AIFileWriter.updateTaskInTasksJson(
+            provider,
+            tasksPath || '.kugutsu/tasks.json',
+            task.id,
+            {
+              status: newStatus,
+              conflictResolverAttemptCount: newAttemptCount,
+              updatedAt: new Date().toISOString(),
+            },
+            config.baseRepoPath
+          );
+
+          if (newStatus === 'failed') {
+            console.log(`❌ タスク ${task.id} を失敗に変更（再試行上限到達）`);
+          }
+        } catch (updateError) {
+          console.error(`❌ tasks.json の更新に失敗: ${task.id}`, updateError);
+        }
+
         logs.push({
           timestamp: new Date(),
           level: 'error',
@@ -253,6 +318,8 @@ ${config.worktreeBasePath}/${task.id}
           data: {
             taskId: task.id,
             error,
+            attemptCount: newAttemptCount,
+            newStatus,
           },
           taskId: task.id,
         });

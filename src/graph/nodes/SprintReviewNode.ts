@@ -315,33 +315,45 @@ JSON形式で以下を出力してください：
 export function sprintReviewRouter(state: ParallelDevStateType): string {
   // アクティブスプリントがない場合の処理
   if (!state.activeSprint) {
-    // 全グローバルタスク完了チェック
-    const allTasksCompleted = state.globalTasks.every(
-      (task) => task.status === 'completed' || task.status === 'failed'
+    // 未割り当てタスクがあるかチェック
+    const remainingTasks = state.globalTasks.filter(
+      (task) =>
+        !task.sprint &&
+        task.status !== 'completed' &&
+        task.status !== 'failed'
     );
 
-    if (allTasksCompleted) {
-      console.log('➡️ ルーティング: END (全タスク完了)');
-      return 'END';
+    if (remainingTasks.length > 0) {
+      console.log(`➡️ ルーティング: sprint_planning (未割り当てタスク: ${remainingTasks.length}件)`);
+      return 'sprint_planning';
     }
 
-    console.log('➡️ ルーティング: sprint_planning (次スプリント計画)');
-    return 'sprint_planning';
+    console.log('➡️ ルーティング: END (全タスク完了)');
+    return 'END';
   }
 
   // アクティブスプリントが完了済みの場合
   if (state.activeSprint.status === 'completed') {
-    console.log('➡️ ルーティング: sprint_planning (次スプリント計画)');
-    return 'sprint_planning';
+    // 未割り当てタスクがあるかチェック
+    const remainingTasks = state.globalTasks.filter(
+      (task) =>
+        !task.sprint &&
+        task.status !== 'completed' &&
+        task.status !== 'failed'
+    );
+
+    if (remainingTasks.length > 0) {
+      console.log(`➡️ ルーティング: sprint_planning (次スプリント計画、残タスク: ${remainingTasks.length}件)`);
+      return 'sprint_planning';
+    }
+
+    console.log('➡️ ルーティング: END (全タスク完了)');
+    return 'END';
   }
 
   // アクティブスプリント内のタスクのみをチェック
   const sprintTasks = state.globalTasks.filter((task) =>
     state.activeSprint!.taskIds.includes(task.id)
-  );
-
-  const completedOrFailedTasks = sprintTasks.filter(
-    (task) => task.status === 'completed' || task.status === 'failed'
   );
 
   const incompleteTasks = sprintTasks.filter(
@@ -351,27 +363,16 @@ export function sprintReviewRouter(state: ParallelDevStateType): string {
   );
 
   console.log(`[SprintReviewRouter] スプリントタスク: ${sprintTasks.length}件`);
-  console.log(`[SprintReviewRouter] 完了/失敗: ${completedOrFailedTasks.length}件`);
   console.log(`[SprintReviewRouter] 未完了: ${incompleteTasks.length}件`);
 
-  // スプリント内の全タスクが完了または失敗している場合
-  if (incompleteTasks.length === 0) {
-    // 全グローバルタスクも確認
-    const allGlobalTasksCompleted = state.globalTasks.every(
-      (task) => task.status === 'completed' || task.status === 'failed'
-    );
-
-    if (allGlobalTasksCompleted) {
-      console.log('➡️ ルーティング: END (全タスク完了)');
-      return 'END';
-    }
-
-    // スプリント外に未割り当てタスクが残っている場合
-    console.log('➡️ ルーティング: sprint_planning (次スプリント計画)');
-    return 'sprint_planning';
+  // スプリント内に未完了タスクがある場合、スプリント継続
+  if (incompleteTasks.length > 0) {
+    console.log('➡️ ルーティング: engineer_dispatch (スプリント継続)');
+    return 'engineer_dispatch';
   }
 
-  // 未完了タスクがある場合、スプリント継続
-  console.log('➡️ ルーティング: engineer_dispatch (スプリント継続)');
-  return 'engineer_dispatch';
+  // スプリント内の全タスク完了 → SprintReviewNode が状態を更新する
+  // 次の呼び出しで activeSprint がクリアされるため、ここでは sprint_planning にルーティング
+  console.log('➡️ ルーティング: sprint_planning (スプリント完了、次スプリント検討)');
+  return 'sprint_planning';
 }

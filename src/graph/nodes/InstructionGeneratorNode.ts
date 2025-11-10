@@ -51,13 +51,13 @@ export async function instructionGeneratorNode(
 
   console.log(`📝 ${sprintTasks.length}個のタスクのinstruction.mdを並列生成中...`);
 
-  // 並列処理の同時実行数制限（競合を防ぐため）
-  const BATCH_SIZE = 3; // 同時に3タスクまで実行
+  // 並列処理の同時実行数制限（maxEngineersを使用）
+  const BATCH_SIZE = state.config.maxEngineers || 3; // maxEngineersと同じ制限（デフォルト: 3）
   const results: PromiseSettledResult<void>[] = [];
 
   for (let i = 0; i < sprintTasks.length; i += BATCH_SIZE) {
     const batch = sprintTasks.slice(i, i + BATCH_SIZE);
-    console.log(`📦 バッチ ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(sprintTasks.length / BATCH_SIZE)}: ${batch.length}個のタスクを処理中...`);
+    console.log(`📦 バッチ ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(sprintTasks.length / BATCH_SIZE)}: ${batch.length}個のタスクを処理中... (maxEngineers: ${BATCH_SIZE})`);
 
     const batchResults = await Promise.allSettled(
       batch.map(task => generateInstructionForTask(state, task, state.config))
@@ -96,7 +96,16 @@ export async function instructionGeneratorNode(
 
   console.log(`✅ ${successCount}個成功、❌ ${failureCount}個失敗`);
 
+  // スプリント状態を 'active' に更新（無限ループ防止）
+  // 'planning' → 'active' に遷移（instruction.md生成完了、実装開始可能）
+  const updatedSprint = {
+    ...state.activeSprint,
+    status: 'active' as const,
+    startedAt: state.activeSprint.startedAt || new Date(),
+  };
+
   return {
+    activeSprint: updatedSprint,
     logs,
   };
 }

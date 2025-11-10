@@ -9,6 +9,7 @@ import { ParallelDevState, type ParallelDevStateType } from './state.js';
 import { productOwnerNode } from './nodes/ProductOwnerNode.js';
 import { engineerDispatchNode } from './nodes/EngineerDispatchNode.js';
 import { engineerNode } from './nodes/EngineerNode.js';
+import { reviewDispatchNode } from './nodes/ReviewDispatchNode.js';
 import { reviewNode } from './nodes/ReviewNode.js';
 import { mergeCoordinatorNode } from './nodes/MergeCoordinatorNode.js';
 import { conflictResolverNode } from './nodes/ConflictResolverNode.js';
@@ -104,6 +105,11 @@ export function createUnifiedScrumWorkflowGraph() {
     })
 
     // ================================================
+    // Review Dispatch: Manage review task distribution (respects maxEngineers)
+    // ================================================
+    .addNode('review_dispatch', reviewDispatchNode)
+
+    // ================================================
     // Review Node: Individual Task Review (Send API Compatible)
     // ================================================
     .addNode('review', reviewNode)
@@ -169,9 +175,14 @@ export function createUnifiedScrumWorkflowGraph() {
   workflow.addConditionalEdges(
     'review_story_mapping',
     (state: ParallelDevStateType) => {
-      // Check if story mapping was approved or needs revision
-      // For now, default to approved (future: implement approval logic)
-      return 'approved';
+      // ストーリーマッピングの承認状態をチェック
+      if (state.storyMappingApproved === true) {
+        console.log('➡️ ルーティング: tech_lead_design (ストーリーマッピング承認)');
+        return 'approved';
+      } else {
+        console.log('➡️ ルーティング: director_ai (ストーリーマッピング修正必要)');
+        return 'revision_needed';
+      }
     },
     {
       approved: 'tech_lead_design',
@@ -184,9 +195,14 @@ export function createUnifiedScrumWorkflowGraph() {
   workflow.addConditionalEdges(
     'review_design',
     (state: ParallelDevStateType) => {
-      // Check if design was approved or needs revision
-      // For now, default to approved (future: implement approval logic)
-      return 'approved';
+      // 設計書の承認状態をチェック
+      if (state.designApproved === true) {
+        console.log('➡️ ルーティング: task_breakdown (設計書承認)');
+        return 'approved';
+      } else {
+        console.log('➡️ ルーティング: tech_lead_design (設計書修正必要)');
+        return 'revision_needed';
+      }
     },
     {
       approved: 'task_breakdown',
@@ -245,15 +261,20 @@ export function createUnifiedScrumWorkflowGraph() {
       // Feedback routes
       feedback_product_owner: 'product_owner',
       feedback_engineer_dispatch: 'engineer_dispatch',
+      // Send destination
+      engineer: 'engineer',
     }
   );
 
   // Engineer → engineer_aggregator (fan-in)
   workflow.addEdge('engineer', 'engineer_aggregator');
 
-  // Engineer aggregator → conditional (Send API fan-out for review)
+  // Engineer aggregator → review_dispatch (manages review distribution)
+  workflow.addEdge('engineer_aggregator', 'review_dispatch');
+
+  // Review dispatch → conditional (Send API fan-out for review with maxEngineers limit)
   workflow.addConditionalEdges(
-    'engineer_aggregator',
+    'review_dispatch',
     (state: ParallelDevStateType) => {
       // Get tasks ready for review (in_review status, not yet reviewed)
       const tasksToReview = state.tasks.filter(t =>
@@ -266,18 +287,23 @@ export function createUnifiedScrumWorkflowGraph() {
         return '__end__'; // Special marker for "no tasks" case
       }
 
-      console.log(`[Graph] 📤 Fan-out: Sending ${tasksToReview.length} tasks to parallel review nodes`);
-      for (const task of tasksToReview) {
+      // Apply maxEngineers limit (same as engineer dispatch)
+      const tasksToDispatch = tasksToReview.slice(0, state.config.maxEngineers);
+
+      console.log(`[Graph] 📤 Fan-out: Sending ${tasksToDispatch.length}/${tasksToReview.length} tasks to parallel review nodes (maxEngineers: ${state.config.maxEngineers})`);
+      for (const task of tasksToDispatch) {
         console.log(`   - [${task.id}] ${task.title}`);
       }
 
       // Return array of Send objects (fan-out)
-      return tasksToReview.map(task =>
+      return tasksToDispatch.map(task =>
         new Send('review', { ...state, currentTaskId: task.id })
       );
     },
     {
       __end__: 'merge_coordinator',
+      // Send destination
+      review: 'review',
     }
   );
 

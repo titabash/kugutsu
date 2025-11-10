@@ -112,6 +112,9 @@ export interface TaskArtifact {
 
   /** 実際の所要時間（分） */
   actualTime?: number;
+
+  /** コンフリクト解消の再試行回数（デフォルト: 0） */
+  conflictResolverAttemptCount?: number;
 }
 
 /**

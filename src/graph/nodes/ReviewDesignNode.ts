@@ -220,6 +220,7 @@ export async function reviewDesignNode(
   if (consolidatedResult.approved) {
     console.log('✅ 設計書承認 → タスク分解フェーズへ');
     return {
+      designApproved: true,
       logs: [
         {
           timestamp: new Date(),
@@ -237,6 +238,7 @@ export async function reviewDesignNode(
     });
 
     return {
+      designApproved: false,
       reviewFeedback: {
         issues: [
           ...consolidatedResult.criticalIssues,

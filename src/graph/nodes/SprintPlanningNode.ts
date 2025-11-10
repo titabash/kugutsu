@@ -61,8 +61,10 @@ export async function sprintPlanningNode(
     // ファイルが存在しない場合はnull
   }
 
-  if (existingActiveSprint && existingActiveSprint.status === 'active') {
-    console.log(`⚠️ 既にアクティブなスプリントが存在します: ${existingActiveSprint.name}`);
+  if (existingActiveSprint &&
+      (existingActiveSprint.status === 'planning' ||
+       existingActiveSprint.status === 'active')) {
+    console.log(`⚠️ 既にアクティブなスプリントが存在します: ${existingActiveSprint.name} (${existingActiveSprint.status})`);
     return {
       activeSprint: existingActiveSprint,
       logs: [
@@ -70,7 +72,7 @@ export async function sprintPlanningNode(
           timestamp: new Date(),
           level: 'info',
           source: 'sprint_planning',
-          message: `既存のアクティブスプリント: ${existingActiveSprint.name}`,
+          message: `既存のアクティブスプリント: ${existingActiveSprint.name} (${existingActiveSprint.status})`,
         },
       ],
     };
@@ -263,8 +265,8 @@ JSON形式で以下の構造で出力してください：
     return task;
   });
 
-  // スプリントを開始状態に変更
-  newSprint.status = 'active';
+  // スプリント状態は 'planning' のまま（instruction.md未生成）
+  // InstructionGenerator が完了後に 'active' に変更
   newSprint.startedAt = new Date();
 
   // active-sprint.jsonを保存（DataPersistence使用）
@@ -308,15 +310,29 @@ JSON形式で以下の構造で出力してください：
 /**
  * SprintPlanningNodeのルーティング関数
  *
- * アクティブなスプリントがある場合: instruction_generator
- * スプリントがない場合: END
+ * 'planning' 状態: instruction_generator（instruction.md未生成）
+ * 'active' 状態: sprint_review（instruction.md生成済み、継続）
+ * その他: END
  */
 export function sprintPlanningRouter(state: ParallelDevStateType): string {
-  if (state.activeSprint && state.activeSprint.status === 'active') {
-    console.log('➡️ ルーティング: instruction_generator (instruction.md生成)');
-    return 'instruction_generator';
-  } else {
+  if (!state.activeSprint) {
     console.log('➡️ ルーティング: END (スプリント計画なし)');
     return 'END';
   }
+
+  // 'planning' 状態（instruction.md未生成） → instruction_generator へ
+  if (state.activeSprint.status === 'planning') {
+    console.log('➡️ ルーティング: instruction_generator (instruction.md生成)');
+    return 'instruction_generator';
+  }
+
+  // 'active' 状態（instruction.md生成済み） → sprint_review へ
+  // 無限ループ防止: 既存スプリントがactiveの場合、instruction_generatorに戻さない
+  if (state.activeSprint.status === 'active') {
+    console.log('➡️ ルーティング: sprint_review (既存スプリント継続)');
+    return 'sprint_review';
+  }
+
+  console.log('➡️ ルーティング: END (スプリント完了または不明な状態)');
+  return 'END';
 }

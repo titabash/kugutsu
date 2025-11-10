@@ -522,6 +522,18 @@ export const ParallelDevState = Annotation.Root({
   }),
 
   /**
+   * Design approval status
+   *
+   * Reducer: Replace (default)
+   */
+  designApproved: Annotation<boolean | null>({
+    reducer: (state: boolean | null, update: boolean | null) => {
+      return update ?? state;
+    },
+    default: () => null,
+  }),
+
+  /**
    * Dependency graph
    *
    * Reducer: Replace (default)
@@ -687,6 +699,7 @@ export function createInitialState(
     currentProjectId: null,
     // Scrum Development Flow fields
     storyMappingApproved: null,
+    designApproved: null,
     reviewFeedback: null,
     storyMapping: null,
     designDocs: null,

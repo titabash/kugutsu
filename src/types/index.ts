@@ -28,6 +28,7 @@ export interface Task {
   // コンフリクト解消関連
   isConflictResolution?: boolean;
   originalTaskId?: string; // コンフリクト解消の場合、元のタスクID
+  conflictResolverAttemptCount?: number; // コンフリクト解消の再試行回数（デフォルト: 0）
   conflictContext?: {
     originalEngineerResult: EngineerResult;
     reviewHistory: ReviewResult[];
@@ -235,6 +236,9 @@ export interface GlobalTask {
   dynamicPriority: number;        // 動的優先度（0-1000）
   sprint?: string;                // 所属スプリントID
   storyId?: string;               // 関連するユーザーストーリーID
+
+  // コンフリクト解消関連
+  conflictResolverAttemptCount?: number; // コンフリクト解消の再試行回数（デフォルト: 0）
 }
 
 /**

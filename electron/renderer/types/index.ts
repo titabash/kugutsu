@@ -193,3 +193,66 @@ export interface DesignDocs {
     apiSpecJson?: any
   }
 }
+
+/**
+ * Sprint (スプリント駆動開発)
+ */
+export interface Sprint {
+  id: string                     // sprint-{uuid}
+  name: string                   // "Sprint 1: 認証機能実装"
+  goal: string                   // スプリントゴール
+  taskIds: string[]              // 含まれるタスクID
+  status: 'planning' | 'active' | 'review' | 'completed'
+  startedAt?: Date               // 開始日時
+  completedAt?: Date             // 完了日時
+  deployable: boolean            // デプロイ可能かどうか
+  metadata: {
+    estimatedHours: number       // 見積もり時間
+    actualHours?: number         // 実績時間
+    blockers: string[]           // ブロッカー情報
+    completedTasksCount: number  // 完了タスク数
+    failedTasksCount: number     // 失敗タスク数
+  }
+}
+
+/**
+ * GlobalTask (Product/Sprint Backlog管理用)
+ *
+ * グローバルタスクキューで管理される全プロジェクトのタスク
+ */
+export interface GlobalTask {
+  id: string
+  type: 'feature' | 'bugfix' | 'refactor' | 'test' | 'docs' | 'conflict-resolution'
+  title: string
+  description: string
+  priority: number               // 基礎優先度（0-100）
+  dependencies: string[]
+  status: 'pending' | 'in_progress' | 'in_review' | 'completed' | 'failed'
+  worktreePath?: string
+  branchName?: string
+  createdAt?: Date
+  updatedAt?: Date
+
+  // GlobalTask固有のフィールド
+  projectId: string              // プロジェクト識別子（uuid）
+  requestTimestamp: Date         // リクエスト受付時刻
+  dynamicPriority: number        // 動的優先度（0-1000）
+  sprint?: string                // 所属スプリントID
+  storyId?: string               // 関連するユーザーストーリーID
+
+  // コンフリクト解消関連
+  conflictResolverAttemptCount?: number
+
+  // instruction.md生成関連
+  instructionGenerated?: boolean     // instruction.md生成完了フラグ
+  instructionGenerating?: boolean    // instruction.md生成実行中フラグ
+  instructionError?: string          // instruction.md生成エラー
+  instructionGeneratedAt?: Date      // instruction.md生成完了時刻
+
+  // バックログリファインメント関連
+  estimatedHours?: number            // 見積もり時間（時間単位）
+  actualHours?: number               // 実績時間（時間単位）
+  estimatedPoints?: number           // 見積もりポイント（ストーリーポイント）
+  businessValue?: 'high' | 'medium' | 'low'  // ビジネス価値
+  technicalRisk?: 'high' | 'medium' | 'low'  // 技術的リスク
+}

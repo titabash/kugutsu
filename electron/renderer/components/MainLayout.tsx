@@ -1,4 +1,5 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { SprintViewer } from './SprintViewer'
 
 interface MainLayoutProps {
   leftPanel: React.ReactNode
@@ -14,7 +15,7 @@ export function MainLayout({ leftPanel, graphPanel, taskPanel }: MainLayoutProps
         {leftPanel}
       </div>
 
-      {/* Right Panel: Tabs (Graph / Tasks) */}
+      {/* Right Panel: Tabs (Graph / Tasks / Sprints) */}
       <div className="flex w-3/5 flex-col bg-muted/20">
         <Tabs defaultValue="tasks" className="flex h-full flex-col">
           <div className="border-b border-border bg-background">
@@ -31,6 +32,12 @@ export function MainLayout({ leftPanel, graphPanel, taskPanel }: MainLayoutProps
               >
                 📊 依存関係グラフ
               </TabsTrigger>
+              <TabsTrigger
+                value="sprints"
+                className="h-12 rounded-none border-b-2 border-transparent px-6 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+              >
+                🏃 スプリント
+              </TabsTrigger>
             </TabsList>
           </div>
 
@@ -40,6 +47,10 @@ export function MainLayout({ leftPanel, graphPanel, taskPanel }: MainLayoutProps
 
           <TabsContent value="graph" className="flex-1 overflow-hidden m-0">
             {graphPanel}
+          </TabsContent>
+
+          <TabsContent value="sprints" className="flex-1 overflow-hidden m-0 p-4">
+            <SprintViewer />
           </TabsContent>
         </Tabs>
       </div>

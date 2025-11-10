@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
-import type { Task, LogEntry, AppMetadata, DependencyGraph } from '../types'
+import type { Task, LogEntry, AppMetadata, DependencyGraph, Sprint, GlobalTask } from '../types'
 
 /**
  * Application state interface
@@ -30,6 +30,11 @@ interface AppState {
   }
   selectedTaskId: string | null
 
+  // Sprints (Sprint-Driven Development)
+  sprints: Sprint[]
+  currentSprint: Sprint | null
+  globalTasks: GlobalTask[]
+
   // Actions - Tasks
   setTasks: (tasks: Task[]) => void
   updateTask: (taskId: string, updates: Partial<Task>) => void
@@ -57,6 +62,28 @@ interface AppState {
   // Actions - Control
   pause: () => void
   resume: () => void
+
+  // Actions - Sprints
+  setSprints: (sprints: Sprint[]) => void
+  setCurrentSprint: (sprint: Sprint | null) => void
+  addSprint: (sprint: Sprint) => void
+  updateSprint: (sprintId: string, updates: Partial<Sprint>) => void
+  setGlobalTasks: (tasks: GlobalTask[]) => void
+
+  // Selectors - Sprints
+  getSprintById: (sprintId: string) => Sprint | undefined
+  getTasksBySprint: (sprintId: string) => GlobalTask[]
+  getActiveSprintCount: () => number
+  getCompletedSprintCount: () => number
+  getProductBacklogTasks: () => GlobalTask[]
+  getCurrentSprintProgress: () => {
+    total: number
+    completed: number
+    inProgress: number
+    pending: number
+    failed: number
+    percentage: number
+  } | null
 }
 
 /**
@@ -87,6 +114,9 @@ export const useAppStore = create<AppState>()(
         search: '',
       },
       selectedTaskId: null,
+      sprints: [],
+      currentSprint: null,
+      globalTasks: [],
 
       // Task Actions
       setTasks: (tasks) => {
@@ -208,6 +238,96 @@ export const useAppStore = create<AppState>()(
         set((state) => ({
           metadata: { ...state.metadata, isPaused: false },
         })),
+
+      // Sprint Actions
+      setSprints: (sprints) => set({ sprints }),
+
+      setCurrentSprint: (sprint) => set({ currentSprint: sprint }),
+
+      addSprint: (sprint) =>
+        set((state) => ({
+          sprints: [...state.sprints, sprint],
+        })),
+
+      updateSprint: (sprintId, updates) =>
+        set((state) => {
+          const sprints = state.sprints.map((sprint) =>
+            sprint.id === sprintId ? { ...sprint, ...updates } : sprint
+          )
+
+          // Update currentSprint if it's the one being updated
+          const currentSprint =
+            state.currentSprint?.id === sprintId
+              ? { ...state.currentSprint, ...updates }
+              : state.currentSprint
+
+          return { sprints, currentSprint }
+        }),
+
+      setGlobalTasks: (tasks) => set({ globalTasks: tasks }),
+
+      // Sprint Selectors
+      getSprintById: (sprintId) => {
+        const state = get()
+        return state.sprints.find((sprint) => sprint.id === sprintId)
+      },
+
+      getTasksBySprint: (sprintId) => {
+        const state = get()
+        return state.globalTasks.filter((task) => task.sprint === sprintId)
+      },
+
+      getActiveSprintCount: () => {
+        const state = get()
+        return state.sprints.filter(
+          (sprint) => sprint.status === 'active' || sprint.status === 'planning'
+        ).length
+      },
+
+      getCompletedSprintCount: () => {
+        const state = get()
+        return state.sprints.filter((sprint) => sprint.status === 'completed').length
+      },
+
+      getProductBacklogTasks: () => {
+        const state = get()
+        return state.globalTasks.filter((task) => task.sprint === undefined)
+      },
+
+      getCurrentSprintProgress: () => {
+        const state = get()
+        if (!state.currentSprint) return null
+
+        const tasks = state.globalTasks.filter(
+          (task) => task.sprint === state.currentSprint!.id
+        )
+
+        const total = tasks.length
+        if (total === 0) {
+          return {
+            total: 0,
+            completed: 0,
+            inProgress: 0,
+            pending: 0,
+            failed: 0,
+            percentage: 0,
+          }
+        }
+
+        const completed = tasks.filter((task) => task.status === 'completed').length
+        const inProgress = tasks.filter((task) => task.status === 'in_progress').length
+        const pending = tasks.filter((task) => task.status === 'pending').length
+        const failed = tasks.filter((task) => task.status === 'failed').length
+
+        return {
+          total,
+          completed,
+          inProgress,
+          pending,
+          failed,
+          percentage: Math.round((completed / total) * 100),
+        }
+      },
     }),
     { name: 'KugutsuAppStore' }
   )

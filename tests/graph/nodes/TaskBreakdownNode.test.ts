@@ -484,4 +484,194 @@ describe('TaskBreakdownNode', () => {
       );
     });
   });
+
+  describe('Enhanced Error Handling with JSONExtractor', () => {
+    test('should retry JSON extraction on temporary parse failures', async () => {
+      let callCount = 0;
+      mockProvider.execute = jest.fn<any>().mockImplementation(async function* () {
+        callCount++;
+        if (callCount === 1) {
+          // First attempt: Invalid JSON
+          yield createMockMessage.assistant('```json\n{invalid json}\n```');
+        } else if (callCount === 2) {
+          // Second attempt: Valid JSON
+          const taskListResponse = {
+            tasks: [
+              {
+                id: 'task-1',
+                title: 'Retry success',
+                description: 'Task after retry',
+                estimatedHours: 4,
+                priority: 80,
+                dependencies: [],
+                technicalNotes: '',
+              },
+            ],
+          };
+          yield createMockMessage.assistant(
+            '```json\n' + JSON.stringify(taskListResponse, null, 2) + '\n```'
+          );
+        }
+        yield createMockMessage.result(true);
+      });
+
+      const initialState = createInitialState('Request', {
+        maxEngineers: 3,
+        maxTurns: 30,
+        baseBranch: 'main',
+        baseRepoPath: '/test/repo',
+        worktreeBasePath: '/test/worktrees',
+      });
+
+      const stateWithDesignDocs = {
+        ...initialState,
+        currentProjectId: 'test-project',
+        storyMapping: {
+          persona: {
+            name: 'Test User',
+            role: 'End User',
+            goal: 'Test goal',
+          },
+          epics: [],
+        },
+        designDocs: {
+          approved: true,
+          designDocsPath: '.kugutsu/projects/test-project/design/design-docs.md',
+        },
+      };
+
+      const result = await taskBreakdownNode(stateWithDesignDocs);
+
+      // Should succeed after retry
+      expect(result.globalTasks).toBeDefined();
+      expect(result.globalTasks!.length).toBe(1);
+      expect(result.globalTasks![0].title).toBe('Retry success');
+    });
+
+    test('should log detailed error information on JSON parse failure', async () => {
+      const invalidJSON = '```json\n{"tasks": [{"id": "task-1" "title": "missing comma"}]}\n```';
+      mockProvider.execute = jest.fn<any>().mockImplementation(async function* () {
+        yield createMockMessage.assistant(invalidJSON);
+        yield createMockMessage.result(true);
+      });
+
+      const initialState = createInitialState('Request', {
+        maxEngineers: 3,
+        maxTurns: 30,
+        baseBranch: 'main',
+        baseRepoPath: '/test/repo',
+        worktreeBasePath: '/test/worktrees',
+      });
+
+      const stateWithDesignDocs = {
+        ...initialState,
+        currentProjectId: 'test-project',
+        storyMapping: {
+          persona: {
+            name: 'Test User',
+            role: 'End User',
+            goal: 'Test goal',
+          },
+          epics: [],
+        },
+        designDocs: {
+          approved: true,
+          designDocsPath: '.kugutsu/projects/test-project/design/design-docs.md',
+        },
+      };
+
+      const result = await taskBreakdownNode(stateWithDesignDocs);
+
+      // Should return error with detailed information
+      expect(result.logs).toBeDefined();
+      expect(result.logs!.some((log) => log.level === 'error')).toBe(true);
+
+      // Error should contain details about the parse failure
+      const errorLog = result.logs!.find((log) => log.level === 'error');
+      expect(errorLog).toBeDefined();
+    });
+
+    test('should handle missing JSON block with fallback strategy', async () => {
+      mockProvider.execute = jest.fn<any>().mockImplementation(async function* () {
+        yield createMockMessage.assistant('This response has no JSON block at all.');
+        yield createMockMessage.result(true);
+      });
+
+      const initialState = createInitialState('Request', {
+        maxEngineers: 3,
+        maxTurns: 30,
+        baseBranch: 'main',
+        baseRepoPath: '/test/repo',
+        worktreeBasePath: '/test/worktrees',
+      });
+
+      const stateWithDesignDocs = {
+        ...initialState,
+        currentProjectId: 'test-project',
+        storyMapping: {
+          persona: {
+            name: 'Test User',
+            role: 'End User',
+            goal: 'Test goal',
+          },
+          epics: [],
+        },
+        designDocs: {
+          approved: true,
+          designDocsPath: '.kugutsu/projects/test-project/design/design-docs.md',
+        },
+      };
+
+      const result = await taskBreakdownNode(stateWithDesignDocs);
+
+      // Should return error indicating no JSON block was found
+      expect(result.logs).toBeDefined();
+      expect(result.logs!.some((log) => log.level === 'error')).toBe(true);
+    });
+
+    test('should fail gracefully after maximum retries', async () => {
+      let attemptCount = 0;
+      mockProvider.execute = jest.fn<any>().mockImplementation(async function* () {
+        attemptCount++;
+        // Always return invalid JSON
+        yield createMockMessage.assistant('```json\n{invalid}\n```');
+        yield createMockMessage.result(true);
+      });
+
+      const initialState = createInitialState('Request', {
+        maxEngineers: 3,
+        maxTurns: 30,
+        baseBranch: 'main',
+        baseRepoPath: '/test/repo',
+        worktreeBasePath: '/test/worktrees',
+      });
+
+      const stateWithDesignDocs = {
+        ...initialState,
+        currentProjectId: 'test-project',
+        storyMapping: {
+          persona: {
+            name: 'Test User',
+            role: 'End User',
+            goal: 'Test goal',
+          },
+          epics: [],
+        },
+        designDocs: {
+          approved: true,
+          designDocsPath: '.kugutsu/projects/test-project/design/design-docs.md',
+        },
+      };
+
+      const result = await taskBreakdownNode(stateWithDesignDocs);
+
+      // Should return error after max retries
+      expect(result.logs).toBeDefined();
+      expect(result.logs!.some((log) => log.level === 'error')).toBe(true);
+
+      // Should indicate retry limit was reached
+      const errorLog = result.logs!.find((log) => log.level === 'error');
+      expect(errorLog).toBeDefined();
+    });
+  });
 });

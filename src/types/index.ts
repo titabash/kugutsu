@@ -245,6 +245,45 @@ export interface GlobalTask {
   instructionGenerating?: boolean;    // instruction.md生成実行中フラグ（重複防止用）
   instructionError?: string;           // instruction.md生成エラー
   instructionGeneratedAt?: Date;       // instruction.md生成完了時刻
+
+  // バックログリファインメント関連
+  estimatedHours?: number;             // 見積もり時間（時間単位）
+  actualHours?: number;                // 実績時間（時間単位）
+  estimatedPoints?: number;            // 見積もりポイント（ストーリーポイント）
+  businessValue?: 'high' | 'medium' | 'low';  // ビジネス価値
+  technicalRisk?: 'high' | 'medium' | 'low';  // 技術的リスク
+}
+
+/**
+ * タスク分割提案
+ */
+export interface TaskSplitSuggestion {
+  originalTaskId: string;
+  reason: string;
+  suggestedTasks: Array<{
+    id: string;
+    title: string;
+    description: string;
+    estimatedHours: number;
+    priority: number;
+    dependencies?: string[];
+  }>;
+}
+
+/**
+ * タスク統合提案
+ */
+export interface TaskMergeSuggestion {
+  taskIds: string[];
+  reason: string;
+  mergedTask: {
+    id: string;
+    title: string;
+    description: string;
+    estimatedHours: number;
+    priority: number;
+    dependencies?: string[];
+  };
 }
 
 /**

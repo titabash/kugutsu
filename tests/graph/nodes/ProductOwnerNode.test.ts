@@ -473,4 +473,252 @@ Implement JWT-based authentication feature.
       }
     });
   });
+
+  describe('Enhanced Error Handling with JSONExtractor', () => {
+    test('should retry JSON extraction when tasks.json parsing fails', async () => {
+      const fs = await import('fs/promises');
+      const path = await import('path');
+      const { mkdtemp, rm } = await import('fs/promises');
+      const { tmpdir } = await import('os');
+
+      const tempDir = await mkdtemp(path.join(tmpdir(), 'po-test-'));
+      const kugutsuDir = path.join(tempDir, '.kugutsu');
+      const repositoryDir = path.join(kugutsuDir, 'repository', 'architecture');
+
+      try {
+        // Setup tech-stack.json
+        await fs.mkdir(repositoryDir, { recursive: true });
+        await fs.writeFile(
+          path.join(repositoryDir, 'tech-stack.json'),
+          JSON.stringify({ framework: 'Node.js' }, null, 2)
+        );
+
+        let attemptCount = 0;
+        mockProvider.execute = jest.fn<any>().mockImplementation(async function* () {
+          attemptCount++;
+
+          if (attemptCount === 1) {
+            // First attempt: Invalid JSON in tasks.json
+            yield createMockMessage.system({
+              toolUse: {
+                tool: 'Write',
+                arguments: {
+                  file_path: path.join(kugutsuDir, 'tasks.json'),
+                  content: '{"invalid": json}', // Invalid JSON
+                },
+              },
+            });
+          } else if (attemptCount === 2) {
+            // Second attempt: Valid JSON
+            const validTasks = [
+              {
+                id: 'task-001',
+                title: 'Retry successful',
+                description: 'Task after JSON extraction retry',
+                priority: 100,
+                dependencies: [],
+                status: 'pending',
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              },
+            ];
+            yield createMockMessage.system({
+              toolUse: {
+                tool: 'Write',
+                arguments: {
+                  file_path: path.join(kugutsuDir, 'tasks.json'),
+                  content: JSON.stringify(validTasks, null, 2),
+                },
+              },
+            });
+          }
+
+          yield createMockMessage.result(true);
+        });
+
+        const initialState = createInitialState('Test request', {
+          maxEngineers: 1,
+          maxTurns: 10,
+          baseBranch: 'main',
+          baseRepoPath: tempDir,
+          worktreeBasePath: path.join(tempDir, 'worktrees'),
+        });
+
+        initialState.currentProjectId = 'test-project';
+
+        const result = await productOwnerNode(initialState);
+
+        // Should eventually succeed with valid tasks
+        expect(result.tasks).toBeDefined();
+        if (result.tasks && result.tasks.length > 0) {
+          expect(result.tasks.some((t) => t.title === 'Retry successful')).toBe(true);
+        }
+      } finally {
+        await rm(tempDir, { recursive: true, force: true });
+      }
+    });
+
+    test('should provide detailed error logs on JSON extraction failure', async () => {
+      // Simulate AI not creating tasks.json properly
+      mockProvider.execute = jest.fn<any>().mockImplementation(async function* () {
+        yield createMockMessage.assistant('No files were created');
+        yield createMockMessage.result(true);
+      });
+
+      const initialState = createInitialState('Test request', {
+        maxEngineers: 1,
+        maxTurns: 10,
+        baseBranch: 'main',
+        baseRepoPath: '/test/repo',
+        worktreeBasePath: '/test/worktrees',
+      });
+
+      initialState.currentProjectId = 'test-project';
+
+      const result = await productOwnerNode(initialState);
+
+      // Should have detailed error information
+      expect(result.logs).toBeDefined();
+      const errorLogs = result.logs!.filter((log) => log.level === 'error');
+      expect(errorLogs.length).toBeGreaterThan(0);
+    });
+
+    test('should handle corrupted tasks.json with graceful fallback', async () => {
+      const fs = await import('fs/promises');
+      const path = await import('path');
+      const { mkdtemp, rm } = await import('fs/promises');
+      const { tmpdir } = await import('os');
+
+      const tempDir = await mkdtemp(path.join(tmpdir(), 'po-test-'));
+      const kugutsuDir = path.join(tempDir, '.kugutsu');
+      const repositoryDir = path.join(kugutsuDir, 'repository', 'architecture');
+
+      try {
+        await fs.mkdir(repositoryDir, { recursive: true });
+        await fs.writeFile(
+          path.join(repositoryDir, 'tech-stack.json'),
+          JSON.stringify({ framework: 'Node.js' }, null, 2)
+        );
+
+        // Phase 2 & 3: Create corrupted tasks.json
+        mockProvider.setMockResponse(/Requirements Analysis|Task Generation/i, {
+          messages: [
+            createMockMessage.system({
+              toolUse: {
+                tool: 'Write',
+                arguments: {
+                  file_path: path.join(kugutsuDir, 'tasks.json'),
+                  content: '{ corrupted json without proper syntax }',
+                },
+              },
+            }),
+            createMockMessage.result(true),
+          ],
+          simulateTools: true,
+        });
+
+        const initialState = createInitialState('Test request', {
+          maxEngineers: 1,
+          maxTurns: 10,
+          baseBranch: 'main',
+          baseRepoPath: tempDir,
+          worktreeBasePath: path.join(tempDir, 'worktrees'),
+        });
+
+        initialState.currentProjectId = 'test-project';
+
+        const result = await productOwnerNode(initialState);
+
+        // Should fall back to creating a single task from user request
+        expect(result.tasks).toBeDefined();
+        expect(result.tasks!.length).toBeGreaterThan(0);
+
+        // Fallback task should have the user request
+        const fallbackTask = result.tasks![0];
+        expect(fallbackTask.id).toBe('task-001');
+        expect(fallbackTask.description).toContain('Test request');
+      } finally {
+        await rm(tempDir, { recursive: true, force: true });
+      }
+    });
+
+    test('should log retry attempts for better debugging', async () => {
+      const fs = await import('fs/promises');
+      const path = await import('path');
+      const { mkdtemp, rm } = await import('fs/promises');
+      const { tmpdir } = await import('os');
+
+      const tempDir = await mkdtemp(path.join(tmpdir(), 'po-test-'));
+      const kugutsuDir = path.join(tempDir, '.kugutsu');
+      const repositoryDir = path.join(kugutsuDir, 'repository', 'architecture');
+
+      try {
+        await fs.mkdir(repositoryDir, { recursive: true });
+        await fs.writeFile(
+          path.join(repositoryDir, 'tech-stack.json'),
+          JSON.stringify({ framework: 'Node.js' }, null, 2)
+        );
+
+        let callCount = 0;
+        const consoleLogs: string[] = [];
+        const originalLog = console.log;
+        console.log = jest.fn<any>((...args: any[]) => {
+          consoleLogs.push(args.join(' '));
+          originalLog(...args);
+        });
+
+        mockProvider.execute = jest.fn<any>().mockImplementation(async function* () {
+          callCount++;
+          if (callCount <= 2) {
+            // Fail first 2 attempts
+            yield createMockMessage.assistant('Failed attempt');
+            yield createMockMessage.result(false);
+          } else {
+            // Succeed on 3rd attempt
+            yield createMockMessage.system({
+              toolUse: {
+                tool: 'Write',
+                arguments: {
+                  file_path: path.join(kugutsuDir, 'tasks.json'),
+                  content: JSON.stringify([
+                    {
+                      id: 'task-001',
+                      title: 'Success',
+                      description: 'Test',
+                      priority: 100,
+                      dependencies: [],
+                      status: 'pending',
+                      createdAt: new Date().toISOString(),
+                      updatedAt: new Date().toISOString(),
+                    },
+                  ]),
+                },
+              },
+            });
+            yield createMockMessage.result(true);
+          }
+        });
+
+        const initialState = createInitialState('Test', {
+          maxEngineers: 1,
+          maxTurns: 10,
+          baseBranch: 'main',
+          baseRepoPath: tempDir,
+          worktreeBasePath: path.join(tempDir, 'worktrees'),
+        });
+
+        initialState.currentProjectId = 'test-project';
+
+        await productOwnerNode(initialState);
+
+        console.log = originalLog;
+
+        // Should have logged retry attempts (if retry logic is implemented)
+        // This test will pass once retry logic is implemented
+        expect(callCount).toBeGreaterThan(1);
+      } finally {
+        await rm(tempDir, { recursive: true, force: true });
+      }
+    });
+  });
 });

@@ -18,6 +18,7 @@ import { randomUUID } from 'crypto';
 import { MessageHandler } from '../../utils/MessageHandler.js';
 import path from 'path';
 import { FileSystemManager } from '../../utils/FileSystemManager.js';
+import { JSONExtractor } from '../../utils/JSONExtractor.js';
 
 /**
  * タスク定義
@@ -202,22 +203,35 @@ export async function taskBreakdownNode(
 
   handler.complete(true, 'タスク分解が完了しました');
 
-  // タスクリストを抽出
-  const taskList = extractTaskList(aiResponseText);
+  // タスクリストを抽出（JSONExtractorを使用、エラーハンドリング強化）
+  const extractionResult = JSONExtractor.extractTaskList(aiResponseText);
 
-  if (!taskList || taskList.length === 0) {
-    console.log('❌ タスク分解に失敗しました');
+  if (!extractionResult.success) {
+    console.error('❌ タスク分解に失敗しました:', extractionResult.error);
+    if (extractionResult.rawJSON) {
+      console.error('📄 抽出されたJSON（切り詰め）:', extractionResult.rawJSON);
+    }
+    if (extractionResult.parseError) {
+      console.error('🔍 パースエラー詳細:', extractionResult.parseError);
+    }
+
     return {
       logs: [
         {
           timestamp: new Date(),
           level: 'error',
           source: 'task_breakdown',
-          message: 'タスク分解失敗',
+          message: `タスク分解失敗: ${extractionResult.error}`,
+          data: {
+            rawJSON: extractionResult.rawJSON,
+            parseError: extractionResult.parseError?.message,
+          },
         },
       ],
     };
   }
+
+  const taskList = extractionResult.data!;
 
   console.log(`✅ タスク分解完了: ${taskList.length}個のタスク`);
 
@@ -447,43 +461,6 @@ JSON形式で以下の構造で出力してください：
 `.trim();
 }
 
-/**
- * AIレスポンスからタスクリストを抽出
- */
-function extractTaskList(response: string): TaskItem[] {
-  // JSONコードブロックを抽出
-  const jsonMatch = response.match(/```json\s*([\s\S]*?)\s*```/);
-
-  if (!jsonMatch) {
-    console.error('❌ JSONブロックが見つかりません');
-    return [];
-  }
-
-  try {
-    const parsed = JSON.parse(jsonMatch[1]);
-    const tasks = parsed.tasks || [];
-
-    // タスクの正規化
-    return tasks.map((task: any) => ({
-      id: task.id || `task-${randomUUID()}`,
-      title: task.title || '無題タスク',
-      description: task.description || '',
-      storyId: task.storyId || undefined,
-      type: task.type || 'feature',
-      priority: task.priority || 50,
-      estimatedPoints: task.estimatedPoints || 5,
-      dependencies: task.dependencies || [],
-      acceptanceCriteria: task.acceptanceCriteria || [],
-      technicalNotes: task.technicalNotes || undefined,
-      assignedTo: task.assignedTo || undefined,
-      status: task.status || 'pending',
-      createdAt: new Date().toISOString(),
-    }));
-  } catch (error) {
-    console.error('❌ JSONパースエラー:', error);
-    return [];
-  }
-}
 
 /**
  * 依存関係グラフを構築

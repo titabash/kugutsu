@@ -256,3 +256,30 @@ export interface GlobalTask {
   businessValue?: 'high' | 'medium' | 'low'  // ビジネス価値
   technicalRisk?: 'high' | 'medium' | 'low'  // 技術的リスク
 }
+
+/**
+ * NodeExecution (LangGraphノード実行状態)
+ *
+ * AIエージェント（スクラム開発チーム）のメンバーが実行しているノードの状態
+ */
+export interface NodeExecution {
+  nodeName: string                          // ノード名（例: 'product_owner', 'engineer', 'review'）
+  status: 'started' | 'completed' | 'failed' // 実行ステータス
+  startedAt: Date                           // 実行開始時刻
+  completedAt?: Date                        // 実行完了時刻
+  duration?: number                         // 所要時間（ミリ秒）
+  error?: string                            // エラーメッセージ（失敗時）
+}
+
+/**
+ * NodeRole (LangGraphノードのスクラムロール)
+ *
+ * 各ノードをスクラム開発チームのロールにマッピング
+ */
+export interface NodeRole {
+  nodeName: string
+  roleName: string
+  roleIcon: string
+  description: string
+  category: 'planning' | 'design' | 'development' | 'review' | 'coordination'
+}

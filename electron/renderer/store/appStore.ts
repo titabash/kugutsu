@@ -1,6 +1,14 @@
 import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
-import type { Task, LogEntry, AppMetadata, DependencyGraph, Sprint, GlobalTask } from '../types'
+import type {
+  Task,
+  LogEntry,
+  AppMetadata,
+  DependencyGraph,
+  Sprint,
+  GlobalTask,
+  NodeExecution,
+} from '../types'
 
 /**
  * Application state interface
@@ -34,6 +42,10 @@ interface AppState {
   sprints: Sprint[]
   currentSprint: Sprint | null
   globalTasks: GlobalTask[]
+
+  // Node Executions (LangGraph Real-time Tracking)
+  nodeExecutions: NodeExecution[]
+  activeNodes: Map<string, NodeExecution>
 
   // Actions - Tasks
   setTasks: (tasks: Task[]) => void
@@ -84,6 +96,22 @@ interface AppState {
     failed: number
     percentage: number
   } | null
+
+  // Actions - Node Executions
+  addNodeExecution: (execution: NodeExecution) => void
+  updateNodeExecution: (nodeName: string, updates: Partial<NodeExecution>) => void
+  clearNodeExecutions: () => void
+
+  // Selectors - Node Executions
+  getNodeExecution: (nodeName: string) => NodeExecution | undefined
+  getActiveNodes: () => NodeExecution[]
+  getNodeExecutionHistory: (nodeName?: string) => NodeExecution[]
+  getNodeStatistics: (nodeName: string) => {
+    totalExecutions: number
+    successfulExecutions: number
+    failedExecutions: number
+    averageDuration: number
+  } | null
 }
 
 /**
@@ -117,6 +145,8 @@ export const useAppStore = create<AppState>()(
       sprints: [],
       currentSprint: null,
       globalTasks: [],
+      nodeExecutions: [],
+      activeNodes: new Map(),
 
       // Task Actions
       setTasks: (tasks) => {
@@ -326,6 +356,105 @@ export const useAppStore = create<AppState>()(
           pending,
           failed,
           percentage: Math.round((completed / total) * 100),
+        }
+      },
+
+      // Node Execution Actions
+      addNodeExecution: (execution) =>
+        set((state) => {
+          const nodeExecutions = [...state.nodeExecutions, execution]
+          const activeNodes = new Map(state.activeNodes)
+
+          // Add to active nodes if status is 'started'
+          if (execution.status === 'started') {
+            activeNodes.set(execution.nodeName, execution)
+          }
+
+          return { nodeExecutions, activeNodes }
+        }),
+
+      updateNodeExecution: (nodeName, updates) =>
+        set((state) => {
+          // Update execution in history
+          const nodeExecutions = state.nodeExecutions.map((exec) =>
+            exec.nodeName === nodeName && exec.status === 'started'
+              ? { ...exec, ...updates }
+              : exec
+          )
+
+          const activeNodes = new Map(state.activeNodes)
+
+          // Remove from active nodes if status is 'completed' or 'failed'
+          if (updates.status === 'completed' || updates.status === 'failed') {
+            activeNodes.delete(nodeName)
+          } else {
+            // Update active node if it exists
+            const activeNode = activeNodes.get(nodeName)
+            if (activeNode) {
+              activeNodes.set(nodeName, { ...activeNode, ...updates })
+            }
+          }
+
+          return { nodeExecutions, activeNodes }
+        }),
+
+      clearNodeExecutions: () =>
+        set({
+          nodeExecutions: [],
+          activeNodes: new Map(),
+        }),
+
+      // Node Execution Selectors
+      getNodeExecution: (nodeName) => {
+        const state = get()
+        return state.nodeExecutions
+          .slice()
+          .reverse()
+          .find((exec) => exec.nodeName === nodeName)
+      },
+
+      getActiveNodes: () => {
+        const state = get()
+        return Array.from(state.activeNodes.values())
+      },
+
+      getNodeExecutionHistory: (nodeName?: string) => {
+        const state = get()
+        if (nodeName) {
+          return state.nodeExecutions.filter((exec) => exec.nodeName === nodeName)
+        }
+        return state.nodeExecutions
+      },
+
+      getNodeStatistics: (nodeName) => {
+        const state = get()
+        const executions = state.nodeExecutions.filter(
+          (exec) => exec.nodeName === nodeName && exec.status !== 'started'
+        )
+
+        if (executions.length === 0) return null
+
+        const successfulExecutions = executions.filter(
+          (exec) => exec.status === 'completed'
+        ).length
+        const failedExecutions = executions.filter(
+          (exec) => exec.status === 'failed'
+        ).length
+
+        const durationsMs = executions
+          .filter((exec) => exec.duration !== undefined)
+          .map((exec) => exec.duration!)
+
+        const averageDuration =
+          durationsMs.length > 0
+            ? durationsMs.reduce((sum, d) => sum + d, 0) / durationsMs.length
+            : 0
+
+        return {
+          totalExecutions: executions.length,
+          successfulExecutions,
+          failedExecutions,
+          averageDuration,
         }
       },
     }),

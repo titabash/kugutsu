@@ -9,7 +9,15 @@ import type { Task, LogEntry } from '../types'
  * the app store accordingly, providing real-time UI updates
  */
 export function useElectronSync() {
-  const { addLog, addLogs, setTasks, setMetadata, updateTasks } = useAppStore()
+  const {
+    addLog,
+    addLogs,
+    setTasks,
+    setMetadata,
+    updateTasks,
+    addNodeExecution,
+    updateNodeExecution,
+  } = useAppStore()
 
   useEffect(() => {
     if (!window.electronAPI) {
@@ -54,24 +62,50 @@ export function useElectronSync() {
 
           case 'node-started':
             // Node execution started
-            addLog({
-              id: `${Date.now()}-${Math.random()}`,
-              timestamp: new Date(event.timestamp),
-              level: 'info',
-              source: event.data.nodeId || 'System',
-              message: `🚀 ノード開始: ${event.data.nodeId}`,
-            })
+            if (event.data.nodeId) {
+              addNodeExecution({
+                nodeName: event.data.nodeId,
+                status: 'started',
+                startedAt: new Date(event.timestamp),
+              })
+
+              addLog({
+                id: `${Date.now()}-${Math.random()}`,
+                timestamp: new Date(event.timestamp),
+                level: 'info',
+                source: event.data.nodeId,
+                message: `🚀 ノード開始: ${event.data.nodeId}`,
+              })
+            }
             break
 
           case 'node-completed':
             // Node execution completed
-            addLog({
-              id: `${Date.now()}-${Math.random()}`,
-              timestamp: new Date(event.timestamp),
-              level: 'success',
-              source: event.data.nodeId || 'System',
-              message: `✅ ノード完了: ${event.data.nodeId}`,
-            })
+            if (event.data.nodeId) {
+              const startedAt = event.data.startedAt
+                ? new Date(event.data.startedAt)
+                : undefined
+              const completedAt = new Date(event.timestamp)
+              const duration = startedAt
+                ? completedAt.getTime() - startedAt.getTime()
+                : undefined
+
+              updateNodeExecution(event.data.nodeId, {
+                status: 'completed',
+                completedAt,
+                duration,
+              })
+
+              addLog({
+                id: `${Date.now()}-${Math.random()}`,
+                timestamp: completedAt,
+                level: 'success',
+                source: event.data.nodeId,
+                message: `✅ ノード完了: ${event.data.nodeId}${
+                  duration ? ` (${(duration / 1000).toFixed(1)}s)` : ''
+                }`,
+              })
+            }
             break
 
           case 'tasks-batch':
@@ -189,7 +223,7 @@ export function useElectronSync() {
         cleanupGraphEventsBatch()
       }
     }
-  }, [addLog, addLogs, setTasks, setMetadata, updateTasks])
+  }, [addLog, addLogs, setTasks, setMetadata, updateTasks, addNodeExecution, updateNodeExecution])
 }
 
 /**

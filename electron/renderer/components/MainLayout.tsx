@@ -1,5 +1,6 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { SprintViewer } from './SprintViewer'
+import { NodeExecutionViewer } from './NodeExecutionViewer'
 
 interface MainLayoutProps {
   leftPanel: React.ReactNode
@@ -38,6 +39,12 @@ export function MainLayout({ leftPanel, graphPanel, taskPanel }: MainLayoutProps
               >
                 🏃 スプリント
               </TabsTrigger>
+              <TabsTrigger
+                value="agents"
+                className="h-12 rounded-none border-b-2 border-transparent px-6 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+              >
+                🤖 AIエージェント
+              </TabsTrigger>
             </TabsList>
           </div>
 
@@ -51,6 +58,10 @@ export function MainLayout({ leftPanel, graphPanel, taskPanel }: MainLayoutProps
 
           <TabsContent value="sprints" className="flex-1 overflow-hidden m-0 p-4">
             <SprintViewer />
+          </TabsContent>
+
+          <TabsContent value="agents" className="flex-1 overflow-hidden m-0">
+            <NodeExecutionViewer />
           </TabsContent>
         </Tabs>
       </div>

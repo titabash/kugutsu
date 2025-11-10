@@ -366,6 +366,19 @@ export const ParallelDevState = Annotation.Root({
   }),
 
   /**
+   * Task to process (for Send API fan-out)
+   *
+   * Single task passed via LangGraph Send API for parallel processing.
+   * Used by InstructionGeneratorNode to process individual tasks.
+   */
+  taskToProcess: Annotation<GlobalTask | null>({
+    reducer: (state: GlobalTask | null, update: GlobalTask | null) => {
+      return update ?? state;
+    },
+    default: () => null,
+  }),
+
+  /**
    * Project metadata (multi-project support)
    *
    * Reducer: Merge projects by project ID
@@ -690,6 +703,7 @@ export function createInitialState(
     },
     // Sprint-driven development fields
     globalTasks: [],
+    taskToProcess: null,
     projects: new Map(),
     sprints: [],
     activeSprint: null,

@@ -52,6 +52,9 @@ export async function sprintPlanningNode(
     'global-queue.json'
   );
 
+  // DataPersistenceインスタンスを作成（早期に定義）
+  const persistence = new DataPersistence(config.baseRepoPath);
+
   // アクティブなスプリントを確認
   let existingActiveSprint: Sprint | null = null;
   try {
@@ -65,6 +68,37 @@ export async function sprintPlanningNode(
       (existingActiveSprint.status === 'planning' ||
        existingActiveSprint.status === 'active')) {
     console.log(`⚠️ 既にアクティブなスプリントが存在します: ${existingActiveSprint.name} (${existingActiveSprint.status})`);
+
+    // ✅ 自動修復: status='planning'でinstruction.md生成済みなら'active'に更新
+    if (existingActiveSprint.status === 'planning') {
+      const sprintTasksDir = path.join(
+        config.baseRepoPath,
+        '.kugutsu',
+        'sprints',
+        existingActiveSprint.id,
+        'tasks'
+      );
+
+      // 全タスクのinstruction.md生成を確認
+      let allInstructionsGenerated = true;
+      for (const taskId of existingActiveSprint.taskIds) {
+        const instructionPath = path.join(sprintTasksDir, taskId, 'instruction.md');
+        try {
+          await fs.access(instructionPath);
+        } catch (error) {
+          allInstructionsGenerated = false;
+          break;
+        }
+      }
+
+      // 全て生成済みなら'active'に更新して保存
+      if (allInstructionsGenerated) {
+        console.log(`🔧 自動修復: instruction.md生成済み → status='active'に更新`);
+        existingActiveSprint.status = 'active';
+        await persistence.saveActiveSprint(existingActiveSprint);
+      }
+    }
+
     return {
       activeSprint: existingActiveSprint,
       logs: [
@@ -111,9 +145,6 @@ export async function sprintPlanningNode(
   };
 
   const provider = AIProviderFactory.create(providerConfig);
-
-  // DataPersistenceインスタンスを作成
-  const persistence = new DataPersistence(config.baseRepoPath);
 
   // スプリント計画プロンプト
   const sprintPlanningPrompt = `
@@ -310,7 +341,7 @@ JSON形式で以下の構造で出力してください：
 /**
  * SprintPlanningNodeのルーティング関数
  *
- * 'planning' 状態: instruction_generator（instruction.md未生成）
+ * 'planning' 状態: instruction_generator_dispatch（instruction.md未生成）
  * 'active' 状態: sprint_review（instruction.md生成済み、継続）
  * その他: END
  */
@@ -320,10 +351,10 @@ export function sprintPlanningRouter(state: ParallelDevStateType): string {
     return 'END';
   }
 
-  // 'planning' 状態（instruction.md未生成） → instruction_generator へ
+  // 'planning' 状態（instruction.md未生成） → instruction_generator_dispatch へ
   if (state.activeSprint.status === 'planning') {
-    console.log('➡️ ルーティング: instruction_generator (instruction.md生成)');
-    return 'instruction_generator';
+    console.log('➡️ ルーティング: instruction_generator_dispatch (instruction.md生成)');
+    return 'instruction_generator_dispatch';
   }
 
   // 'active' 状態（instruction.md生成済み） → sprint_review へ

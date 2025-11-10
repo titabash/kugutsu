@@ -1,7 +1,7 @@
 /**
  * InstructionGeneratorNode
  *
- * スプリントスコープのタスクについて並列でinstruction.mdを生成するノード
+ * 単一タスクのinstruction.mdを生成するノード（Send API対応）
  */
 
 import * as fs from 'fs';
@@ -12,102 +12,90 @@ import type { GlobalTask } from '../../types/index.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 import type { AIProviderConfig } from '../../providers/IAIProvider.js';
 import { MessageHandler } from '../../utils/MessageHandler.js';
+import { DataPersistence } from '../../utils/DataPersistence.js';
 
 /**
- * Wrapper Node: スプリントスコープのタスクについて並列でinstruction.md生成
+ * Single Task Generator: 単一タスクのinstruction.md生成
+ *
+ * LangGraph Send APIで渡された単一タスクを処理します。
+ * タスクのinstructionGeneratedフラグを更新してglobalTasksを返します。
  */
 export async function instructionGeneratorNode(
   state: ParallelDevStateType
-): Promise<Partial<ParallelDevStateType>> {
-  // activeSprint.idの必須チェック
-  if (!state.activeSprint?.id) {
-    console.error('❌ アクティブなスプリントが設定されていません');
+): Promise<ParallelDevStateUpdate> {
+  // state.taskToProcess から単一タスクを取得（Send APIで渡される）
+  const task = state.taskToProcess;
+
+  if (!task) {
+    console.error('❌ 処理するタスクが設定されていません');
     return {
       logs: [{
         timestamp: new Date(),
         level: 'error',
-        source: 'InstructionGeneratorNode',
-        message: 'アクティブなスプリントが設定されていません',
+        source: 'InstructionGenerator',
+        message: '処理するタスクが設定されていません',
       }],
     };
   }
 
-  // スプリントスコープのタスクのみフィルタリング
-  const sprintTasks = (state.globalTasks || []).filter(
-    task => state.activeSprint?.taskIds.includes(task.id)
-  );
+  console.log(`📝 Task ${task.id} のinstruction.md生成中...`);
 
-  if (sprintTasks.length === 0) {
-    console.log('ℹ️ スプリント内のタスクがありません');
+  try {
+    // instruction.md生成実行
+    await generateInstructionForTask(state, task, state.config);
+
+    // タスクの完了状態を更新（LangGraphステート更新のみ）
+    const updatedGlobalTasks = (state.globalTasks || []).map(t => {
+      if (t.id === task.id) {
+        return {
+          ...t,
+          instructionGenerated: true,
+          instructionGenerating: false,
+          instructionGeneratedAt: new Date(),
+        };
+      }
+      return t;
+    });
+
+    console.log(`✅ Task ${task.id} のinstruction.md生成完了`);
+
     return {
+      globalTasks: updatedGlobalTasks,
       logs: [{
         timestamp: new Date(),
         level: 'info',
-        source: 'InstructionGeneratorNode',
-        message: 'スプリント内のタスクがありません',
-      }],
-    };
-  }
-
-  console.log(`📝 ${sprintTasks.length}個のタスクのinstruction.mdを並列生成中...`);
-
-  // 並列処理の同時実行数制限（maxEngineersを使用）
-  const BATCH_SIZE = state.config.maxEngineers || 3; // maxEngineersと同じ制限（デフォルト: 3）
-  const results: PromiseSettledResult<void>[] = [];
-
-  for (let i = 0; i < sprintTasks.length; i += BATCH_SIZE) {
-    const batch = sprintTasks.slice(i, i + BATCH_SIZE);
-    console.log(`📦 バッチ ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(sprintTasks.length / BATCH_SIZE)}: ${batch.length}個のタスクを処理中... (maxEngineers: ${BATCH_SIZE})`);
-
-    const batchResults = await Promise.allSettled(
-      batch.map(task => generateInstructionForTask(state, task, state.config))
-    );
-
-    results.push(...batchResults);
-  }
-
-  // 結果を集約
-  const logs: LogEntry[] = [];
-  let successCount = 0;
-  let failureCount = 0;
-
-  for (const [index, settledResult] of results.entries()) {
-    const task = sprintTasks[index];
-
-    if (settledResult.status === 'fulfilled') {
-      successCount++;
-      logs.push({
-        timestamp: new Date(),
-        level: 'info',
-        source: 'InstructionGeneratorNode',
+        source: 'InstructionGenerator',
         message: `Task ${task.id} のinstruction.md生成完了`,
-      });
-    } else {
-      failureCount++;
-      logs.push({
+        data: { taskId: task.id },
+      }],
+    };
+  } catch (error) {
+    console.error(`❌ Task ${task.id} のinstruction.md生成失敗:`, error);
+
+    // タスクのinstructionErrorを記録（LangGraphステート更新のみ）
+    const updatedGlobalTasks = (state.globalTasks || []).map(t => {
+      if (t.id === task.id) {
+        return {
+          ...t,
+          instructionGenerated: false,
+          instructionGenerating: false,
+          instructionError: String(error),
+        };
+      }
+      return t;
+    });
+
+    return {
+      globalTasks: updatedGlobalTasks,
+      logs: [{
         timestamp: new Date(),
         level: 'error',
-        source: 'InstructionGeneratorNode',
-        message: `Task ${task.id} のinstruction.md生成失敗: ${settledResult.reason}`,
-        data: { error: settledResult.reason },
-      });
-    }
+        source: 'InstructionGenerator',
+        message: `Task ${task.id} のinstruction.md生成失敗: ${error}`,
+        data: { taskId: task.id, error: String(error) },
+      }],
+    };
   }
-
-  console.log(`✅ ${successCount}個成功、❌ ${failureCount}個失敗`);
-
-  // スプリント状態を 'active' に更新（無限ループ防止）
-  // 'planning' → 'active' に遷移（instruction.md生成完了、実装開始可能）
-  const updatedSprint = {
-    ...state.activeSprint,
-    status: 'active' as const,
-    startedAt: state.activeSprint.startedAt || new Date(),
-  };
-
-  return {
-    activeSprint: updatedSprint,
-    logs,
-  };
 }
 
 /**

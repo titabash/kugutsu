@@ -1,8 +1,19 @@
 /**
  * InstructionGeneratorNode Unit Tests (Jest)
+ *
+ * Send APIパターン: 単一タスクを処理
  */
 
 import { jest } from '@jest/globals';
+
+// Mock fs module BEFORE importing
+let mockExistsSync = jest.fn(() => true); // Default: file exists
+jest.unstable_mockModule('fs', () => ({
+  default: {
+    existsSync: mockExistsSync,
+  },
+  existsSync: mockExistsSync,
+}));
 
 // Mock AIProviderFactory BEFORE importing
 let mockProvider: any;
@@ -21,8 +32,8 @@ const { instructionGeneratorNode } = await import(
 const { createInitialState } = await import('../../../src/graph/state.js');
 const { AIProviderFactory } = await import('../../../src/providers/AIProviderFactory.js');
 
-// Test helper to create state with activeSprint
-function createTestState(userRequest: string, config: any) {
+// Test helper to create state with activeSprint and taskToProcess
+function createTestState(userRequest: string, config: any, taskToProcess: any = null) {
   const state = createInitialState(userRequest, config);
   state.activeSprint = {
     id: 'sprint-1',
@@ -83,6 +94,10 @@ function createTestState(userRequest: string, config: any) {
       dynamicPriority: 80,
     },
   ];
+
+  // Send APIパターン: taskToProcessを設定
+  state.taskToProcess = taskToProcess || state.globalTasks[0];
+
   return state;
 }
 
@@ -103,7 +118,7 @@ describe('InstructionGeneratorNode', () => {
   });
 
   describe('エラーチェック', () => {
-    test('activeSprint.idが未設定の場合、エラーログを返す', async () => {
+    test('taskToProcessが未設定の場合、エラーログを返す', async () => {
       const state = createTestState('Test request', {
         maxEngineers: 3,
         maxTurns: 30,
@@ -112,38 +127,19 @@ describe('InstructionGeneratorNode', () => {
         worktreeBasePath: '/test/worktrees',
       });
 
-      // activeSprint.idを未設定にする
-      state.activeSprint = null;
+      // taskToProcessを未設定にする
+      state.taskToProcess = null;
 
       const result = await instructionGeneratorNode(state);
 
       expect(result.logs).toBeDefined();
       expect(result.logs![0].level).toBe('error');
-      expect(result.logs![0].message).toContain('アクティブなスプリントが設定されていません');
-    });
-
-    test('スプリントタスクが0件の場合、infoログを返す', async () => {
-      const state = createTestState('Test request', {
-        maxEngineers: 3,
-        maxTurns: 30,
-        baseBranch: 'main',
-        baseRepoPath: '/test/repo',
-        worktreeBasePath: '/test/worktrees',
-      });
-
-      // スプリントのtaskIdsを空にする
-      state.activeSprint!.taskIds = [];
-
-      const result = await instructionGeneratorNode(state);
-
-      expect(result.logs).toBeDefined();
-      expect(result.logs![0].level).toBe('info');
-      expect(result.logs![0].message).toContain('スプリント内のタスクがありません');
+      expect(result.logs![0].message).toContain('処理するタスクが設定されていません');
     });
   });
 
-  describe('スプリントスコープフィルタリング', () => {
-    test('activeSprint.taskIdsに含まれるタスクのみ処理される', async () => {
+  describe('単一タスク処理（Send APIパターン）', () => {
+    test('taskToProcessの単一タスクを処理する', async () => {
       const state = createTestState('Test request', {
         maxEngineers: 3,
         maxTurns: 30,
@@ -152,14 +148,10 @@ describe('InstructionGeneratorNode', () => {
         worktreeBasePath: '/test/worktrees',
       });
 
-      // activeSprint.taskIds = ['task-001', 'task-002']
-      // globalTasks = ['task-001', 'task-002', 'task-003']
-      // → task-001, task-002のみ処理される
-
       const result = await instructionGeneratorNode(state);
 
-      // AI-First: AIが2回呼ばれることを確認（task-001, task-002）
-      expect(mockProvider.execute).toHaveBeenCalledTimes(2);
+      // AI-First: AIが1回呼ばれることを確認（taskToProcessの1タスクのみ）
+      expect(mockProvider.execute).toHaveBeenCalledTimes(1);
 
       // Writeツールが許可されていることを確認
       const firstCall = (mockProvider.execute as any).mock.calls[0];
@@ -247,29 +239,6 @@ describe('InstructionGeneratorNode', () => {
     });
   });
 
-  describe('並列実行', () => {
-    test('Promise.allSettledで並列実行される', async () => {
-      const state = createTestState('Test request', {
-        maxEngineers: 3,
-        maxTurns: 30,
-        baseBranch: 'main',
-        baseRepoPath: '/test/repo',
-        worktreeBasePath: '/test/worktrees',
-      });
-
-      // Spy on Promise.allSettled
-      const allSettledSpy = jest.spyOn(Promise, 'allSettled');
-
-      await instructionGeneratorNode(state);
-
-      // Promise.allSettledが呼ばれたことを確認
-      expect(allSettledSpy).toHaveBeenCalled();
-
-      // Restore spy
-      allSettledSpy.mockRestore();
-    });
-  });
-
   describe('エラーハンドリング', () => {
     test('AI実行エラー時、該当タスクの失敗ログを記録', async () => {
       const state = createTestState('Test request', {
@@ -280,15 +249,9 @@ describe('InstructionGeneratorNode', () => {
         worktreeBasePath: '/test/worktrees',
       });
 
-      // 最初の呼び出しでエラーをスロー
-      let callCount = 0;
+      // AI実行エラーをシミュレート
       mockProvider.execute = jest.fn(async function* () {
-        if (callCount === 0) {
-          callCount++;
-          throw new Error('AI execution error');
-        }
-        callCount++;
-        yield { type: 'text', text: '# Instruction' };
+        throw new Error('AI execution error');
       });
 
       const result = await instructionGeneratorNode(state);
@@ -297,6 +260,13 @@ describe('InstructionGeneratorNode', () => {
       const errorLogs = result.logs!.filter((log) => log.level === 'error');
       expect(errorLogs.length).toBeGreaterThan(0);
       expect(errorLogs[0].message).toContain('instruction.md生成失敗');
+
+      // globalTasksが更新されていることを確認
+      expect(result.globalTasks).toBeDefined();
+      const failedTask = result.globalTasks!.find(t => t.id === 'task-001');
+      expect(failedTask?.instructionGenerated).toBe(false);
+      expect(failedTask?.instructionGenerating).toBe(false);
+      expect(failedTask?.instructionError).toBeDefined();
     });
 
     test('currentProjectIdが未設定の場合、エラーがスローされる', async () => {
@@ -334,10 +304,16 @@ describe('InstructionGeneratorNode', () => {
 
       // 成功ログが記録されていることを確認
       const infoLogs = result.logs!.filter((log) => log.level === 'info');
-      expect(infoLogs.length).toBe(2); // task-001, task-002
+      expect(infoLogs.length).toBe(1); // 単一タスク処理
 
       expect(infoLogs[0].message).toContain('instruction.md生成完了');
-      expect(infoLogs[1].message).toContain('instruction.md生成完了');
+
+      // globalTasksが更新されていることを確認
+      expect(result.globalTasks).toBeDefined();
+      const completedTask = result.globalTasks!.find(t => t.id === 'task-001');
+      expect(completedTask?.instructionGenerated).toBe(true);
+      expect(completedTask?.instructionGenerating).toBe(false);
+      expect(completedTask?.instructionGeneratedAt).toBeDefined();
     });
 
     test('AIProviderFactory.createが正しく呼ばれる', async () => {
@@ -367,17 +343,12 @@ describe('InstructionGeneratorNode', () => {
       await instructionGeneratorNode(state);
 
       // AI-First: AIがWriteツールで正しいパスに作成することを確認
-      expect(mockProvider.execute).toHaveBeenCalledTimes(2);
+      expect(mockProvider.execute).toHaveBeenCalledTimes(1);
 
-      // task-001のパスを確認
+      // task-001のパスを確認（taskToProcessで指定）
       const call1 = (mockProvider.execute as any).mock.calls[0];
       expect(call1[0]).toContain('.kugutsu/sprints/sprint-1/tasks/task-001/instruction.md');
       expect(call1[1].allowedTools).toEqual(['Write']);
-
-      // task-002のパスを確認
-      const call2 = (mockProvider.execute as any).mock.calls[1];
-      expect(call2[0]).toContain('.kugutsu/sprints/sprint-1/tasks/task-002/instruction.md');
-      expect(call2[1].allowedTools).toEqual(['Write']);
     });
   });
 });

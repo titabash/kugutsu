@@ -239,6 +239,12 @@ export interface GlobalTask {
 
   // コンフリクト解消関連
   conflictResolverAttemptCount?: number; // コンフリクト解消の再試行回数（デフォルト: 0）
+
+  // instruction.md生成関連
+  instructionGenerated?: boolean;     // instruction.md生成完了フラグ
+  instructionGenerating?: boolean;    // instruction.md生成実行中フラグ（重複防止用）
+  instructionError?: string;           // instruction.md生成エラー
+  instructionGeneratedAt?: Date;       // instruction.md生成完了時刻
 }
 
 /**

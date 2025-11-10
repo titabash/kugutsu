@@ -23,6 +23,14 @@ import { reviewDesignNode } from './nodes/ReviewDesignNode.js';
 import { taskBreakdownNode } from './nodes/TaskBreakdownNode.js';
 import { analyzeComplexityNode } from './nodes/AnalyzeComplexityNode.js';
 import { instructionGeneratorNode } from './nodes/InstructionGeneratorNode.js';
+import {
+  instructionGeneratorDispatchNode,
+  instructionGeneratorDispatchRouter,
+} from './nodes/InstructionGeneratorDispatchNode.js';
+import {
+  instructionAggregatorNode,
+  instructionAggregatorRouter,
+} from './nodes/InstructionAggregatorNode.js';
 import { TaskStateMachine } from '../utils/TaskStateMachine.js';
 
 /**
@@ -69,7 +77,15 @@ export function createUnifiedScrumWorkflowGraph() {
     // ================================================
     .addNode('check_mode', checkModeNode)
     .addNode('sprint_planning', sprintPlanningNode)
-    .addNode('instruction_generator', instructionGeneratorNode)
+    .addNode('instruction_generator_dispatch', instructionGeneratorDispatchNode, {
+      ends: ['instruction_generator', 'instruction_aggregator'],
+    })
+    .addNode('instruction_generator', instructionGeneratorNode, {
+      ends: ['instruction_aggregator'],
+    })
+    .addNode('instruction_aggregator', instructionAggregatorNode, {
+      ends: ['instruction_generator_dispatch', 'instruction_aggregator', 'engineer_dispatch', 'sprint_review'],
+    })
     .addNode('engineer_dispatch', engineerDispatchNode)
 
     // ================================================
@@ -216,15 +232,87 @@ export function createUnifiedScrumWorkflowGraph() {
   // Product owner → sprint planning (low complexity path end)
   workflow.addEdge('product_owner', 'sprint_planning');
 
-  // Sprint planning → instruction generator
+  // Sprint planning → instruction generator dispatch
   workflow.addConditionalEdges('sprint_planning', sprintPlanningRouter, {
-    instruction_generator: 'instruction_generator',
+    instruction_generator_dispatch: 'instruction_generator_dispatch',
     sprint_review: 'sprint_review',
     END: '__end__',
   });
 
-  // Instruction generator → engineer dispatch
-  workflow.addEdge('instruction_generator', 'engineer_dispatch');
+  // Instruction generator dispatch → (Send API fan-out)
+  // 集中制御: aggregatorがルーティングを決定
+  workflow.addConditionalEdges(
+    'instruction_generator_dispatch',
+    (state: ParallelDevStateType) => {
+      const result = instructionGeneratorDispatchRouter(state);
+
+      if (result === 'generate') {
+        // 未生成タスクをSend APIでfan-out
+        const sprintTasks = (state.globalTasks || []).filter(
+          task => state.activeSprint?.taskIds.includes(task.id)
+        );
+        const tasksNeedingInstruction = sprintTasks.filter(
+          task => task.instructionGenerated !== true &&
+                  task.instructionGenerating !== true  // 実行中タスクを除外
+        );
+        const maxDispatch = state.config.maxEngineers || 3;
+        const tasksToDispatch = tasksNeedingInstruction.slice(0, maxDispatch);
+
+        console.log(
+          `📤 ${tasksToDispatch.length}個のタスクをdispatch ` +
+          `(未生成: ${tasksNeedingInstruction.length}件, maxEngineers: ${maxDispatch})`
+        );
+
+        // 各タスクに instructionGenerating=true を設定
+        const tasksToDispatchIds = new Set(tasksToDispatch.map(t => t.id));
+        const updatedGlobalTasks = (state.globalTasks || []).map(t => {
+          if (tasksToDispatchIds.has(t.id)) {
+            return { ...t, instructionGenerating: true };
+          }
+          return t;
+        });
+
+        // instruction_generatorに送信（taskToProcessと更新したglobalTasksを含む）
+        return tasksToDispatch.map(task => {
+          const updatedTask = { ...task, instructionGenerating: true };
+          return new Send('instruction_generator', {
+            taskToProcess: updatedTask,
+            globalTasks: updatedGlobalTasks,
+            config: state.config,  // configを明示的に渡す
+            activeSprint: state.activeSprint,  // activeSprintも渡す
+            currentProjectId: state.currentProjectId,  // currentProjectIdも渡す
+            userRequest: state.userRequest,  // userRequestも渡す（低複雑度パス用）
+            storyMapping: state.storyMapping,  // storyMappingも渡す（高複雑度パス用）
+            designDocs: state.designDocs,  // designDocsも渡す（高複雑度パス用）
+          });
+        });
+      }
+
+      // 'complete'の場合: instruction_aggregatorに最終確認を依頼
+      return [new Send('instruction_aggregator', {
+        config: state.config,
+        globalTasks: state.globalTasks,
+        activeSprint: state.activeSprint,
+        tasks: state.tasks,
+        tasksPath: state.tasksPath,
+      })];
+    }
+  );
+
+  // Instruction generator → aggregator (fan-in)
+  // 個別タスク完了後、aggregatorが集約して次のアクションを決定
+  workflow.addEdge('instruction_generator', 'instruction_aggregator');
+
+  // Instruction aggregator → 条件分岐（Send API並列実行 or sprint_review）
+  // Send APIで複数アクション（engineer_dispatch, instruction_generator_dispatch）を並列実行
+  // または全タスク完了時にsprint_reviewへ遷移
+  workflow.addConditionalEdges(
+    'instruction_aggregator',
+    instructionAggregatorRouter,
+    {
+      sprint_review: 'sprint_review',              // 全完了
+    }
+  );
 
   // Engineer dispatch → conditional (feedback routing or Send API fan-out)
   workflow.addConditionalEdges(
@@ -252,7 +340,17 @@ export function createUnifiedScrumWorkflowGraph() {
 
       // Return array of Send objects (fan-out)
       return inProgressTasks.map(task =>
-        new Send('engineer', { ...state, currentTaskId: task.id })
+        new Send('engineer', {
+          currentTaskId: task.id,
+          config: state.config,
+          tasks: state.tasks,
+          tasksPath: state.tasksPath,
+          activeSprint: state.activeSprint,
+          globalTasks: state.globalTasks,
+          metadata: state.metadata,
+          feedbackRequest: state.feedbackRequest,
+          nodeRetryCounters: state.nodeRetryCounters,
+        })
       );
     },
     {
@@ -297,7 +395,18 @@ export function createUnifiedScrumWorkflowGraph() {
 
       // Return array of Send objects (fan-out)
       return tasksToDispatch.map(task =>
-        new Send('review', { ...state, currentTaskId: task.id })
+        new Send('review', {
+          currentTaskId: task.id,
+          config: state.config,
+          tasks: state.tasks,
+          tasksPath: state.tasksPath,
+          activeSprint: state.activeSprint,
+          globalTasks: state.globalTasks,
+          storyMapping: state.storyMapping,
+          designDocs: state.designDocs,
+          sprintPlanPath: state.sprintPlanPath,
+          metadata: state.metadata,
+        })
       );
     },
     {

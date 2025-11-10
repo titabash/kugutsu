@@ -5,7 +5,7 @@
  *
  * **File-based Artifact Management:**
  * - Reads tasks from `.kugutsu/tasks.json`
- * - Writes review result to `.kugutsu/tasks/{taskId}/review.json`
+ * - Writes review result to `.kugutsu/sprints/{sprintId}/tasks/{taskId}/review.json`
  * - Updates task status to `reviewed` in tasks.json (only if approved)
  */
 
@@ -36,10 +36,28 @@ export async function reviewNode(
   state: ParallelDevStateType,
   taskId: string
 ): Promise<ParallelDevStateUpdate> {
-  const { config, tasks, tasksPath } = state;
+  const { config, tasks, tasksPath, activeSprint } = state;
   const maxTurns = config.maxTurns || 30;
 
   console.log(`🔍 Review: タスク ${taskId} をレビューしています...`);
+
+  // アクティブスプリントIDを取得
+  if (!activeSprint?.id) {
+    console.error('❌ アクティブなスプリントが設定されていません');
+    return {
+      logs: [
+        {
+          timestamp: new Date(),
+          level: 'error',
+          source: 'ReviewNode',
+          message: 'アクティブなスプリントが設定されていません',
+          taskId,
+        },
+      ],
+    };
+  }
+
+  const sprintId = activeSprint.id;
 
   // Read tasks from file
   const fileReader = new FileReader(config.baseRepoPath);
@@ -103,6 +121,70 @@ export async function reviewNode(
 
     const provider = AIProviderFactory.create(providerConfig);
 
+    // 設計書セクションの構築
+    const storyMappingSection = state.storyMapping
+      ? `
+## 📖 参照：ストーリーマッピング
+
+実装が全体の文脈に沿っているか確認してください。
+
+\`\`\`json
+${JSON.stringify(state.storyMapping, null, 2)}
+\`\`\`
+`
+      : '';
+
+    const designDocsSection = state.designDocs
+      ? `
+## 📐 参照：設計書
+
+実装が設計書に準拠しているか確認してください。
+
+${state.designDocs.databasePath ? `### データベース設計
+ファイルパス: ${state.designDocs.databasePath}
+**Readツールで読み込んで参照してください**
+` : ''}
+${state.designDocs.apiPath ? `### API仕様
+ファイルパス: ${state.designDocs.apiPath}
+**Readツールで読み込んで参照してください**
+` : ''}
+${state.designDocs.uiuxPath ? `### UI/UX設計
+ファイルパス: ${state.designDocs.uiuxPath}
+**Readツールで読み込んで参照してください**
+` : ''}
+`
+      : '';
+
+    const sprintPlanSection = state.sprintPlanPath
+      ? `
+## 📅 参照：スプリント計画
+
+ファイルパス: ${state.sprintPlanPath}
+**Readツールで読み込んで参照してください**
+スプリント目標との整合性を確認してください。
+`
+      : '';
+
+    // Read instruction.md for additional context
+    const instructionPath = `.kugutsu/sprints/${sprintId}/tasks/${taskId}/instruction.md`;
+    let instructionContent = '';
+    try {
+      instructionContent = await fileReader.readFile(instructionPath);
+    } catch (error) {
+      // instruction.md is optional for review
+      console.log(`⚠️ instruction.md が見つかりません（レビューは続行）`);
+    }
+
+    const instructionSection = instructionContent
+      ? `
+## タスクの実装指示
+
+\`\`\`markdown
+${instructionContent}
+\`\`\`
+`
+      : '';
+
     // Build review prompt
     const reviewPrompt = `
 # Code Review
@@ -117,30 +199,37 @@ export async function reviewNode(
 
 ## 作業ディレクトリ
 ${taskArtifact.worktreePath}
-
+${instructionSection}${storyMappingSection}${designDocsSection}${sprintPlanSection}
 ## レビュー観点
 
-### 1. コード品質
+### 1. 設計書との整合性 ⭐ 最優先
+- ストーリーマッピングで定義されたユーザー価値を提供しているか
+- データベース設計に準拠しているか
+- API仕様に準拠しているか
+- UI/UX設計に準拠しているか
+- タスクの実装指示（instruction.md）に従っているか
+
+### 2. コード品質
 - コードは読みやすく、保守しやすいか
 - 適切な命名規則が使われているか
 - 適切なコメントが付いているか
 - 重複コードがないか
 
-### 2. テストカバレッジ
+### 3. テストカバレッジ
 - 適切なテストが書かれているか
 - テストは実行可能か
 - エッジケースがカバーされているか
 
-### 3. セキュリティ
+### 4. セキュリティ
 - セキュリティ上の脆弱性がないか
 - 入力のバリデーションが適切か
 - 機密情報の漏洩リスクがないか
 
-### 4. パフォーマンス
+### 5. パフォーマンス
 - パフォーマンス上の問題がないか
 - 適切なデータ構造が使われているか
 
-### 5. ドキュメント
+### 6. ドキュメント
 - 必要なドキュメントが追加されているか
 - API仕様が明確か
 
@@ -152,7 +241,7 @@ ${taskArtifact.worktreePath}
 REVIEW_STATUS: APPROVED または CHANGES_REQUESTED
 \`\`\`
 
-そして、コメントを箇条書きで記載してください。
+そして、コメントを箇条書きで記載してください。特に設計書との乖離がある場合は明確に指摘してください。
 `;
 
     // Execute review with retry mechanism
@@ -189,6 +278,15 @@ REVIEW_STATUS: APPROVED または CHANGES_REQUESTED
               status = 'changes_requested';
             }
           }
+        }
+
+        // エラーチェック（Claude Agent SDK仕様準拠）
+        if (handler.getHasError()) {
+          const details = handler.getErrorDetails();
+          const errorMsg = details?.subtype === 'error_max_turns'
+            ? `AI実行がmaxTurns制限に到達しました: ${details?.message || '詳細不明'}`
+            : `AI実行中にエラーが発生しました: ${details?.message || '詳細不明'}`;
+          throw new Error(errorMsg);
         }
 
         handler.complete(true, `レビュー完了 - ${status === 'approved' ? '承認' : '修正要求'}`);
@@ -273,7 +371,7 @@ REVIEW_STATUS: APPROVED または CHANGES_REQUESTED
     };
 
     // Write review.json using AI
-    const reviewPath = `.kugutsu/tasks/${taskId}/review.json`;
+    const reviewPath = `.kugutsu/sprints/${sprintId}/tasks/${taskId}/review.json`;
     await AIFileWriter.writeFile(provider, reviewPath, reviewArtifact, config.baseRepoPath);
     console.log(`📝 レビュー結果を保存しました: ${reviewPath}`);
 

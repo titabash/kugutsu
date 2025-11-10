@@ -81,6 +81,21 @@ export class FileSystemManager {
   }
 
   /**
+   * ファイルを読み込む（エラー時はデフォルト値を返す）
+   *
+   * @param filePath - ファイルパス
+   * @param defaultValue - ファイルが存在しない場合のデフォルト値
+   * @returns ファイルの内容、またはデフォルト値
+   */
+  static async readFileSafe(filePath: string, defaultValue: string | null): Promise<string | null> {
+    try {
+      return await this.readFile(filePath);
+    } catch (error) {
+      return defaultValue;
+    }
+  }
+
+  /**
    * ファイルに書き込む
    *
    * @param filePath - ファイルパス

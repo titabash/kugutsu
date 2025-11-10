@@ -16,6 +16,8 @@ import { DataPersistence } from '../../utils/DataPersistence.js';
 import type { StoryMapping } from '../../types/scrum.js';
 import { randomUUID } from 'crypto';
 import { MessageHandler } from '../../utils/MessageHandler.js';
+import path from 'path';
+import { FileSystemManager } from '../../utils/FileSystemManager.js';
 
 /**
  * タスク定義
@@ -178,6 +180,15 @@ export async function taskBreakdownNode(
     }
   }
 
+  // エラーチェック（Claude Agent SDK仕様準拠）
+  if (handler.getHasError()) {
+    const details = handler.getErrorDetails();
+    const errorMsg = details?.subtype === 'error_max_turns'
+      ? `AI実行がmaxTurns制限に到達しました: ${details?.message || '詳細不明'}`
+      : `AI実行中にエラーが発生しました: ${details?.message || '詳細不明'}`;
+    throw new Error(errorMsg);
+  }
+
   handler.complete(true, 'タスク分解が完了しました');
 
   // タスクリストを抽出
@@ -213,6 +224,23 @@ export async function taskBreakdownNode(
   await persistence.saveKanbanState(currentProjectId, kanbanState);
 
   console.log('💾 タスク情報を保存しました');
+
+  // Convert to TaskArtifact format and save to .kugutsu/tasks.json
+  // This ensures compatibility with EngineerNode which expects this file
+  const taskArtifacts = taskList.map((task) => ({
+    id: task.id,
+    title: task.title,
+    description: task.description,
+    priority: task.priority,
+    dependencies: task.dependencies,
+    status: task.status,
+    createdAt: task.createdAt,
+    updatedAt: task.createdAt,
+  }));
+
+  const tasksJsonPath = path.join(config.baseRepoPath, '.kugutsu', 'tasks.json');
+  await FileSystemManager.writeJSON(tasksJsonPath, taskArtifacts);
+  console.log(`💾 .kugutsu/tasks.json を保存しました（${taskArtifacts.length}タスク）`);
 
   // サマリー表示
   console.log('\n📊 タスク分解サマリー:');
@@ -279,6 +307,7 @@ export async function taskBreakdownNode(
   return {
     globalTasks: globalTasks,
     dependencyGraph: dependencyGraph,
+    tasksPath: '.kugutsu/tasks.json',
     logs: [
       {
         timestamp: new Date(),

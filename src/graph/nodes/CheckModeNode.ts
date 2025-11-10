@@ -434,15 +434,17 @@ JSON形式で以下を出力してください：
 /**
  * CheckModeNodeのルーティング関数
  *
- * 継続モード: sprint_planning (既存タスクをスプリントに分割)
- * 新規モード: product_owner (新しいタスク分解)
+ * CheckModeは両方の複雑度パスで最初に実行されるため、
+ * 複雑度判定結果に基づいて次のノードにルーティングする
  */
 export function checkModeRouter(state: ParallelDevStateType): string {
-  if (state.continuationMode) {
-    console.log('➡️ ルーティング: sprint_planning (継続モード)');
-    return 'sprint_planning';
+  const requiresDetailedDesign = state.metadata.requiresDetailedDesign;
+
+  if (requiresDetailedDesign) {
+    console.log('➡️ ルーティング: director_ai (高複雑度パス)');
+    return 'director_ai';
   } else {
-    console.log('➡️ ルーティング: product_owner (新規モード)');
+    console.log('➡️ ルーティング: product_owner (低複雑度パス)');
     return 'product_owner';
   }
 }

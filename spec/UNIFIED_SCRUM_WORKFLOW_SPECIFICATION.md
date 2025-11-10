@@ -98,7 +98,8 @@ graph TD
     MODE_ROUTE -->|継続| SPRINT_PLAN[SprintPlanningNode: スプリント計画]
 
     %% スプリント実行ループ
-    SPRINT_PLAN --> DISPATCH[EngineerDispatchNode: タスク割り当て]
+    SPRINT_PLAN --> INSTRUCTION_GEN[InstructionGeneratorNode: instruction.md並列生成]
+    INSTRUCTION_GEN --> DISPATCH[EngineerDispatchNode: タスク割り当て]
     DISPATCH --> ENGINEER[EngineerAI x N: 並列実装]
     ENGINEER --> REVIEW[TechLeadAI x N: 並列レビュー]
     REVIEW --> MERGE[MergeCoordinatorNode: マージ調整]
@@ -158,11 +159,12 @@ graph TD
 | 7 | `product_owner` | 設計 | 複雑度：低 | タスク分解（直接） |
 | 8 | `check_mode` | 判定 | 常に実行 | 継続/新規モード判定 |
 | 9 | `sprint_planning` | 計画 | 常に実行 | スプリント計画（8-16h単位） |
-| 10 | `engineer_dispatch` | 統合 | 常に実行 | タスク割り当て、worktree管理 |
-| 11 | `engineer` | 実装 | 常に実行（並列） | タスク実装 |
-| 12 | `review` | レビュー | 常に実行（並列） | コードレビュー |
-| 13 | `merge_coordinator` | 統合 | 常に実行 | マージ調整 |
-| 14 | `conflict_resolver` | 解決 | コンフリクト時 | コンフリクト解決 |
+| 10 | `instruction_generator` | 統合 | 常に実行 | スプリントスコープのタスクについてinstruction.md並列生成 |
+| 11 | `engineer_dispatch` | 統合 | 常に実行 | タスク割り当て、worktree管理 |
+| 12 | `engineer` | 実装 | 常に実行（並列） | タスク実装 |
+| 13 | `review` | レビュー | 常に実行（並列） | コードレビュー |
+| 14 | `merge_coordinator` | 統合 | 常に実行 | マージ調整 |
+| 15 | `conflict_resolver` | 解決 | コンフリクト時 | コンフリクト解決 |
 | 15 | `sprint_review` | 判定 | 常に実行 | スプリント完了判定、次スプリント生成 |
 
 ### 3.2 新規ノード詳細
@@ -957,6 +959,7 @@ export function createUnifiedScrumWorkflowGraph() {
 
   // スプリント実行
   workflow.addNode('sprint_planning', sprintPlanningNode);
+  workflow.addNode('instruction_generator', instructionGeneratorNode);
   workflow.addNode('engineer_dispatch', engineerDispatchNode);
   workflow.addNode('engineer', createEngineerWrapper());  // 統合版
   workflow.addNode('review', createReviewWrapper());      // 統合版（ステータス修正）
@@ -1026,7 +1029,8 @@ export function createUnifiedScrumWorkflowGraph() {
   workflow.addEdge('check_mode', 'sprint_planning');
 
   // スプリント実行フロー
-  workflow.addEdge('sprint_planning', 'engineer_dispatch');
+  workflow.addEdge('sprint_planning', 'instruction_generator');
+  workflow.addEdge('instruction_generator', 'engineer_dispatch');
 
   workflow.addConditionalEdges(
     'engineer_dispatch',

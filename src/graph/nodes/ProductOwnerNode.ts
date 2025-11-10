@@ -35,6 +35,23 @@ export async function productOwnerNode(
 ): Promise<ParallelDevStateUpdate> {
   const { userRequest, config } = state;
 
+  console.log('📊 Product Owner: ユーザー要求を分析しています...');
+
+  // currentProjectId 必須チェック
+  if (!state.currentProjectId) {
+    console.error('❌ currentProjectId が設定されていません');
+    return {
+      logs: [
+        {
+          timestamp: new Date(),
+          level: 'error',
+          source: 'ProductOwnerNode',
+          message: 'currentProjectId が設定されていません（check_modeで設定されるべき）',
+        },
+      ],
+    };
+  }
+
   // Create AI provider
   const providerConfig: AIProviderConfig = {
     provider: config.provider || 'claude',
@@ -44,8 +61,6 @@ export async function productOwnerNode(
   };
 
   const provider = AIProviderFactory.create(providerConfig);
-
-  console.log('📊 Product Owner: ユーザー要求を分析しています...');
 
   // フィードバック受信チェック
   const feedback = state.feedbackRequest;
@@ -113,108 +128,21 @@ ${JSON.stringify(feedback.details, null, 2)}
   const fileReader = new FileReader(config.baseRepoPath);
 
   try {
-    // Phase 1: Technology Stack Analysis
-    // Use relative path from baseRepoPath for AI prompts
-    const techStackFilePath = '.kugutsu/tech-stack.json';
-    const techStackAnalysisPrompt = `${feedbackContext}
-# Technology Stack Analysis
+    // Phase 1: Verify Technology Stack (読み込みのみ、生成はCheckModeNodeが担当)
+    // Use repository/architecture/tech-stack.json (managed by CheckModeNode)
+    const techStackFilePath = '.kugutsu/repository/architecture/tech-stack.json';
 
-**🎯 必須タスク**: Writeツールで \`${techStackFilePath}\` を作成してください。
-
-## 対象リポジトリ
-${config.baseRepoPath}
-
-## 手順
-
-1. リポジトリ内の設定ファイルを確認（package.json, tsconfig.json, go.mod, requirements.txt等）
-2. 使用されているプログラミング言語を特定
-3. フレームワークとライブラリを特定
-4. ビルドツールとテストフレームワークを特定
-5. **Writeツールで結果をファイルに保存（必須）**
-
-## ファイル作成方針（Upsert）
-
-- **Readツールで${techStackFilePath}の存在を確認**
-- **存在する場合**: 既存内容を読み込み、更新してWriteツールで保存
-- **存在しない場合**: 新規作成してWriteツールで保存
-
-## 出力ファイル仕様
-
-**ファイルパス**: \`${techStackFilePath}\`
-
-**ファイル形式**: JSON
-
-**構造**:
-\`\`\`json
-{
-  "languages": ["言語1", "言語2"],
-  "frameworks": ["フレームワーク1"],
-  "buildTools": ["ツール1"],
-  "testingFrameworks": ["テストフレームワーク1"],
-  "projectType": "プロジェクトタイプ"
-}
-\`\`\`
-
-**⚠️ 重要**: このタスクを完了するには、Writeツールでファイルを作成することが必須です。
-`;
-
-    // Phase 1: Tech stack analysis with retry
-    const maxTurns = config.maxTurns || 30;
-    const techStackResult = await RetryManager.executeWithRetry(
-      async () => {
-        const handler = new MessageHandler({
-          maxTurns,
-          nodeName: 'ProductOwner - Tech Stack Analysis',
-        });
-
-        for await (const message of provider.execute(techStackAnalysisPrompt, {
-          maxTurns,
-          cwd: config.baseRepoPath,
-          allowedTools: ['Read', 'Glob', 'Grep', 'Write'],
-          permissionMode: 'acceptEdits',
-          includePartialMessages: true,
-        })) {
-          await handler.handleMessage(message);
-        }
-
-        handler.complete(true, '技術スタック分析が完了しました');
-        return true;
-      },
-      {
-        maxRetries: 3,
-        initialDelayMs: 2000,
-        maxDelayMs: 30000,
-        backoffMultiplier: 2,
-        retryableErrors: ['ETIMEDOUT', 'ECONNRESET', 'rate_limit', 'Rate limit', 'timeout', 'network'],
-      }
-    );
-
-    if (!techStackResult.success) {
-      const classifiedError = ErrorClassifier.classify(techStackResult.error!);
-      console.error(`❌ 技術スタック分析に失敗 (${techStackResult.attempts}回試行): ${techStackResult.error?.message}`);
-
-      return {
-        logs: [
-          {
-            timestamp: new Date(),
-            level: 'error',
-            source: 'ProductOwnerNode',
-            message: `技術スタック分析に失敗: ${classifiedError.message}`,
-            data: {
-              error: techStackResult.error?.message,
-              severity: classifiedError.severity,
-              attempts: techStackResult.attempts,
-            },
-          },
-        ],
-        metadata: {
-          hasErrors: true,
-          errors: [techStackResult.error?.message || 'Unknown error'],
-        },
-      };
+    // 技術スタックファイルの存在確認
+    let techStackExists = false;
+    try {
+      await fileReader.readJSON(techStackFilePath);
+      techStackExists = true;
+      console.log('✅ 技術スタック情報を読み込みました');
+    } catch (error) {
+      console.log('⚠️ 技術スタック情報が見つかりません（CheckModeNodeで初期化されます）');
     }
 
-    console.log('✅ 技術スタック分析完了');
+    const maxTurns = config.maxTurns || 30;
 
     // Phase 2: Requirements Analysis
     // Use relative path from baseRepoPath for AI prompts
@@ -276,6 +204,15 @@ MECE原則（漏れなく、重複なく）に基づいて要求を分析し、�
           includePartialMessages: true,
         })) {
           await handler.handleMessage(message);
+        }
+
+        // エラーチェック（Claude Agent SDK仕様準拠）
+        if (handler.getHasError()) {
+          const details = handler.getErrorDetails();
+          const errorMsg = details?.subtype === 'error_max_turns'
+            ? `AI実行がmaxTurns制限に到達しました: ${details?.message || '詳細不明'}`
+            : `AI実行中にエラーが発生しました: ${details?.message || '詳細不明'}`;
+          throw new Error(errorMsg);
         }
 
         handler.complete(true, '要求分析が完了しました');
@@ -398,6 +335,15 @@ ${userRequest}
           await handler.handleMessage(message);
         }
 
+        // エラーチェック（Claude Agent SDK仕様準拠）
+        if (handler.getHasError()) {
+          const details = handler.getErrorDetails();
+          const errorMsg = details?.subtype === 'error_max_turns'
+            ? `AI実行がmaxTurns制限に到達しました: ${details?.message || '詳細不明'}`
+            : `AI実行中にエラーが発生しました: ${details?.message || '詳細不明'}`;
+          throw new Error(errorMsg);
+        }
+
         handler.complete(true, 'タスク生成が完了しました');
         return true;
       },
@@ -476,86 +422,29 @@ ${userRequest}
 
     console.log('✅ タスクリスト読み込み完了');
 
-    // Phase 4: Create instruction.md for each task
-    const instructionPrompt = `${feedbackContext}
-# Task Instructions Generation
-
-以下のタスクそれぞれに対して、詳細な実装指示書（instruction.md）を作成してください。
-
-## タスクリスト
-${JSON.stringify(tasks.map(t => ({ id: t.id, title: t.title, description: t.description })), null, 2)}
-
-## プロジェクト情報
-**Readツールで${techStackFilePath}を読み込んで参照してください**
-
-## ユーザーリクエスト
-${userRequest}
-
-## タスク
-各タスクについて、以下のファイルを作成してください：
-
-**ファイルパス形式**: .kugutsu/tasks/{taskId}/instruction.md
-
-## ファイル作成・更新方針（Upsert）
-各タスクのinstruction.mdについて：
-1. **Readツールで.kugutsu/tasks/{taskId}/instruction.mdの存在を確認**
-2. **存在する場合**: 既存内容を読み込み、その内容を基に更新してWriteツールで保存
-3. **存在しない場合**: 新規作成してWriteツールで保存
-
-**内容**: Markdown形式で以下を含める
-- タスクの目的
-- **既存のどのファイルを編集/追加するか**（新規プロジェクト作成は不要）
-- 実装すべき詳細
-- 技術的制約
-- テスト駆動開発の手順
-- 動作確認方法
-
-**重要**:
-- 必ず Write ツールを使用してすべてのファイルを作成してください
-- 既存ファイルがあれば既存の内容を尊重して更新してください
-- 既存プロジェクトへの機能追加なので、プロジェクトセットアップタスクは作成しないでください
-- 各タスクのinstruction.mdを必ず作成してください
-`;
-
-    const instructionResult = await RetryManager.executeWithRetry(
-      async () => {
-        const handler = new MessageHandler({
-          maxTurns,
-          nodeName: 'ProductOwner - Instruction Generation',
-        });
-
-        for await (const message of provider.execute(instructionPrompt, {
-          maxTurns,
-          cwd: config.baseRepoPath,
-          allowedTools: ['Read', 'Glob', 'Write'],
-          permissionMode: 'acceptEdits',
-          includePartialMessages: true,
-        })) {
-          await handler.handleMessage(message);
-        }
-
-        handler.complete(true, 'Instruction.md生成が完了しました');
-        return true;
-      },
-      {
-        maxRetries: 3,
-        initialDelayMs: 2000,
-        maxDelayMs: 30000,
-        backoffMultiplier: 2,
-        retryableErrors: ['ETIMEDOUT', 'ECONNRESET', 'rate_limit', 'Rate limit', 'timeout', 'network'],
-      }
-    );
-
-    if (!instructionResult.success) {
-      console.warn('⚠️ instruction.md の作成に失敗しました:', instructionResult.error?.message);
-    } else {
-      console.log('✅ instruction.md 作成完了');
-    }
+    // Convert tasks to GlobalTask format (for SprintPlanningNode)
+    const globalTasks = tasks.map((task) => {
+      return {
+        id: task.id,
+        type: 'feature' as const, // ProductOwner generates feature tasks
+        title: task.title,
+        description: task.description,
+        priority: task.priority,
+        dependencies: task.dependencies,
+        status: task.status,
+        projectId: state.currentProjectId, // 必須チェック済み
+        requestTimestamp: new Date(),
+        dynamicPriority: task.priority * 10, // Convert priority to dynamic priority
+        createdAt: task.createdAt,
+        updatedAt: task.updatedAt,
+      };
+    });
 
     // Return state update with file paths
     const result = {
       tasks,
-      techStackPath: '.kugutsu/tech-stack.json',
+      globalTasks, // Add globalTasks for SprintPlanningNode
+      techStackPath: '.kugutsu/repository/architecture/tech-stack.json',
       requirementsPath: '.kugutsu/requirements.json',
       tasksPath: '.kugutsu/tasks.json',
       feedbackRequest: null, // フィードバッククリア（成功）
@@ -578,6 +467,7 @@ ${userRequest}
     };
     console.log(`🔍 ProductOwner returning tasksPath: ${result.tasksPath}`);
     console.log(`🔍 ProductOwner returning ${result.tasks.length} tasks`);
+    console.log(`🔍 ProductOwner returning ${result.globalTasks.length} globalTasks`);
     return result as any;
   } catch (error) {
     console.error('❌ Product Owner Node エラー:', error);
@@ -600,3 +490,4 @@ ${userRequest}
     };
   }
 }
+

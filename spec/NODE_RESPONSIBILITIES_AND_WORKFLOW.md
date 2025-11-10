@@ -89,6 +89,40 @@
 
 ---
 
+### InstructionGeneratorNode
+
+**カテゴリ**: 統合
+**役割**: スプリントスコープのタスクについて並列でinstruction.md生成
+
+**作業場所**:
+- `.kugutsu/sprints/sprint-{N}/tasks/{taskId}/`
+
+**読み取るファイル**:
+- `state.activeSprint.taskIds` - スプリント内タスクリスト
+- `state.globalTasks` - 全タスク情報
+- `.kugutsu/projects/{projectId}/story-mapping/` - ストーリーマッピング（高複雑度パス）
+- `.kugutsu/projects/{projectId}/design/` - 設計書（高複雑度パス）
+
+**生成するファイル**:
+- `.kugutsu/sprints/sprint-{N}/tasks/{taskId}/instruction.md` - 各タスクの詳細指示
+
+**更新するファイル**:
+- なし
+
+**Stateへの出力**:
+- ログ情報
+
+**実行フェーズ**: スプリント計画後、タスク実行前
+
+**次のノード**: EngineerDispatchNode
+
+**重要な注意事項**:
+- スプリントスコープのタスクのみ処理（`activeSprint.taskIds`でフィルタリング）
+- 並列実行パターン（Promise.allSettled）を使用
+- 高複雑度パス（設計書あり）と低複雑度パス（設計書なし）の両方に対応
+
+---
+
 ### EngineerDispatchNode
 
 **カテゴリ**: 統合
@@ -110,7 +144,7 @@
 - 実行可能なタスクのリスト
 - worktreeパス情報
 
-**実行フェーズ**: タスク実行前
+**実行フェーズ**: instruction.md生成後
 
 **次のノード**: EngineerNode（並列実行）
 
@@ -371,6 +405,10 @@ ProductOwnerNodeを中心とした統一ワークフロー：
   └─ タスク確定
       └─ .kugutsu/tasks.json 最終化
   ↓
+[InstructionGeneratorNode] × N (並列実行)
+  - スプリントスコープのタスクについてinstruction.md生成
+  - .kugutsu/sprints/sprint-{N}/tasks/{taskId}/instruction.md 作成
+  ↓
 [EngineerDispatchNode]
   - タスクのディスパッチ
   - worktree作成
@@ -418,7 +456,16 @@ ProductOwnerNode (AI)
 .kugutsu/tech-stack.json
 .kugutsu/requirements.json
 .kugutsu/tasks.json
-.kugutsu/tasks/*/instruction.md
+```
+
+### Phase 1.5: Instruction生成
+
+```
+SprintPlanningNode (スプリント計画)
+  ↓
+InstructionGeneratorNode (AI, 並列実行)
+  ↓
+.kugutsu/sprints/sprint-{N}/tasks/{taskId}/instruction.md
 ```
 
 ### Phase 2: 実装

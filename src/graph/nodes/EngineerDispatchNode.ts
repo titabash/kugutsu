@@ -59,6 +59,28 @@ export async function engineerDispatchNode(
     const newWorktrees = new Map<string, WorktreeInfo>();
     const logs: any[] = [];
 
+    // 🔄 Dynamic Task Pooling: Calculate available slots
+    const inProgressCount = tasks.filter(t => t.status === 'in_progress').length;
+    const availableSlots = config.maxEngineers - inProgressCount;
+
+    console.log(`[EngineerDispatch] In Progress: ${inProgressCount}/${config.maxEngineers}`);
+    console.log(`[EngineerDispatch] Available Slots: ${availableSlots}`);
+
+    if (availableSlots <= 0) {
+      console.log('[EngineerDispatch] No available slots, skipping dispatch');
+      return {
+        tasks: updatedTasks,
+        logs: [
+          {
+            timestamp: new Date(),
+            level: 'info',
+            source: 'EngineerDispatchNode',
+            message: `実行可能なスロットがありません (${inProgressCount}/${config.maxEngineers} 実行中)`,
+          },
+        ],
+      };
+    }
+
     // pending → in_progress (依存関係チェック + worktree作成)
     // Get pending tasks with resolved dependencies
     const pendingTasks = tasks.filter((task) =>
@@ -75,7 +97,7 @@ export async function engineerDispatchNode(
             timestamp: new Date(),
             level: 'info',
             source: 'EngineerDispatchNode',
-            message: '実行可能なタスクがありません',
+            message: '実行可能なタスクがありません（依存関係未解決、または全タスク完了）',
           },
         ],
       };
@@ -84,8 +106,8 @@ export async function engineerDispatchNode(
     // Sort by priority (highest first)
     pendingTasks.sort((a, b) => b.priority - a.priority);
 
-    // Limit to maxEngineers
-    const tasksToDispatch = pendingTasks.slice(0, config.maxEngineers);
+    // 🔄 Dynamic Task Pooling: Dispatch only available slots
+    const tasksToDispatch = pendingTasks.slice(0, availableSlots);
 
     console.log(`📋 ${tasksToDispatch.length}個のタスクをディスパッチします`);
 

@@ -23,6 +23,27 @@ const { MockAIProvider, createMockMessage } = await import(
 );
 const { AIProviderFactory } = await import('../../../src/providers/AIProviderFactory.js');
 
+// Test helper to create state with activeSprint
+function createTestState(userRequest: string, config: any) {
+  const state = createInitialState(userRequest, config);
+  state.activeSprint = {
+    id: 'sprint-1',
+    name: 'Sprint 1',
+    goal: 'Test sprint',
+    taskIds: [],
+    status: 'active' as const,
+    deployable: true,
+    metadata: {
+      estimatedHours: 0,
+      blockers: [],
+      completedTasksCount: 0,
+      failedTasksCount: 0,
+    },
+  };
+  state.nodeRetryCounters = {};
+  return state;
+}
+
 describe('ReviewNode', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -59,25 +80,72 @@ describe('ReviewNode', () => {
         },
       ];
 
-      await fs.mkdir(path.join(kugutsuDir, 'tasks/task-001'), { recursive: true });
+      await fs.mkdir(path.join(kugutsuDir, 'sprints/sprint-1/tasks/task-001'), { recursive: true });
       await fs.writeFile(
         path.join(kugutsuDir, 'tasks.json'),
         JSON.stringify(tasksData, null, 2),
         'utf-8'
       );
 
-      // Setup mock provider - positive review
-      mockProvider.setDefaultResponse({
+      // Setup mock provider - positive review with file write simulation
+      const tasksJsonPath = path.join(kugutsuDir, 'tasks.json');
+      mockProvider.setMockResponse(/review/i, {
         messages: [
           createMockMessage.assistant('コードを確認しています...'),
           createMockMessage.assistant('テストカバレッジは十分です'),
           createMockMessage.assistant('REVIEW_STATUS: APPROVED\n\n良好なコード品質です。'),
+          createMockMessage.system({
+            toolUse: {
+              tool: 'Write',
+              arguments: {
+                file_path: path.join(kugutsuDir, 'sprints/sprint-1/tasks/task-001/review.json'),
+                content: JSON.stringify({
+                  taskId: 'task-001',
+                  status: 'approved',
+                  reviewedBy: 'TechLeadAI',
+                  reviewedAt: new Date().toISOString(),
+                  comments: [],
+                  summary: 'レビュー結果: approved',
+                  suggestions: [],
+                }, null, 2),
+              },
+            },
+          }),
           createMockMessage.result(true),
         ],
+        simulateTools: true,
+      });
+
+      // Mock for tasks.json update
+      mockProvider.setMockResponse(/tasks\.json/i, {
+        messages: [
+          createMockMessage.system({
+            toolUse: {
+              tool: 'Write',
+              arguments: {
+                file_path: tasksJsonPath,
+                content: JSON.stringify([{
+                  id: 'task-001',
+                  title: 'Implemented feature',
+                  description: 'Feature implementation',
+                  priority: 100,
+                  dependencies: [],
+                  status: 'reviewed',
+                  createdAt: tasksData[0].createdAt,
+                  updatedAt: new Date().toISOString(),
+                  worktreePath,
+                  branchName: 'task/task-001',
+                }], null, 2),
+              },
+            },
+          }),
+          createMockMessage.result(true),
+        ],
+        simulateTools: true,
       });
 
       // Create initial state
-      const initialState = createInitialState('Test request', {
+      const initialState = createTestState('Test request', {
         maxEngineers: 1,
         maxTurns: 30,
         baseBranch: 'main',
@@ -91,7 +159,7 @@ describe('ReviewNode', () => {
       const result = await reviewNode(initialState, 'task-001');
 
       // Verify review.json was created
-      const reviewPath = path.join(kugutsuDir, 'tasks/task-001/review.json');
+      const reviewPath = path.join(kugutsuDir, 'sprints/sprint-1/tasks/task-001/review.json');
       const reviewExists = await fs.access(reviewPath).then(() => true).catch(() => false);
       expect(reviewExists).toBe(true);
 
@@ -144,26 +212,47 @@ describe('ReviewNode', () => {
         },
       ];
 
-      await fs.mkdir(path.join(kugutsuDir, 'tasks/task-002'), { recursive: true });
+      await fs.mkdir(path.join(kugutsuDir, 'sprints/sprint-1/tasks/task-002'), { recursive: true });
       await fs.writeFile(
         path.join(kugutsuDir, 'tasks.json'),
         JSON.stringify(tasksData, null, 2),
         'utf-8'
       );
 
-      // Setup mock provider - negative review
+      // Setup mock provider - negative review with file write simulation
       mockProvider.setDefaultResponse({
         messages: [
           createMockMessage.assistant('コードを確認しています...'),
           createMockMessage.assistant('Issue: テストカバレッジが不足しています'),
           createMockMessage.assistant('Problem: エラーハンドリングが不適切です'),
           createMockMessage.assistant('REVIEW_STATUS: CHANGES_REQUESTED\n\n改善が必要です。'),
+          createMockMessage.system({
+            toolUse: {
+              tool: 'Write',
+              arguments: {
+                file_path: path.join(kugutsuDir, 'sprints/sprint-1/tasks/task-002/review.json'),
+                content: JSON.stringify({
+                  taskId: 'task-002',
+                  status: 'changes_requested',
+                  reviewedBy: 'AI',
+                  reviewedAt: new Date().toISOString(),
+                  comments: [
+                    { severity: 'major', message: 'テストカバレッジが不足しています' },
+                    { severity: 'major', message: 'エラーハンドリングが不適切です' },
+                  ],
+                  summary: 'レビュー結果: changes_requested',
+                  suggestions: [],
+                }, null, 2),
+              },
+            },
+          }),
           createMockMessage.result(true),
         ],
+        simulateTools: true,
       });
 
       // Create initial state
-      const initialState = createInitialState('Test request', {
+      const initialState = createTestState('Test request', {
         maxEngineers: 1,
         maxTurns: 30,
         baseBranch: 'main',
@@ -177,7 +266,7 @@ describe('ReviewNode', () => {
       const result = await reviewNode(initialState, 'task-002');
 
       // Verify review.json was created
-      const reviewPath = path.join(kugutsuDir, 'tasks/task-002/review.json');
+      const reviewPath = path.join(kugutsuDir, 'sprints/sprint-1/tasks/task-002/review.json');
       const reviewExists = await fs.access(reviewPath).then(() => true).catch(() => false);
       expect(reviewExists).toBe(true);
 
@@ -229,25 +318,46 @@ describe('ReviewNode', () => {
         },
       ];
 
-      await fs.mkdir(path.join(kugutsuDir, 'tasks/task-003'), { recursive: true });
+      await fs.mkdir(path.join(kugutsuDir, 'sprints/sprint-1/tasks/task-003'), { recursive: true });
       await fs.writeFile(
         path.join(kugutsuDir, 'tasks.json'),
         JSON.stringify(tasksData, null, 2),
         'utf-8'
       );
 
-      // Setup mock provider - implicit issues
+      // Setup mock provider - implicit issues with file write simulation
       mockProvider.setDefaultResponse({
         messages: [
           createMockMessage.assistant('コードを確認しています...'),
           createMockMessage.assistant('This code has a concern regarding security.'),
           createMockMessage.assistant('Please fix the error handling.'),
+          createMockMessage.system({
+            toolUse: {
+              tool: 'Write',
+              arguments: {
+                file_path: path.join(kugutsuDir, 'sprints/sprint-1/tasks/task-003/review.json'),
+                content: JSON.stringify({
+                  taskId: 'task-003',
+                  status: 'changes_requested',
+                  reviewedBy: 'TechLeadAI',
+                  reviewedAt: new Date().toISOString(),
+                  comments: [
+                    { severity: 'major', message: 'Security concern detected' },
+                    { severity: 'major', message: 'Error handling needs fixing' },
+                  ],
+                  summary: 'レビュー結果: changes_requested',
+                  suggestions: [],
+                }, null, 2),
+              },
+            },
+          }),
           createMockMessage.result(true),
         ],
+        simulateTools: true,
       });
 
       // Create initial state
-      const initialState = createInitialState('Test request', {
+      const initialState = createTestState('Test request', {
         maxEngineers: 1,
         maxTurns: 30,
         baseBranch: 'main',
@@ -261,7 +371,7 @@ describe('ReviewNode', () => {
       const result = await reviewNode(initialState, 'task-003');
 
       // Verify review.json was created
-      const reviewPath = path.join(kugutsuDir, 'tasks/task-003/review.json');
+      const reviewPath = path.join(kugutsuDir, 'sprints/sprint-1/tasks/task-003/review.json');
       const reviewExists = await fs.access(reviewPath).then(() => true).catch(() => false);
       expect(reviewExists).toBe(true);
 
@@ -301,7 +411,7 @@ describe('ReviewNode', () => {
         },
       ];
 
-      await fs.mkdir(path.join(kugutsuDir, 'tasks/task-004'), { recursive: true });
+      await fs.mkdir(path.join(kugutsuDir, 'sprints/sprint-1/tasks/task-004'), { recursive: true });
       await fs.writeFile(
         path.join(kugutsuDir, 'tasks.json'),
         JSON.stringify(tasksData, null, 2),
@@ -316,7 +426,7 @@ describe('ReviewNode', () => {
       });
 
       // Create initial state
-      const initialState = createInitialState('Test request', {
+      const initialState = createTestState('Test request', {
         maxEngineers: 1,
         maxTurns: 30,
         baseBranch: 'main',
@@ -361,7 +471,7 @@ describe('ReviewNode', () => {
       );
 
       // Create initial state
-      const initialState = createInitialState('Test request', {
+      const initialState = createTestState('Test request', {
         maxEngineers: 1,
         maxTurns: 30,
         baseBranch: 'main',
@@ -416,7 +526,7 @@ describe('ReviewNode', () => {
       );
 
       // Create initial state
-      const initialState = createInitialState('Test request', {
+      const initialState = createTestState('Test request', {
         maxEngineers: 1,
         maxTurns: 30,
         baseBranch: 'main',
@@ -467,7 +577,7 @@ describe('ReviewNode', () => {
           },
         ];
 
-        await fs.mkdir(path.join(kugutsuDir, 'tasks/task-001'), { recursive: true });
+        await fs.mkdir(path.join(kugutsuDir, 'sprints/sprint-1/tasks/task-001'), { recursive: true });
         await fs.writeFile(
           path.join(kugutsuDir, 'tasks.json'),
           JSON.stringify(tasksData, null, 2),
@@ -485,7 +595,7 @@ describe('ReviewNode', () => {
         });
 
         // Create initial state
-        const initialState = createInitialState('Test request', {
+        const initialState = createTestState('Test request', {
           maxEngineers: 1,
           maxTurns: 30,
           baseBranch: 'main',
@@ -499,7 +609,7 @@ describe('ReviewNode', () => {
         const result = await reviewNode(initialState, 'task-001');
 
         // Verify review.json was created
-        const reviewPath = path.join(kugutsuDir, 'tasks/task-001/review.json');
+        const reviewPath = path.join(kugutsuDir, 'sprints/sprint-1/tasks/task-001/review.json');
         const reviewExists = await fs.access(reviewPath).then(() => true).catch(() => false);
         expect(reviewExists).toBe(true);
 
@@ -555,7 +665,7 @@ describe('ReviewNode', () => {
           },
         ];
 
-        await fs.mkdir(path.join(kugutsuDir, 'tasks/task-002'), { recursive: true });
+        await fs.mkdir(path.join(kugutsuDir, 'sprints/sprint-1/tasks/task-002'), { recursive: true });
         await fs.writeFile(
           path.join(kugutsuDir, 'tasks.json'),
           JSON.stringify(tasksData, null, 2),
@@ -573,7 +683,7 @@ describe('ReviewNode', () => {
         });
 
         // Create initial state
-        const initialState = createInitialState('Test request', {
+        const initialState = createTestState('Test request', {
           maxEngineers: 1,
           maxTurns: 30,
           baseBranch: 'main',
@@ -587,7 +697,7 @@ describe('ReviewNode', () => {
         const result = await reviewNode(initialState, 'task-002');
 
         // Verify review.json was created
-        const reviewPath = path.join(kugutsuDir, 'tasks/task-002/review.json');
+        const reviewPath = path.join(kugutsuDir, 'sprints/sprint-1/tasks/task-002/review.json');
         const reviewContent = await fs.readFile(reviewPath, 'utf-8');
         const review = JSON.parse(reviewContent);
         expect(review.status).toBe('changes_requested');

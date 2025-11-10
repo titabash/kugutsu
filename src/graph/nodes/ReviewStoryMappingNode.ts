@@ -14,7 +14,7 @@
 import type { ParallelDevStateType, ParallelDevStateUpdate } from '../state.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 import type { AIProviderConfig } from '../../providers/IAIProvider.js';
-import { AIFileWriter } from '../../utils/AIFileWriter.js';
+import { DataPersistence } from '../../utils/DataPersistence.js';
 import type { StoryMapping } from '../../types/scrum.js';
 import { MessageHandler } from '../../utils/MessageHandler.js';
 import * as fs from 'fs/promises';
@@ -79,14 +79,6 @@ export async function reviewStoryMappingNode(
     'story-mapping',
     'story-map.json'
   );
-  const reviewHistoryPath = path.join(
-    config.baseRepoPath,
-    '.kugutsu',
-    'projects',
-    currentProjectId,
-    'story-mapping',
-    'review-history.json'
-  );
 
   // ストーリーマッピングを読み込み
   let storyMapping: StoryMapping;
@@ -114,19 +106,6 @@ export async function reviewStoryMappingNode(
   );
   console.log(`📝 ストーリー数: ${totalStories}`);
 
-  // レビュー履歴を読み込み（存在しない場合はデフォルト値）
-  let reviewHistory: any = { reviews: [] };
-  try {
-    const reviewHistoryContent = await fs.readFile(reviewHistoryPath, 'utf-8');
-    reviewHistory = JSON.parse(reviewHistoryContent);
-  } catch (error) {
-    // 初回レビュー時はファイルが存在しないので、デフォルト値を使用
-    console.log('📝 レビュー履歴なし（初回レビュー）');
-  }
-
-  const iteration = (reviewHistory.reviews?.length || 0) + 1;
-  console.log(`🔄 レビュー回数: ${iteration}回目`);
-
   // AIプロバイダーを作成してレビュー実行
   const providerConfig: AIProviderConfig = {
     provider: config.provider || 'claude',
@@ -136,6 +115,14 @@ export async function reviewStoryMappingNode(
   };
 
   const provider = AIProviderFactory.create(providerConfig);
+
+  // DataPersistenceインスタンスを作成
+  const persistence = new DataPersistence(config.baseRepoPath);
+
+  // レビュー履歴を読み込み（DataPersistence使用）
+  const reviewHistory = await persistence.loadStoryMappingReviewHistory(currentProjectId);
+  const iteration = (reviewHistory?.reviews?.length || 0) + 1;
+  console.log(`🔄 レビュー回数: ${iteration}回目`);
 
   const reviewPrompt = buildReviewPrompt(storyMapping, iteration);
 
@@ -165,6 +152,15 @@ export async function reviewStoryMappingNode(
     }
   }
 
+  // エラーチェック（Claude Agent SDK仕様準拠）
+  if (handler1.getHasError()) {
+    const details = handler1.getErrorDetails();
+    const errorMsg = details?.subtype === 'error_max_turns'
+      ? `AI実行がmaxTurns制限に到達しました: ${details?.message || '詳細不明'}`
+      : `AI実行中にエラーが発生しました: ${details?.message || '詳細不明'}`;
+    throw new Error(errorMsg);
+  }
+
   handler1.complete(true, 'ストーリーマッピングレビューが完了しました');
 
   // レビュー結果を解析
@@ -185,37 +181,11 @@ export async function reviewStoryMappingNode(
   };
 
   const updatedHistory = {
-    reviews: [...(reviewHistory.reviews || []), newReview],
+    reviews: [...(reviewHistory?.reviews || []), newReview],
   };
 
-  // Save review history using AI Write tool
-  const reviewHistorySavePrompt = `
-以下のレビュー履歴を${reviewHistoryPath}に保存してください。
-
-\`\`\`json
-${JSON.stringify(updatedHistory, null, 2)}
-\`\`\`
-
-**重要**: Writeツールを使用してこのファイルを作成してください。
-`.trim();
-
-  const handler2 = new MessageHandler({
-    maxTurns,
-    nodeName: 'ReviewStoryMapping - Save Review History',
-  });
-
-  for await (const message of provider.execute(reviewHistorySavePrompt, {
-    maxTurns,
-    cwd: config.baseRepoPath,
-    allowedTools: ['Write'],
-    permissionMode: 'acceptEdits',
-    includePartialMessages: true,
-  })) {
-    await handler2.handleMessage(message);
-  }
-
-  handler2.complete(true, 'レビュー履歴保存が完了しました');
-
+  // レビュー履歴を保存（DataPersistence使用）
+  await persistence.saveStoryMappingReviewHistory(currentProjectId, updatedHistory);
   console.log('💾 レビュー履歴を保存しました');
 
   // 承認されたかどうかで次のノードを決定

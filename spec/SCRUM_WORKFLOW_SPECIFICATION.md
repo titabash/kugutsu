@@ -89,7 +89,8 @@ graph TD
     GlobalQueue --> SprintDriven[🔄 AI駆動スプリント実行フローへ委譲]
 
     SprintDriven --> SprintPlanning[SprintPlanningNode: 8-16h単位で自動グルーピング]
-    SprintPlanning --> Engineer_Dispatch[EngineerDispatch: 並列タスク割り当て]
+    SprintPlanning --> InstructionGen[InstructionGeneratorNode: instruction.md並列生成]
+    InstructionGen --> Engineer_Dispatch[EngineerDispatch: 並列タスク割り当て]
     Engineer_Dispatch --> Engineer_Impl[EngineerAI x N: 並列実装]
     Engineer_Impl --> Review_Code[TechLeadAI x N: 並列レビュー]
     Review_Code --> Merge[MergeCoordinator: 順次マージ]
@@ -640,6 +641,14 @@ graph TD
 - スプリントゴール、含まれるタスクリスト、依存関係グラフを生成
 - `.kugutsu/sprints/active-sprint.json` に保存
 
+**フェーズ2.5: InstructionGeneratorNode（instruction.md並列生成）**
+- スプリントスコープのタスク（`activeSprint.taskIds`）のみ処理
+- 各タスクについてAIがinstruction.mdを並列生成：
+  - 高複雑度パス: 設計書（storyMapping, designDocs）を参照
+  - 低複雑度パス: ユーザーリクエストとタスク定義を参照
+- Promise.allSettledで並列実行
+- `.kugutsu/sprints/sprint-{N}/tasks/{taskId}/instruction.md` に保存
+
 **フェーズ3: 並列実装・レビュー・マージ**
 - EngineerDispatchNode: スプリント内タスクを並列割り当て
 - EngineerAI（複数並列）: 各タスクを実装
@@ -1064,8 +1073,9 @@ export function createScrumDevGraph() {
   // CheckModeNode → SprintPlanningNode
   workflow.addEdge('check_mode', 'sprint_planning');
 
-  // SprintPlanningNode → EngineerDispatchNode
-  workflow.addEdge('sprint_planning', 'engineer_dispatch');
+  // SprintPlanningNode → InstructionGeneratorNode → EngineerDispatchNode
+  workflow.addEdge('sprint_planning', 'instruction_generator');
+  workflow.addEdge('instruction_generator', 'engineer_dispatch');
 
   // EngineerDispatchNode → EngineerNode（並列実行）
   workflow.addEdge('engineer_dispatch', 'engineer');

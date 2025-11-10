@@ -5,7 +5,7 @@
  *
  * **File-based Artifact Management:**
  * - Reads tasks from `.kugutsu/tasks.json`
- * - Reads instruction from `.kugutsu/tasks/{taskId}/instruction.md`
+ * - Reads instruction from `.kugutsu/sprints/{sprintId}/tasks/{taskId}/instruction.md`
  * - Updates task status to `implemented` in tasks.json after completion
  */
 
@@ -38,9 +38,53 @@ export async function engineerNode(
   state: ParallelDevStateType,
   taskId: string
 ): Promise<ParallelDevStateUpdate> {
-  const { config, tasks, tasksPath } = state;
+  const { config, tasks, tasksPath, activeSprint } = state;
 
   console.log(`👷 Engineer: タスク ${taskId} を実装しています...`);
+
+  // アクティブスプリントIDを取得
+  if (!activeSprint?.id) {
+    console.error('❌ アクティブなスプリントが設定されていません');
+    const task = tasks.find((t) => t.id === taskId);
+    if (task) {
+      const failedTask = TaskStateMachine.transition(task, 'failed');
+      return {
+        tasks: [failedTask],
+        failedTasks: [failedTask],
+        logs: [
+          {
+            timestamp: new Date(),
+            level: 'error',
+            source: 'EngineerNode',
+            message: 'アクティブなスプリントが設定されていません',
+            taskId,
+          },
+        ],
+        metadata: {
+          tasksFailed: (state.metadata.tasksFailed || 0) + 1,
+          hasErrors: true,
+          errors: [
+            ...(state.metadata.errors || []),
+            `Task ${taskId}: No active sprint`,
+          ],
+        },
+      };
+    }
+
+    return {
+      logs: [
+        {
+          timestamp: new Date(),
+          level: 'error',
+          source: 'EngineerNode',
+          message: 'アクティブなスプリントが設定されていません',
+          taskId,
+        },
+      ],
+    };
+  }
+
+  const sprintId = activeSprint.id;
 
   // フィードバック受信チェック
   const feedback = state.feedbackRequest;
@@ -60,7 +104,7 @@ export async function engineerNode(
     console.error(`❌ 前提条件エラー: ${prereqCheck.error}`);
 
     // 現在のリトライ回数を取得
-    const currentRetryCount = state.nodeRetryCounters[prereqCheck.responsibleNode!] || 0;
+    const currentRetryCount = state.nodeRetryCounters?.[prereqCheck.responsibleNode!] || 0;
 
     // 2回目のリトライ時に人間の確認を求める (Human-in-the-Loop)
     if (currentRetryCount === 2) {
@@ -275,7 +319,7 @@ export async function engineerNode(
   }
 
   // Read instruction.md
-  const instructionPath = `.kugutsu/tasks/${taskId}/instruction.md`;
+  const instructionPath = `.kugutsu/sprints/${sprintId}/tasks/${taskId}/instruction.md`;
   let instruction: string;
   try {
     instruction = await fileReader.readMarkdown(instructionPath);
@@ -344,6 +388,50 @@ ${taskArtifact.dependencies.map((depId) => `- ${depId}`).join('\n')}
 これらのタスクの変更内容を確認し、整合性を保ってください。`
       : 'このタスクに依存関係はありません。';
 
+    // 設計書セクションの構築
+    const storyMappingSection = state.storyMapping
+      ? `
+## 📖 参照：ストーリーマッピング
+
+このタスクは全体のストーリーマッピングの一部です。全体の文脈を理解して実装してください。
+
+\`\`\`json
+${JSON.stringify(state.storyMapping, null, 2)}
+\`\`\`
+`
+      : '';
+
+    const designDocsSection = state.designDocs
+      ? `
+## 📐 参照：設計書
+
+実装時は以下の設計書に準拠してください。
+
+${state.designDocs.databasePath ? `### データベース設計
+ファイルパス: ${state.designDocs.databasePath}
+**Readツールで読み込んで参照してください**
+` : ''}
+${state.designDocs.apiPath ? `### API仕様
+ファイルパス: ${state.designDocs.apiPath}
+**Readツールで読み込んで参照してください**
+` : ''}
+${state.designDocs.uiuxPath ? `### UI/UX設計
+ファイルパス: ${state.designDocs.uiuxPath}
+**Readツールで読み込んで参照してください**
+` : ''}
+`
+      : '';
+
+    const sprintPlanSection = state.sprintPlanPath
+      ? `
+## 📅 参照：スプリント計画
+
+ファイルパス: ${state.sprintPlanPath}
+**Readツールで読み込んで参照してください**
+このスプリントの目標とタスク全体を把握してください。
+`
+      : '';
+
     const implementationPrompt = `
 # Task Implementation
 
@@ -355,7 +443,7 @@ ${taskArtifact.dependencies.map((depId) => `- ${depId}`).join('\n')}
 1. **.kugutsu/tasks.json** - タスク一覧と自分の担当タスク情報
    → このファイルからタスクの状態を確認できます
 
-2. **.kugutsu/tasks/${taskArtifact.id}/instruction.md** - このタスクの実装詳細指示
+2. **.kugutsu/sprints/${sprintId}/tasks/${taskArtifact.id}/instruction.md** - このタスクの実装詳細指示
    → 下記「タスクの詳細指示」に既に読み込まれています
 
 これらのファイルが存在しない場合はエラーです。
@@ -370,6 +458,7 @@ ${taskArtifact.worktreePath}
 ## タスクの詳細指示
 
 ${instruction}
+${storyMappingSection}${designDocsSection}${sprintPlanSection}
 
 ## 実装要件
 
@@ -432,6 +521,17 @@ ${dependenciesSection}
 
           // Handle message for progress display
           await handler.handleMessage(message);
+        }
+
+        // エラーチェック（Claude Agent SDK仕様準拠）
+        // SDKはエラー時に例外をスローせず、result messageとして返すため、
+        // ここでエラーを検出して例外をスローすることで、RetryManagerが正しく動作する
+        if (handler.getHasError()) {
+          const details = handler.getErrorDetails();
+          const errorMsg = details?.subtype === 'error_max_turns'
+            ? `AI実行がmaxTurns制限に到達しました: ${details?.message || '詳細不明'}`
+            : `AI実行中にエラーが発生しました: ${details?.message || '詳細不明'}`;
+          throw new Error(errorMsg);
         }
 
         handler.complete(true, 'タスクの実装が完了しました');

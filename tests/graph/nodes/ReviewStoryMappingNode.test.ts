@@ -30,6 +30,13 @@ const { MockAIProvider, createMockMessage } = await import(
 );
 const { AIProviderFactory } = await import('../../../src/providers/AIProviderFactory.js');
 
+// Test helper to create state with currentProjectId
+function createTestState(userRequest: string, config: any) {
+  const state = createInitialState(userRequest, config);
+  state.currentProjectId = 'test-project-001';
+  return state;
+}
+
 describe('ReviewStoryMappingNode', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -99,7 +106,7 @@ describe('ReviewStoryMappingNode', () => {
         ],
       });
 
-      const initialState = createInitialState('Implement authentication', {
+      const initialState = createTestState('Implement authentication', {
         maxEngineers: 3,
         maxTurns: 30,
         baseBranch: 'main',
@@ -167,7 +174,7 @@ describe('ReviewStoryMappingNode', () => {
         ],
       });
 
-      const initialState = createInitialState('Implement authentication', {
+      const initialState = createTestState('Implement authentication', {
         maxEngineers: 3,
         maxTurns: 30,
         baseBranch: 'main',
@@ -233,7 +240,7 @@ describe('ReviewStoryMappingNode', () => {
         ],
       });
 
-      const initialState = createInitialState('Request', {
+      const initialState = createTestState('Request', {
         maxEngineers: 3,
         maxTurns: 30,
         baseBranch: 'main',
@@ -270,7 +277,7 @@ describe('ReviewStoryMappingNode', () => {
         ],
       });
 
-      const initialState = createInitialState('Request', {
+      const initialState = createTestState('Request', {
         maxEngineers: 3,
         maxTurns: 30,
         baseBranch: 'main',
@@ -301,7 +308,7 @@ describe('ReviewStoryMappingNode', () => {
     test('should handle missing story mapping', async () => {
       mockPersistence.loadStoryMapping.mockResolvedValue(null);
 
-      const initialState = createInitialState('Request', {
+      const initialState = createTestState('Request', {
         maxEngineers: 3,
         maxTurns: 30,
         baseBranch: 'main',
@@ -342,7 +349,7 @@ describe('ReviewStoryMappingNode', () => {
         ],
       });
 
-      const initialState = createInitialState('Request', {
+      const initialState = createTestState('Request', {
         maxEngineers: 3,
         maxTurns: 30,
         baseBranch: 'main',

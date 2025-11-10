@@ -151,19 +151,33 @@ export class ClaudeAgentProvider implements IAIProvider {
 
     switch (sdkMessage.type) {
       case 'assistant':
+        // Extract text content from message.content array
+        // The message field is an APIAssistantMessage from Anthropic SDK
+        const assistantTextContent = sdkMessage.message.content
+          .filter((block: any) => block.type === 'text')
+          .map((block: any) => block.text)
+          .join('\n');
+
         return {
           ...baseMessage,
           type: 'assistant',
-          content: sdkMessage.message,
+          content: assistantTextContent,
           session_id: sdkMessage.session_id,
           uuid: sdkMessage.uuid,
         };
 
       case 'user':
+        // Extract text content from message.content array
+        // The message field is an APIUserMessage from Anthropic SDK
+        const userTextContent = sdkMessage.message.content
+          .filter((block: any) => block.type === 'text')
+          .map((block: any) => block.text)
+          .join('\n');
+
         return {
           ...baseMessage,
           type: 'user',
-          content: sdkMessage.message,
+          content: userTextContent,
           session_id: sdkMessage.session_id,
           uuid: sdkMessage.uuid,
         };

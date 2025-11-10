@@ -63,6 +63,13 @@ describe('Graph Execution Integration', () => {
       loadAllProjectMetadata: jest.fn<any>().mockResolvedValue(new Map()),
       saveProjectMetadata: jest.fn<any>().mockResolvedValue(undefined),
       loadRepositoryMetadata: jest.fn<any>().mockResolvedValue(null),
+      saveRepositoryMetadata: jest.fn<any>().mockResolvedValue(undefined),
+      saveTechStack: jest.fn<any>().mockResolvedValue(undefined),
+      saveArchitectureOverview: jest.fn<any>().mockResolvedValue(undefined),
+      saveCodingStandards: jest.fn<any>().mockResolvedValue(undefined),
+      loadStoryMapping: jest.fn<any>().mockResolvedValue(null),
+      saveActiveSprint: jest.fn<any>().mockResolvedValue(undefined),
+      addToSprintHistory: jest.fn<any>().mockResolvedValue(undefined),
     };
 
     // Setup default git worktree mock

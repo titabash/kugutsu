@@ -35,6 +35,21 @@ export interface MessageHandlerOptions {
 }
 
 /**
+ * エラー詳細情報
+ */
+export interface ErrorDetails {
+  /**
+   * エラーサブタイプ（error_max_turns | error_during_execution）
+   */
+  subtype?: string;
+
+  /**
+   * エラーメッセージ
+   */
+  message?: string;
+}
+
+/**
  * MessageHandler
  *
  * AI実行中のメッセージを処理し、進捗状況を表示します。
@@ -54,6 +69,11 @@ export interface MessageHandlerOptions {
  *   await handler.handleMessage(message);
  * }
  *
+ * // エラーチェック（重要）
+ * if (handler.getHasError()) {
+ *   throw new Error('AI実行がエラーで終了しました');
+ * }
+ *
  * handler.complete(true, '完了しました');
  * ```
  */
@@ -62,6 +82,8 @@ export class MessageHandler {
   private options: MessageHandlerOptions;
   private lastToolName: string | null = null;
   private dotCounter = 0;
+  private hasError = false;
+  private errorDetails?: ErrorDetails;
 
   constructor(options: MessageHandlerOptions) {
     this.options = options;
@@ -97,6 +119,14 @@ export class MessageHandler {
         break;
       case 'result':
         this.handleResult(message);
+        // resultメッセージでエラーを検出（Claude Agent SDK仕様準拠）
+        if (message.content && !message.content.success) {
+          this.hasError = true;
+          this.errorDetails = {
+            subtype: message.content.subtype,
+            message: message.content.error,
+          };
+        }
         break;
       case 'user':
         // ユーザーメッセージは通常表示不要
@@ -274,8 +304,21 @@ export class MessageHandler {
 
   /**
    * 完了ログを表示
+   *
+   * 注意: handleResult()でエラーが検出されていた場合は、
+   *       このメソッドは何も表示せずにスキップされます。
+   *       これにより「❌ 失敗」と「✅ 正常完了」が両方表示される問題を防ぎます。
    */
   public complete(success: boolean, summary?: string): void {
+    // エラーが検出されていたらスキップ
+    // （handleResult()で既に「❌ ... 失敗」が表示されているため）
+    if (this.hasError) {
+      if (this.options.verbose) {
+        console.log(`⚠️  [MessageHandler] complete()をスキップ: エラーが検出されています`);
+      }
+      return;
+    }
+
     // ドット表示中なら改行
     if (this.dotCounter > 0) {
       console.log(''); // 改行
@@ -298,6 +341,24 @@ export class MessageHandler {
       console.log(`   ${summary}`);
     }
     console.log('');
+  }
+
+  /**
+   * エラーが検出されているかどうかを取得
+   *
+   * @returns エラーが検出されている場合は true
+   */
+  public getHasError(): boolean {
+    return this.hasError;
+  }
+
+  /**
+   * エラー詳細情報を取得
+   *
+   * @returns エラー詳細情報（エラーがない場合は undefined）
+   */
+  public getErrorDetails(): ErrorDetails | undefined {
+    return this.errorDetails;
   }
 
   /**

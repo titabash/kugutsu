@@ -1,130 +1,336 @@
 # .kugutsu ファイル管理ドキュメント
 
+**バージョン**: 2.0
+**最終更新**: 2025-01-09
+**ステータス**: 公式リファレンス
+
+> **関連ドキュメント**: 本書は[AI_SCRUM_WORKFLOW_SPECIFICATION.md](./AI_SCRUM_WORKFLOW_SPECIFICATION.md)のファイル操作詳細版です。
+
 ## 概要
 
-このドキュメントは、Kugutsu 2.0 システムが `.kugutsu` ディレクトリ配下で作成・管理するファイルの一覧と、ノード間のファイル受け渡しの仕組みを説明します。
+このドキュメントは、Kugutsu 2.0システムが`.kugutsu`ディレクトリ配下で作成・管理するファイルの一覧と、ノード間のファイル受け渡しの仕組みを説明します。
 
 ## 重要な設計方針
 
 ### AI-First原則
 
-**すべてのファイルはAIが作成します**。システムが直接ファイルを書き込むことはありません。
+**すべてのファイルはAIが作成します**。システムが直接ファイルを書き込むことは最小限に抑えます。
 
-- ✅ **AIFileWriter経由**: AIにWriteツールを使わせてファイルを作成
-- ❌ **DataPersistence経由**: システムが直接fs.writeFileでファイルを作成（旧方式、廃止済み）
+- ✅ **DataPersistence経由** (推奨): 構造化データの保存（JSON）
+- ✅ **Claude Code SDK経由**: AIにWriteツールを使わせてファイルを作成（Markdown等）
+- ⚠️ **直接fs.writeFile**: システム内部の一時ファイルのみ（非推奨）
 
-### Upsert方式
+### タスク管理方式: Option A（タスク移動方式）
 
-- **ProductOwnerNode**: 既存ファイルがあれば読み込んで更新、なければ新規作成
-- **それ以降のノード**: 前のノードが作成したファイルが必ず存在する前提で動作
+Scrum標準に準拠した管理方式を採用：
+
+1. **Product Backlog**: 未割り当てタスクを保管
+2. **Sprint Backlog**: 現在のスプリントで実施するタスク
+3. **タスク移動**: Product Backlog → Sprint Backlog → 完了 or Product Backlogへ戻る
+
+詳細は[AI_SCRUM_WORKFLOW_SPECIFICATION.md セクション3](./AI_SCRUM_WORKFLOW_SPECIFICATION.md#3-タスク管理方式)を参照。
 
 ## ディレクトリ構造
 
 ```
 .kugutsu/
-├── config.json                          # システム設定
-├── tasks/
-│   ├── tasks.json                       # タスク定義（並列開発）
-│   ├── global-queue.json                # グローバルタスクキュー（スプリント開発）
-│   └── {taskId}/
-│       ├── instruction.md               # タスク実装指示
-│       ├── review.json                  # レビュー結果
-│       ├── merge-result.json            # マージ結果
-│       └── conflicts.json               # コンフリクト情報
-├── tech-stack.json                      # 技術スタック分析
-├── requirements.json                    # 要求分析結果
+├── repository/
+│   └── architecture/
+│       ├── tech-stack.json          # 技術スタック（CheckModeNode生成）
+│       ├── db-schema.json           # DB設計書（TechLeadDesignNode生成）
+│       ├── api-spec.json            # API仕様書（TechLeadDesignNode生成）
+│       └── uiux-screens.json        # UI/UX設計書（TechLeadDesignNode生成）
+├── product-backlog/
+│   └── backlog.json                 # 製品バックログ（未割り当てタスク）
 ├── sprints/
-│   ├── active-sprint.json               # アクティブスプリント
-│   └── sprint-history.json              # スプリント履歴
-└── projects/
-    └── {projectId}/
-        ├── project.json                 # プロジェクトメタデータ
-        ├── story-mapping/
-        │   ├── story-map.json           # ストーリーマッピング
-        │   ├── story-map.md
-        │   └── review-history.json      # レビュー履歴
-        └── design/
-            ├── design-docs.md           # 全体設計書
-            ├── database/
-            │   ├── schema.json
-            │   └── er-diagram.md
-            ├── interfaces/
-            │   ├── api-spec.json
-            │   └── api-spec.md
-            └── uiux/
-                ├── screens.json
-                └── wireframes.md
+│   ├── sprint-1/
+│   │   ├── sprint-plan.json         # スプリント計画
+│   │   ├── sprint-backlog.json      # スプリントバックログ
+│   │   └── tasks/
+│   │       ├── task-001/
+│   │       │   ├── instruction.md   # タスク実装指示
+│   │       │   ├── implementation.md # 実装詳細
+│   │       │   └── review.json      # レビュー結果
+│   │       └── task-002/
+│   │           └── ...
+│   ├── sprint-2/
+│   │   └── ...
+│   └── current-sprint.txt           # 現在のスプリント番号
+├── story-mapping.json               # ストーリーマッピング（DirectorNode生成）
+└── requirements.json                # 要件定義（ProductOwnerNode生成、Low複雑度時）
 ```
+
+### 廃止されたパス
+
+以下のパスは旧仕様で使用されていましたが、現在は廃止されています：
+
+- ❌ `.kugutsu/tasks/tasks.json` → ✅ `.kugutsu/sprints/sprint-{N}/sprint-backlog.json`
+- ❌ `.kugutsu/tasks/global-queue.json` → ✅ `.kugutsu/product-backlog/backlog.json`
+- ❌ `.kugutsu/tasks/{taskId}/` → ✅ `.kugutsu/sprints/sprint-{N}/tasks/{taskId}/`
+- ❌ `.kugutsu/sprints/active-sprint.json` → ✅ `.kugutsu/sprints/sprint-{N}/sprint-plan.json`
+- ❌ `.kugutsu/projects/{projectId}/` → ✅ `.kugutsu/repository/`
+- ❌ `.kugutsu/tech-stack.json` (ProductOwnerNode生成) → ✅ `.kugutsu/repository/architecture/tech-stack.json` (CheckModeNode生成)
 
 ## ファイル一覧と詳細
 
-### 並列開発ワークフロー
+### 共通ファイル
 
 | ファイルパス | 作成ノード | 参照ノード | 作成方針 | 必須項目 |
 |------------|-----------|-----------|---------|---------|
-| `.kugutsu/tech-stack.json` | ProductOwnerNode | ProductOwnerNode | **Upsert** | languages, frameworks, buildTools, testingFrameworks, projectType |
+| `.kugutsu/repository/architecture/tech-stack.json` | CheckModeNode | 全ノード | **新規作成** (初回のみ) | languages, frameworks, buildTools, testingFrameworks, projectType |
+| `.kugutsu/story-mapping.json` | DirectorNode | TaskBreakdownNode, EngineerNode, ReviewNode | **新規作成** | persona, epics (id, title, stories) |
 | `.kugutsu/requirements.json` | ProductOwnerNode | ProductOwnerNode | **Upsert** | functional, nonFunctional, constraints |
-| `.kugutsu/tasks.json` | ProductOwnerNode | EngineerNode, ReviewNode, MergeCoordinatorNode, ConflictResolverNode | **Upsert**（既存タスクとマージ） | id, title, description, priority, dependencies, status, createdAt, updatedAt |
-| `.kugutsu/tasks/{taskId}/instruction.md` | ProductOwnerNode | EngineerNode | **Upsert** | タスクの目的、実装詳細、テスト手順、動作確認方法 |
-| `.kugutsu/tasks/{taskId}/review.json` | ReviewNode | MergeCoordinatorNode | **新規作成** | approved, comments, reviewer, timestamp |
-| `.kugutsu/tasks/{taskId}/merge-result.json` | MergeCoordinatorNode | - | **新規作成** | success, mergedAt, commitHash（成功時） / conflicts（失敗時） |
-| `.kugutsu/tasks/{taskId}/conflicts.json` | MergeCoordinatorNode | ConflictResolverNode | **新規作成** | files, resolution |
 
-### Scrumワークフロー
+### 設計書ファイル（High複雑度時）
 
 | ファイルパス | 作成ノード | 参照ノード | 作成方針 | 必須項目 |
 |------------|-----------|-----------|---------|---------|
-| `.kugutsu/projects/{projectId}/story-mapping/story-map.json` | DirectorNode | ReviewStoryMappingNode, TechLeadDesignNode | **新規作成** | persona, epics (id, title, description, priority, stories) |
-| `.kugutsu/projects/{projectId}/story-mapping/story-map.md` | DirectorNode | - | **新規作成** | story-map.jsonの人間可読版 |
-| `.kugutsu/projects/{projectId}/story-mapping/review-history.json` | ReviewStoryMappingNode | ReviewStoryMappingNode | **Upsert**（レビュー履歴に追加） | reviews配列 (iteration, timestamp, reviewer, approved, issues, suggestions) |
-| `.kugutsu/projects/{projectId}/design/design-docs.md` | TechLeadDesignNode | - | **新規作成** | 全体設計、UI/UXサマリー、DBサマリー、I/Oサマリー、セキュリティ、パフォーマンス |
-| `.kugutsu/projects/{projectId}/design/database/schema.json` | TechLeadDesignNode | TechLeadDesignNode（API設計時） | **新規作成** | version, database, tables, relationships |
-| `.kugutsu/projects/{projectId}/design/database/er-diagram.md` | TechLeadDesignNode | - | **新規作成** | ER図（Mermaid）、テーブル定義、インデックス戦略 |
-| `.kugutsu/projects/{projectId}/design/interfaces/api-spec.json` | TechLeadDesignNode | - | **新規作成** | OpenAPI 3.0形式 |
-| `.kugutsu/projects/{projectId}/design/interfaces/api-spec.md` | TechLeadDesignNode | - | **新規作成** | API一覧、エンドポイント詳細、データモデル |
-| `.kugutsu/projects/{projectId}/design/uiux/screens.json` | TechLeadDesignNode | - | **新規作成** | screens配列 (id, name, path, components, state, events) |
-| `.kugutsu/projects/{projectId}/design/uiux/wireframes.md` | TechLeadDesignNode | - | **新規作成** | 画面遷移図、ワイヤーフレーム、コンポーネント構成 |
+| `.kugutsu/repository/architecture/db-schema.json` | TechLeadDesignNode | TaskBreakdownNode, EngineerNode | **新規作成** | version, database, tables, relationships |
+| `.kugutsu/repository/architecture/api-spec.json` | TechLeadDesignNode | TaskBreakdownNode, EngineerNode | **新規作成** | OpenAPI 3.0形式 |
+| `.kugutsu/repository/architecture/uiux-screens.json` | TechLeadDesignNode | TaskBreakdownNode, EngineerNode | **新規作成** | screens配列 (id, name, components) |
 
-### スプリント駆動ワークフロー
+### Product Backlog
 
 | ファイルパス | 作成ノード | 参照ノード | 作成方針 | 必須項目 |
 |------------|-----------|-----------|---------|---------|
-| `.kugutsu/sprints/active-sprint.json` | SprintPlanningNode | SprintPlanningNode | **Upsert** | id, name, goal, taskIds, status, deployable, metadata |
-| `.kugutsu/tasks/global-queue.json` | SprintPlanningNode | SprintPlanningNode | **Upsert** | タスク配列（tasks.jsonと同じ構造） |
+| `.kugutsu/product-backlog/backlog.json` | TaskBreakdownNode | SprintPlanningNode | **新規作成** / **更新** | tasks配列, metadata |
+
+**構造**:
+```json
+{
+  "tasks": [
+    {
+      "id": "task-001",
+      "title": "ユーザー認証機能の実装",
+      "description": "JWT認証の実装",
+      "type": "feature",
+      "priority": 95,
+      "estimatedPoints": 8,
+      "dependencies": [],
+      "status": "pending",
+      "createdAt": "2025-01-09T10:00:00Z"
+    }
+  ],
+  "metadata": {
+    "totalTasks": 10,
+    "lastUpdated": "2025-01-09T10:00:00Z"
+  }
+}
+```
+
+### Sprint Backlog
+
+| ファイルパス | 作成ノード | 参照ノード | 作成方針 | 必須項目 |
+|------------|-----------|-----------|---------|---------|
+| `.kugutsu/sprints/sprint-{N}/sprint-plan.json` | SprintPlanningNode | SprintPlanningNode | **新規作成** | sprintNumber, goal, duration, taskIds |
+| `.kugutsu/sprints/sprint-{N}/sprint-backlog.json` | SprintPlanningNode | EngineerDispatchNode, EngineerNode, ReviewNode | **新規作成** / **更新** | sprintNumber, tasks配列, metadata |
+
+**sprint-backlog.json の構造**:
+```json
+{
+  "sprintNumber": 1,
+  "tasks": [
+    {
+      "id": "task-001",
+      "title": "ユーザー認証機能の実装",
+      "status": "in_progress",
+      "assignedTo": "engineer-ai-1",
+      "worktreePath": "/path/to/worktree",
+      "branchName": "feature/task-001"
+    }
+  ],
+  "metadata": {
+    "totalPoints": 21,
+    "completedPoints": 0,
+    "startDate": "2025-01-09T10:00:00Z"
+  }
+}
+```
+
+### タスク詳細ファイル
+
+| ファイルパス | 作成ノード | 参照ノード | 作成方針 | 必須項目 |
+|------------|-----------|-----------|---------|---------|
+| `.kugutsu/sprints/sprint-{N}/tasks/{taskId}/instruction.md` | TaskBreakdownNode | EngineerNode | **新規作成** | 目的、実装対象ファイル、実装詳細、受入基準 |
+| `.kugutsu/sprints/sprint-{N}/tasks/{taskId}/implementation.md` | EngineerNode | ReviewNode | **新規作成** | 実装内容、変更ファイル、テスト結果 |
+| `.kugutsu/sprints/sprint-{N}/tasks/{taskId}/review.json` | ReviewNode | MergeCoordinatorNode | **新規作成** | taskId, status, comments, reviewedBy, reviewedAt |
+
+**instruction.md の構造**:
+```markdown
+# {Task Title}
+
+## 目的
+{対応するユーザーストーリーと、このタスクが提供する価値}
+
+## 実装対象ファイル
+- 新規作成: `path/to/new/file.ts`
+- 編集: `path/to/existing/file.ts`
+
+## 実装詳細
+
+### データベース
+{DB Schemaからの該当部分}
+
+### API
+{API Specificationからの該当部分}
+
+### UI/UX
+{UI/UX Screensからの該当部分}
+
+## 技術的制約
+{technicalNotesの内容}
+
+## 受入基準
+{acceptanceCriteriaの詳細説明}
+
+## テスト駆動開発手順
+1. テストケース作成
+2. 実装
+3. リファクタリング
+
+## 動作確認方法
+{具体的な確認手順}
+```
+
+**review.json の構造**:
+```json
+{
+  "taskId": "task-001",
+  "status": "approved",
+  "reviewedBy": "TechLeadAI",
+  "reviewedAt": "2025-01-09T12:00:00Z",
+  "comments": [
+    {
+      "file": "src/auth.ts",
+      "severity": "info",
+      "message": "実装が設計書に準拠しています"
+    }
+  ],
+  "summary": "レビュー結果: approved",
+  "suggestions": []
+}
+```
 
 ## ノード別のファイル操作
 
-### ProductOwnerNode
+### CheckModeNode
 
-**役割**: 要求分析、技術スタック分析、タスク分解
+**役割**: 継続モード検出、リポジトリ初期化
 
-**作成するファイル（Upsert方式）**:
-1. `.kugutsu/tech-stack.json` - AIにWriteツールで作成させる
-2. `.kugutsu/requirements.json` - AIにWriteツールで作成させる
-3. `.kugutsu/tasks.json` - AIにWriteツールで作成させる（既存タスクとマージ）
-4. `.kugutsu/tasks/{taskId}/instruction.md` - 各タスクごとにAIにWriteツールで作成させる
+**作成するファイル (DataPersistence使用)**:
+- `.kugutsu/repository/architecture/tech-stack.json` (初回のみ)
+
+**動作**:
+1. `.kugutsu/repository/architecture/tech-stack.json`の存在確認
+2. 存在しない場合: 新規プロジェクトと判定、tech-stack.jsonを生成
+3. 存在する場合: 継続モードと判定
+
+### AnalyzeComplexityNode
+
+**役割**: 複雑度判定
+
+**ファイル操作**: なし
+
+**出力**:
+- `state.metadata.requiresDetailedDesign`: `true` (High) / `false` (Low)
+
+### DirectorNode (High複雑度時)
+
+**役割**: ストーリーマッピング作成
+
+**作成するファイル (DataPersistence使用)**:
+1. `.kugutsu/story-mapping.json`
 
 **プロンプトの特徴**:
-- 各フェーズで「Readツールでファイルの存在を確認→存在すれば更新、なければ作成」を明示
-- `allowedTools: ['Read', 'Glob', 'Grep', 'Write']`
+- ペルソナ、エピック、ユーザーストーリーの作成を指示
+- 優先度と見積もりポイントの設定を指示
 
-**エラーハンドリング**:
-- 各フェーズでRetryManager使用（最大3回リトライ）
-- ファイル読み込み失敗時は warning表示して空の内容で続行
+### TechLeadDesignNode (High複雑度時)
+
+**役割**: 技術設計書作成
+
+**読み込むファイル (前提条件)**:
+- `.kugutsu/story-mapping.json` - 必須
+
+**作成するファイル (DataPersistence使用)**:
+1. `.kugutsu/repository/architecture/db-schema.json`
+2. `.kugutsu/repository/architecture/api-spec.json`
+3. `.kugutsu/repository/architecture/uiux-screens.json`
+
+### TaskBreakdownNode
+
+**役割**: タスク分解、instruction.md生成
+
+**読み込むファイル (前提条件)**:
+- High複雑度時:
+  - `.kugutsu/story-mapping.json`
+  - `.kugutsu/repository/architecture/db-schema.json`
+  - `.kugutsu/repository/architecture/api-spec.json`
+  - `.kugutsu/repository/architecture/uiux-screens.json`
+- Low複雑度時:
+  - `.kugutsu/requirements.json`
+
+**作成するファイル**:
+1. `.kugutsu/product-backlog/backlog.json` (DataPersistence使用)
+2. `.kugutsu/sprints/sprint-1/tasks/{taskId}/instruction.md` (Claude Code SDK使用)
+
+**重要**: instruction.mdは必ず`sprints/sprint-{N}/tasks/{taskId}/`配下に生成します。
+
+### ProductOwnerNode (Low複雑度時)
+
+**役割**: 要件分析
+
+**作成するファイル**:
+1. `.kugutsu/requirements.json` (Claude Code SDK使用)
+
+**注意**: 旧仕様ではinstruction.md生成も担当していましたが、現在はTaskBreakdownNodeに統一されています。
+
+### SprintPlanningNode
+
+**役割**: スプリント計画、タスク移動
+
+**読み込むファイル (前提条件)**:
+- `.kugutsu/product-backlog/backlog.json`
+
+**作成するファイル**:
+1. `.kugutsu/sprints/sprint-{N}/sprint-plan.json`
+2. `.kugutsu/sprints/sprint-{N}/sprint-backlog.json`
+
+**タスク移動フロー**:
+1. Product Backlogから優先度順にタスク選択
+2. 選択したタスクをProduct Backlogから削除
+3. Sprint Backlogに追加
+
+**修正予定**: 現在はAI prompts経由でファイル保存していますが、DataPersistence使用に変更予定。
+
+### EngineerDispatchNode
+
+**役割**: タスク割り当て
+
+**読み込むファイル (前提条件)**:
+- `.kugutsu/sprints/sprint-{N}/sprint-backlog.json`
+
+**更新するファイル**:
+- `.kugutsu/sprints/sprint-{N}/sprint-backlog.json` (ステータス更新)
 
 ### EngineerNode
 
 **役割**: タスクの実装
 
-**読み込むファイル（前提条件）**:
-1. `.kugutsu/tasks.json` - 必須（tasksPath経由）
-2. `.kugutsu/tasks/{taskId}/instruction.md` - 必須（FileReader経由）
+**読み込むファイル (前提条件)**:
+1. `.kugutsu/sprints/sprint-{N}/sprint-backlog.json` - 必須
+2. `.kugutsu/sprints/sprint-{N}/tasks/{taskId}/instruction.md` - 必須
+3. `.kugutsu/story-mapping.json` - 参照
+4. `.kugutsu/repository/architecture/*.json` - 参照
+
+**作成するファイル**:
+1. `.kugutsu/sprints/sprint-{N}/tasks/{taskId}/implementation.md` (Claude Code SDK使用)
 
 **更新するファイル**:
-- `.kugutsu/tasks.json` - AIFileWriter経由でステータス更新（implemented → failed）
+- `.kugutsu/sprints/sprint-{N}/sprint-backlog.json` (AIFileWriter経由でステータス更新)
 
 **プロンプトの特徴**:
-- 「前提条件：必須ファイル」セクションで依存ファイルを明示
+- 設計書への参照を明示
 - TDD（テスト駆動開発）の手順を強調
 - `git add`と`git commit`を実行させる（`git push`は禁止）
 
@@ -132,275 +338,138 @@
 
 **役割**: コードレビュー
 
-**読み込むファイル（前提条件）**:
-- `.kugutsu/tasks.json` - 必須
+**読み込むファイル (前提条件)**:
+1. `.kugutsu/sprints/sprint-{N}/sprint-backlog.json` - 必須
+2. `.kugutsu/sprints/sprint-{N}/tasks/{taskId}/instruction.md` - 必須
+3. `.kugutsu/story-mapping.json` - 参照
+4. `.kugutsu/repository/architecture/*.json` - 参照
 
 **作成するファイル**:
-1. `.kugutsu/tasks/{taskId}/review.json` - AIFileWriter経由で作成
-   - 必須項目: approved, comments, reviewer, timestamp
+1. `.kugutsu/sprints/sprint-{N}/tasks/{taskId}/review.json` (AIFileWriter経由)
 
 **更新するファイル**:
-- `.kugutsu/tasks.json` - AIFileWriter経由でステータス更新（reviewed、承認時のみ）
+- `.kugutsu/sprints/sprint-{N}/sprint-backlog.json` (AIFileWriter経由でステータス更新、承認時のみ)
+
+**レビュー観点**:
+1. **設計書との整合性** ⭐ 最優先
+2. コード品質
+3. テストカバレッジ
+4. セキュリティ
+5. パフォーマンス
 
 ### MergeCoordinatorNode
 
 **役割**: マージ調整とコンフリクト検出
 
-**読み込むファイル（前提条件）**:
-1. `.kugutsu/tasks.json` - 必須
-2. `.kugutsu/tasks/{taskId}/review.json` - 必須（承認確認用）
+**読み込むファイル (前提条件)**:
+1. `.kugutsu/sprints/sprint-{N}/sprint-backlog.json` - 必須
+2. `.kugutsu/sprints/sprint-{N}/tasks/{taskId}/review.json` - 必須
 
-**作成するファイル**:
-- **マージ成功時**:
-  1. `.kugutsu/tasks/{taskId}/merge-result.json`
-  2. `.kugutsu/tasks.json` 更新（status: "completed"）
-
-- **コンフリクト発生時**:
-  1. `.kugutsu/tasks/{taskId}/merge-result.json`
-  2. `.kugutsu/tasks/{taskId}/conflicts.json`
-  3. `.kugutsu/tasks.json` 更新（status: "conflict_detected"）
+**更新するファイル**:
+- `.kugutsu/sprints/sprint-{N}/sprint-backlog.json` (ステータス更新)
 
 ### ConflictResolverNode
 
 **役割**: コンフリクト解決
 
-**読み込むファイル（前提条件）**:
-1. `.kugutsu/tasks.json` - 必須
-2. `.kugutsu/tasks/{taskId}/conflicts.json` - 必須
+**読み込むファイル (前提条件)**:
+- `.kugutsu/sprints/sprint-{N}/sprint-backlog.json` - 必須
 
 **更新するファイル**:
-1. `.kugutsu/tasks/{taskId}/conflicts.json` - resolution: "resolved" に更新
-2. `.kugutsu/tasks.json` - status: "reviewed" に更新
+- `.kugutsu/sprints/sprint-{N}/sprint-backlog.json` (ステータス更新)
 
-### DirectorNode
+### SprintReviewNode
 
-**役割**: ストーリーマッピング作成
+**役割**: スプリント完了チェック
 
-**作成するファイル**:
-1. `.kugutsu/projects/{projectId}/story-mapping/story-map.json` - AIFileWriter経由
-2. `.kugutsu/projects/{projectId}/story-mapping/story-map.md` - AIFileWriter経由（同時作成）
+**読み込むファイル (前提条件)**:
+- `.kugutsu/sprints/sprint-{N}/sprint-backlog.json` - 必須
 
-**プロンプトの特徴**:
-- JSON形式の詳細な構造を提示
-- ペルソナ、エピック、ユーザーストーリーの作成を指示
-- 優先度と見積もりポイントの設定を指示
+**タスク移動フロー**:
+1. 未完了タスクをSprint Backlogから削除
+2. 未完了タスクをProduct Backlogへ移動
+3. 完了タスクはSprint Backlogに保持（履歴）
 
-### TechLeadDesignNode
+## エラーハンドリング
 
-**役割**: 技術設計書作成
+### ファイル読み込みエラー
 
-**読み込むファイル（前提条件）**:
-- `.kugutsu/projects/{projectId}/story-mapping/story-map.json` - 必須
-
-**作成するファイル（すべてAIFileWriter経由）**:
-1. `.kugutsu/projects/{projectId}/design/design-docs.md`
-2. `.kugutsu/projects/{projectId}/design/database/schema.json`
-3. `.kugutsu/projects/{projectId}/design/database/er-diagram.md`
-4. `.kugutsu/projects/{projectId}/design/interfaces/api-spec.json`
-5. `.kugutsu/projects/{projectId}/design/interfaces/api-spec.md`
-6. `.kugutsu/projects/{projectId}/design/uiux/screens.json`
-7. `.kugutsu/projects/{projectId}/design/uiux/wireframes.md`
-
-**プロンプトの特徴**:
-- 既存の`.kugutsu/repository/`配下の仕様を参照するよう指示
-- Mermaid図の活用を推奨
-
-### ReviewStoryMappingNode
-
-**役割**: ストーリーマッピングのレビュー
-
-**読み込むファイル（前提条件）**:
-- `.kugutsu/projects/{projectId}/story-mapping/story-map.json` - 必須
-
-**作成するファイル（Upsert方式）**:
-- `.kugutsu/projects/{projectId}/story-mapping/review-history.json`
-  - 既存履歴に新しいレビューを追加
-
-### SprintPlanningNode
-
-**役割**: スプリント計画作成
-
-**読み込むファイル（Upsert方式）**:
-- `.kugutsu/sprints/active-sprint.json` - 存在チェック（既にアクティブなスプリントがあるか）
-
-**作成するファイル（Upsert方式）**:
-1. `.kugutsu/sprints/active-sprint.json` - AIFileWriter経由
-2. `.kugutsu/tasks/global-queue.json` - AIFileWriter経由
-
-## ファイル依存関係グラフ
-
-### 並列開発ワークフロー
-
-```
-ProductOwnerNode
-  ↓ 作成（Upsert）
-  tech-stack.json → requirements.json → tasks.json → tasks/{taskId}/instruction.md
-  ↓ 読込
-EngineerNode
-  ↓ 更新
-  tasks.json (status更新)
-  ↓ 読込
-ReviewNode
-  ↓ 作成
-  tasks/{taskId}/review.json
-  ↓ 読込
-MergeCoordinatorNode
-  ↓ 作成
-  tasks/{taskId}/merge-result.json
-  tasks/{taskId}/conflicts.json (コンフリクト時)
-  ↓ 読込
-ConflictResolverNode
-  ↓ 更新
-  tasks/{taskId}/conflicts.json (resolution: resolved)
-  tasks.json (status: reviewed)
-```
-
-### Scrumワークフロー
-
-```
-DirectorNode
-  ↓ 作成
-  projects/{projectId}/story-mapping/story-map.json
-  projects/{projectId}/story-mapping/story-map.md
-  ↓ 読込
-ReviewStoryMappingNode
-  ↓ 作成（Upsert）
-  projects/{projectId}/story-mapping/review-history.json
-  ↓ 承認後、読込
-TechLeadDesignNode
-  ↓ 作成
-  projects/{projectId}/design/design-docs.md
-  projects/{projectId}/design/database/schema.json
-  projects/{projectId}/design/database/er-diagram.md
-  projects/{projectId}/design/interfaces/api-spec.json
-  projects/{projectId}/design/interfaces/api-spec.md
-  projects/{projectId}/design/uiux/screens.json
-  projects/{projectId}/design/uiux/wireframes.md
-```
-
-## エラーハンドリング方針
-
-### ファイル不在時の対応
-
-| ケース | 対応 |
-|--------|------|
-| ProductOwnerNodeで既存ファイル不在 | 新規作成（Upsert方式） |
-| EngineerNodeでtasks.json不在 | エラー返却（前のノードの失敗） |
-| EngineerNodeでinstruction.md不在 | タスクをfailedに遷移 |
-| ReviewNodeでtasks.json不在 | エラー返却 |
-| MergeCoordinatorNodeでreview.json不在 | warning表示してタスクをスキップ |
-| ConflictResolverNodeでconflicts.json不在 | warning表示してタスクをスキップ |
-
-### リトライ戦略
-
-ProductOwnerNodeの各フェーズ：
-- 最大リトライ回数: 3回
-- 初期遅延: 2秒
-- 最大遅延: 30秒
-- バックオフ係数: 2
-- リトライ対象エラー: `ETIMEDOUT`, `ECONNRESET`, `rate_limit`, `Rate limit`, `timeout`, `network`
-
-## トラブルシューティング
-
-### 問題: ファイルが作成されない
-
-**原因**: AIがWriteツールを使用しなかった
-
-**解決方法**:
-1. プロンプトで「**必ずWriteツールを使用してファイルを作成してください**」を明示
-2. allowedToolsに`'Write'`を含める
-3. AIFileWriter.writeFile()を使用する
-
-### 問題: ファイルが空になる
-
-**原因**: AIが内容を省略した
-
-**解決方法**:
-1. プロンプトで必須項目を明示
-2. サンプル構造をプロンプトに含める
-3. 「すべての項目を埋めてください」と指示
-
-### 問題: 既存ファイルが上書きされる
-
-**原因**: Upsert方式の指示が不足
-
-**解決方法**:
-1. プロンプトに「Readツールでファイルの存在を確認」を追加
-2. 「既存内容を基に更新」を明示
-3. ProductOwnerNodeでのみUpsert方式を使用
-
-### 問題: 次のノードがファイル不在エラー
-
-**原因**: 前のノードでファイル作成に失敗
-
-**解決方法**:
-1. ログで前のノードの実行結果を確認
-2. AIFileWriterの実行ログを確認
-3. RetryManagerのリトライ回数を確認
-
-## ベストプラクティス
-
-### 1. プロンプト設計
-
-✅ **良い例**:
-```
-## 【必須作成ファイル】
-以下のファイルをWriteツールで必ず作成してください：
-- ファイルパス: .kugutsu/tasks.json
-
-## ファイル作成・更新方針（Upsert）
-1. Readツールで.kugutsu/tasks.jsonの存在を確認
-2. 存在する場合: 既存内容を基に更新してWriteツールで保存
-3. 存在しない場合: 新規作成してWriteツールで保存
-```
-
-❌ **悪い例**:
-```
-tasks.jsonを作成してください。
-```
-
-### 2. AIFileWriter使用
-
-✅ **良い例**:
 ```typescript
-const fileWriter = new AIFileWriter(provider);
-await fileWriter.writeFile(
-  filePath,
-  '説明',
-  prompt,
-  { maxTurns: 5, cwd: baseRepoPath, permissionMode: 'acceptEdits' }
+try {
+  const data = await fileReader.readJSON<TaskArtifact[]>(tasksPath);
+} catch (error) {
+  return {
+    logs: [{
+      timestamp: new Date(),
+      level: 'error',
+      source: 'NodeName',
+      message: `ファイル読み込み失敗: ${error.message}`,
+    }],
+  };
+}
+```
+
+### リトライ機構
+
+重要な操作（AI実行、ファイル保存等）には`RetryManager`を使用：
+
+```typescript
+const result = await RetryManager.executeWithRetry(
+  async () => {
+    // 実行処理
+  },
+  {
+    maxRetries: 3,
+    initialDelayMs: 2000,
+    retryableErrors: ['ETIMEDOUT', 'rate_limit'],
+  }
 );
 ```
 
-❌ **悪い例**:
-```typescript
-// システムが直接ファイルを作成（AI-First原則違反）
-await fs.writeFile(filePath, content);
-```
+## トラブルシューティング
 
-### 3. 前提条件の明示
+### ファイルが見つからない
 
-✅ **良い例**:
-```
-## 【前提条件：必須ファイル】
-以下のファイルは前のノード（ProductOwner）が作成済みです。必ず読み込んでください：
-1. .kugutsu/tasks.json
-2. .kugutsu/tasks/{taskId}/instruction.md
+**症状**: `ENOENT: no such file or directory`
 
-これらのファイルが存在しない場合はエラーです。
-```
+**原因**:
+1. 前のノードがファイル生成に失敗
+2. パスの指定ミス（相対パス/絶対パス）
 
-❌ **悪い例**:
-```
-タスクを実装してください。
-```
+**対処法**:
+1. 前のノードのログを確認
+2. パスが`.kugutsu/`からの相対パスか確認
 
-## まとめ
+### タスクがSprint Backlogに存在しない
 
-1. **すべてのファイルはAIが作成する**（AI-First原則）
-2. **ProductOwnerNodeはUpsert方式**（既存ファイルを尊重）
-3. **それ以降のノードは前提条件を明示**（依存ファイルが必ず存在）
-4. **プロンプトで作成するファイルを明確に指示**
-5. **エラーハンドリングは適切に実装**（リトライ、デフォルト値、警告表示）
+**症状**: `Task not found in sprint backlog`
 
-これらの原則に従うことで、ノード間のファイルのやり取りに不整合が起こらず、確実にファイルが作成・参照されます。
+**原因**:
+1. SprintPlanningNodeが実行されていない
+2. タスクがProduct Backlogに残っている
+
+**対処法**:
+1. SprintPlanningNodeのログを確認
+2. Product Backlogとsprint Backlogの内容を確認
+
+### instruction.mdが重複生成される
+
+**症状**: 同じタスクのinstruction.mdが複数箇所に存在
+
+**原因**:
+1. ProductOwnerNodeとTaskBreakdownNodeが両方生成（旧仕様）
+
+**対処法**:
+1. TaskBreakdownNodeのみがinstruction.md生成を担当するよう修正
+2. 重複ファイルを削除
+
+## 変更履歴
+
+| バージョン | 日付 | 変更内容 |
+|-----------|------|---------|
+| 2.0 | 2025-01-09 | 新仕様に完全移行、Option A採用、ディレクトリ構造変更 |
+| 1.0 | 2024-XX-XX | 初版 |
+
+---
+
+**本ドキュメントは[AI_SCRUM_WORKFLOW_SPECIFICATION.md](./AI_SCRUM_WORKFLOW_SPECIFICATION.md)と併せて参照してください。**

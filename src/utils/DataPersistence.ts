@@ -585,6 +585,37 @@ export class DataPersistence {
     return await FileSystemManager.readJSONSafe(filePath, null);
   }
 
+  /**
+   * タスクのinstruction.mdを保存
+   *
+   * @param sprintId - スプリントID
+   * @param taskId - タスクID
+   * @param content - instruction.mdの内容
+   */
+  async saveTaskInstruction(
+    sprintId: string,
+    taskId: string,
+    content: string
+  ): Promise<void> {
+    const taskDir = path.join(this.sprintsDir, sprintId, 'tasks', taskId);
+    await FileSystemManager.ensureDirectory(taskDir);
+
+    const filePath = path.join(taskDir, 'instruction.md');
+    await FileSystemManager.writeFile(filePath, content);
+  }
+
+  /**
+   * タスクのinstruction.mdを読み込み
+   *
+   * @param sprintId - スプリントID
+   * @param taskId - タスクID
+   * @returns instruction.mdの内容、または null
+   */
+  async loadTaskInstruction(sprintId: string, taskId: string): Promise<string | null> {
+    const filePath = path.join(this.sprintsDir, sprintId, 'tasks', taskId, 'instruction.md');
+    return await FileSystemManager.readFileSafe(filePath, null);
+  }
+
   // ========================================
   // リポジトリ仕様（repository/）
   // ========================================
@@ -879,6 +910,146 @@ export class DataPersistence {
     } catch {
       return null;
     }
+  }
+
+  // ========================================
+  // Product Backlog管理
+  // ========================================
+
+  /**
+   * Product Backlogを保存
+   *
+   * @param backlog - Product Backlogデータ
+   */
+  async saveProductBacklog(backlog: any): Promise<void> {
+    const productBacklogDir = path.join(this.kugutsuDir, 'product-backlog');
+    await FileSystemManager.ensureDirectory(productBacklogDir);
+
+    const filePath = path.join(productBacklogDir, 'backlog.json');
+    await FileSystemManager.writeJSON(filePath, backlog);
+  }
+
+  /**
+   * Product Backlogを読み込み
+   *
+   * @returns Product Backlogデータ、または null
+   */
+  async loadProductBacklog(): Promise<any | null> {
+    const filePath = path.join(this.kugutsuDir, 'product-backlog', 'backlog.json');
+    return await FileSystemManager.readJSONSafe(filePath, null);
+  }
+
+  // ========================================
+  // Sprint Backlog管理
+  // ========================================
+
+  /**
+   * Sprint Backlogを保存
+   *
+   * @param sprintId - スプリントID（例: "sprint-1"）
+   * @param backlog - Sprint Backlogデータ
+   */
+  async saveSprintBacklog(sprintId: string, backlog: any): Promise<void> {
+    const sprintDir = path.join(this.sprintsDir, sprintId);
+    await FileSystemManager.ensureDirectory(sprintDir);
+
+    const filePath = path.join(sprintDir, 'sprint-backlog.json');
+    await FileSystemManager.writeJSON(filePath, backlog);
+  }
+
+  /**
+   * Sprint Backlogを読み込み
+   *
+   * @param sprintId - スプリントID（例: "sprint-1"）
+   * @returns Sprint Backlogデータ、または null
+   */
+  async loadSprintBacklog(sprintId: string): Promise<any | null> {
+    const filePath = path.join(this.sprintsDir, sprintId, 'sprint-backlog.json');
+    return await FileSystemManager.readJSONSafe(filePath, null);
+  }
+
+  /**
+   * Sprint Planを保存
+   *
+   * @param sprintId - スプリントID（例: "sprint-1"）
+   * @param plan - Sprint Plan データ
+   */
+  async saveSprintPlan(sprintId: string, plan: any): Promise<void> {
+    const sprintDir = path.join(this.sprintsDir, sprintId);
+    await FileSystemManager.ensureDirectory(sprintDir);
+
+    const filePath = path.join(sprintDir, 'sprint-plan.json');
+    await FileSystemManager.writeJSON(filePath, plan);
+  }
+
+  /**
+   * Sprint Planを読み込み
+   *
+   * @param sprintId - スプリントID（例: "sprint-1"）
+   * @returns Sprint Planデータ、または null
+   */
+  async loadSprintPlan(sprintId: string): Promise<any | null> {
+    const filePath = path.join(this.sprintsDir, sprintId, 'sprint-plan.json');
+    return await FileSystemManager.readJSONSafe(filePath, null);
+  }
+
+  // ========================================
+  // パスヘルパー
+  // ========================================
+
+  /**
+   * スプリント内タスクの基本パスを取得
+   *
+   * @param sprintId - スプリントID（例: "sprint-1"）
+   * @param taskId - タスクID
+   * @returns タスクディレクトリの絶対パス
+   */
+  getSprintTaskPath(sprintId: string, taskId: string): string {
+    return path.join(this.sprintsDir, sprintId, 'tasks', taskId);
+  }
+
+  /**
+   * タスクのinstruction.mdパスを取得
+   *
+   * @param sprintId - スプリントID（例: "sprint-1"）
+   * @param taskId - タスクID
+   * @returns instruction.mdの絶対パス
+   */
+  getTaskInstructionPath(sprintId: string, taskId: string): string {
+    return path.join(this.getSprintTaskPath(sprintId, taskId), 'instruction.md');
+  }
+
+  /**
+   * タスクのreview.jsonパスを取得
+   *
+   * @param sprintId - スプリントID（例: "sprint-1"）
+   * @param taskId - タスクID
+   * @returns review.jsonの絶対パス
+   */
+  getTaskReviewPath(sprintId: string, taskId: string): string {
+    return path.join(this.getSprintTaskPath(sprintId, taskId), 'review.json');
+  }
+
+  /**
+   * タスクのimplementation.mdパスを取得
+   *
+   * @param sprintId - スプリントID（例: "sprint-1"）
+   * @param taskId - タスクID
+   * @returns implementation.mdの絶対パス
+   */
+  getTaskImplementationPath(sprintId: string, taskId: string): string {
+    return path.join(this.getSprintTaskPath(sprintId, taskId), 'implementation.md');
+  }
+
+  /**
+   * スプリント内タスクディレクトリの相対パスを取得（.kugutsuからの相対パス）
+   *
+   * @param sprintId - スプリントID（例: "sprint-1"）
+   * @param taskId - タスクID
+   * @returns .kugutsuからの相対パス
+   */
+  getSprintTaskRelativePath(sprintId: string, taskId: string): string {
+    return path.join('.kugutsu', 'sprints', sprintId, 'tasks', taskId);
   }
 
   // ========================================

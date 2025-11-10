@@ -80,6 +80,9 @@ describe('ProductOwnerNode', () => {
       worktreeBasePath: '/test/worktrees',
     });
 
+    // Set currentProjectId (required by ProductOwnerNode)
+    initialState.currentProjectId = 'test-project-001';
+
     // Execute node
     const result = await productOwnerNode(initialState);
 
@@ -107,20 +110,23 @@ describe('ProductOwnerNode', () => {
   });
 
   test('should handle errors gracefully', async () => {
+    // Create initial state
+    const initialState = createInitialState('Test request', {
+      maxEngineers: 3,
+      maxTurns: 30,
+      baseBranch: 'main',
+      baseRepoPath: '/test/repo',
+      worktreeBasePath: '/test/worktrees',
+    });
+
+    // Set currentProjectId (required by ProductOwnerNode)
+    initialState.currentProjectId = 'test-project-002';
+
     // Setup mock provider with error
     mockProvider.setDefaultResponse({
       messages: [],
       shouldThrowError: true,
       errorMessage: 'API error',
-    });
-
-    // Create initial state
-    const initialState = createInitialState('Test request', {
-      maxEngineers: 1,
-      maxTurns: 10,
-      baseBranch: 'main',
-      baseRepoPath: '/test/repo',
-      worktreeBasePath: '/test/worktrees',
     });
 
     // Execute node
@@ -136,7 +142,7 @@ describe('ProductOwnerNode', () => {
   });
 
   describe('File-based artifact management', () => {
-    test('should create tech-stack.json file', async () => {
+    test('should reference existing tech-stack.json from repository', async () => {
       const fs = await import('fs/promises');
       const path = await import('path');
       const { mkdtemp, rm } = await import('fs/promises');
@@ -145,54 +151,75 @@ describe('ProductOwnerNode', () => {
       // テスト用の一時ディレクトリを作成
       const tempDir = await mkdtemp(path.join(tmpdir(), 'po-test-'));
       const kugutsuDir = path.join(tempDir, '.kugutsu');
+      const repositoryDir = path.join(kugutsuDir, 'repository', 'architecture');
 
       try {
-        // Mock response with tool simulation
+        // 事前にrepository/architecture/tech-stack.jsonを作成（CheckModeNodeが作成する想定）
+        await fs.mkdir(repositoryDir, { recursive: true });
         const techStackData = {
-          languages: ['TypeScript', 'JavaScript'],
-          frameworks: ['Electron', 'React', 'LangGraph'],
-          buildTools: ['npm', 'electron-vite'],
-          testingFrameworks: ['Jest'],
-          projectType: 'electron-app',
+          frontend: {
+            framework: 'React',
+            language: 'TypeScript',
+          },
+          backend: {
+            framework: 'Electron',
+            language: 'TypeScript',
+          },
         };
+        await fs.writeFile(
+          path.join(repositoryDir, 'tech-stack.json'),
+          JSON.stringify(techStackData, null, 2)
+        );
 
-        // Phase 1: Tech Stack Analysis
-        mockProvider.setMockResponse(/tech.*stack/i, {
+        // Phase 1: Tech Stack Verification (no generation, just verification)
+        // ProductOwnerNodeは生成せず、既存ファイルを確認するだけ
+
+        // Phase 2: Requirements Analysis
+        mockProvider.setMockResponse(/^#\s*Requirements Analysis/i, {
           messages: [
-            createMockMessage.assistant('Analyzing tech stack...'),
+            createMockMessage.assistant('Analyzing requirements...'),
             createMockMessage.system({
               toolUse: {
                 tool: 'Write',
                 arguments: {
-                  file_path: path.join(kugutsuDir, 'tech-stack.json'),
-                  content: JSON.stringify(techStackData, null, 2),
+                  file_path: path.join(kugutsuDir, 'requirements.json'),
+                  content: JSON.stringify({ functional: [], nonFunctional: [], constraints: [] }, null, 2),
                 },
               },
             }),
-            createMockMessage.assistant('Tech stack analysis completed'),
             createMockMessage.result(true),
           ],
           simulateTools: true,
         });
 
-        // Phase 2: Requirements Analysis (empty response to skip)
-        mockProvider.setMockResponse(/requirements/i, {
+        // Phase 3: Task Generation
+        mockProvider.setMockResponse(/^#\s*Task Generation/im, {
           messages: [
-            createMockMessage.assistant('Skipping requirements analysis'),
+            createMockMessage.assistant('Generating tasks...'),
+            createMockMessage.system({
+              toolUse: {
+                tool: 'Write',
+                arguments: {
+                  file_path: path.join(kugutsuDir, 'tasks.json'),
+                  content: JSON.stringify([{ id: 'task-001', title: 'Test task', description: 'Test', priority: 100, dependencies: [], status: 'pending', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }], null, 2),
+                },
+              },
+            }),
             createMockMessage.result(true),
           ],
+          simulateTools: true,
         });
 
-        // Phase 3: Task Generation (empty response to skip)
-        mockProvider.setMockResponse(/task.*generation/i, {
+        // Phase 4: Instruction Generation
+        mockProvider.setMockResponse(/^#\s*Task Instructions Generation/i, {
           messages: [
-            createMockMessage.assistant('Skipping task generation'),
+            createMockMessage.assistant('Generating instructions...'),
             createMockMessage.result(true),
           ],
         });
 
         // Create initial state
-        const initialState = createInitialState('Analyze tech stack', {
+        const initialState = createInitialState('Implement feature', {
           maxEngineers: 1,
           maxTurns: 10,
           baseBranch: 'main',
@@ -203,20 +230,19 @@ describe('ProductOwnerNode', () => {
         // Execute node
         const result = await productOwnerNode(initialState);
 
-        // Verify tech-stack.json was created
-        const techStackPath = path.join(kugutsuDir, 'tech-stack.json');
+        // Verify tech-stack.json path points to repository location
+        expect(result.techStackPath).toBe('.kugutsu/repository/architecture/tech-stack.json');
+
+        // Verify the repository tech-stack.json still exists and wasn't modified
+        const techStackPath = path.join(repositoryDir, 'tech-stack.json');
         const fileExists = await fs.access(techStackPath).then(() => true).catch(() => false);
         expect(fileExists).toBe(true);
 
-        // Verify file content
+        // Verify content is unchanged
         const content = await fs.readFile(techStackPath, 'utf-8');
         const data = JSON.parse(content);
-        expect(data.languages).toContain('TypeScript');
-        expect(data.frameworks).toContain('Electron');
-        expect(data.projectType).toBe('electron-app');
-
-        // Verify state has file path
-        expect(result.techStackPath).toBe('.kugutsu/tech-stack.json');
+        expect(data.frontend.framework).toBe('React');
+        expect(data.backend.framework).toBe('Electron');
       } finally {
         // Cleanup
         await rm(tempDir, { recursive: true, force: true });
@@ -231,15 +257,21 @@ describe('ProductOwnerNode', () => {
 
       const tempDir = await mkdtemp(path.join(tmpdir(), 'po-test-'));
       const kugutsuDir = path.join(tempDir, '.kugutsu');
+      const repositoryDir = path.join(kugutsuDir, 'repository', 'architecture');
 
       try {
+        // 事前にrepository/architecture/tech-stack.jsonを作成
+        await fs.mkdir(repositoryDir, { recursive: true });
         const techStackData = {
-          languages: ['TypeScript'],
-          frameworks: ['React'],
-          buildTools: ['npm'],
-          testingFrameworks: ['Jest'],
-          projectType: 'web-app',
+          frontend: {
+            framework: 'React',
+            language: 'TypeScript',
+          },
         };
+        await fs.writeFile(
+          path.join(repositoryDir, 'tech-stack.json'),
+          JSON.stringify(techStackData, null, 2)
+        );
 
         const requirementsData = {
           functional: ['User authentication', 'Data persistence'],
@@ -247,26 +279,10 @@ describe('ProductOwnerNode', () => {
           constraints: ['TypeScript 5.0+', 'Electron compatibility'],
         };
 
-        // Phase 1: Tech Stack Analysis
-        mockProvider.setMockResponse(/tech.*stack/i, {
-          messages: [
-            createMockMessage.assistant('Analyzing tech stack...'),
-            createMockMessage.system({
-              toolUse: {
-                tool: 'Write',
-                arguments: {
-                  file_path: path.join(kugutsuDir, 'tech-stack.json'),
-                  content: JSON.stringify(techStackData, null, 2),
-                },
-              },
-            }),
-            createMockMessage.result(true),
-          ],
-          simulateTools: true,
-        });
+        // Phase 1: Tech Stack Verification (no mock needed, just reads existing file)
 
-        // Phase 2: Requirements Analysis
-        mockProvider.setMockResponse(/requirements/i, {
+        // Phase 2: Requirements Analysis (more specific pattern with multiline)
+        mockProvider.setMockResponse(/^#\s*Requirements Analysis/im, {
           messages: [
             createMockMessage.assistant('Analyzing requirements...'),
             createMockMessage.system({
@@ -284,10 +300,18 @@ describe('ProductOwnerNode', () => {
           simulateTools: true,
         });
 
-        // Phase 3: Task Generation (empty response to skip)
-        mockProvider.setMockResponse(/task.*generation/i, {
+        // Phase 3: Task Generation (empty response to skip with multiline)
+        mockProvider.setMockResponse(/^#\s*Task Generation/im, {
           messages: [
             createMockMessage.assistant('Skipping task generation'),
+            createMockMessage.result(true),
+          ],
+        });
+
+        // Phase 4: Instruction Generation (empty response to skip with multiline)
+        mockProvider.setMockResponse(/^#\s*Task Instructions Generation/im, {
+          messages: [
+            createMockMessage.assistant('Skipping instruction generation'),
             createMockMessage.result(true),
           ],
         });
@@ -328,15 +352,21 @@ describe('ProductOwnerNode', () => {
 
       const tempDir = await mkdtemp(path.join(tmpdir(), 'po-test-'));
       const kugutsuDir = path.join(tempDir, '.kugutsu');
+      const repositoryDir = path.join(kugutsuDir, 'repository', 'architecture');
 
       try {
+        // 事前にrepository/architecture/tech-stack.jsonを作成
+        await fs.mkdir(repositoryDir, { recursive: true });
         const techStackData = {
-          languages: ['TypeScript'],
-          frameworks: ['React'],
-          buildTools: ['npm'],
-          testingFrameworks: ['Jest'],
-          projectType: 'web-app',
+          frontend: {
+            framework: 'React',
+            language: 'TypeScript',
+          },
         };
+        await fs.writeFile(
+          path.join(repositoryDir, 'tech-stack.json'),
+          JSON.stringify(techStackData, null, 2)
+        );
 
         const requirementsData = {
           functional: ['User authentication'],
@@ -373,26 +403,10 @@ Implement JWT-based authentication feature.
 - Existing API endpoints: /api/auth/*
 `;
 
-        // Phase 1: Tech Stack Analysis
-        mockProvider.setMockResponse(/tech.*stack/i, {
-          messages: [
-            createMockMessage.assistant('Analyzing tech stack...'),
-            createMockMessage.system({
-              toolUse: {
-                tool: 'Write',
-                arguments: {
-                  file_path: path.join(kugutsuDir, 'tech-stack.json'),
-                  content: JSON.stringify(techStackData, null, 2),
-                },
-              },
-            }),
-            createMockMessage.result(true),
-          ],
-          simulateTools: true,
-        });
+        // Phase 1: Tech Stack Verification (no mock needed)
 
-        // Phase 2: Requirements Analysis
-        mockProvider.setMockResponse(/requirements/i, {
+        // Phase 2: Requirements Analysis (more specific pattern with multiline)
+        mockProvider.setMockResponse(/^#\s*Requirements Analysis/im, {
           messages: [
             createMockMessage.assistant('Analyzing requirements...'),
             createMockMessage.system({
@@ -409,8 +423,8 @@ Implement JWT-based authentication feature.
           simulateTools: true,
         });
 
-        // Phase 3: Task Generation
-        mockProvider.setMockResponse(/task.*generation/i, {
+        // Phase 3: Task Generation (specific pattern with multiline)
+        mockProvider.setMockResponse(/^#\s*Task Generation/im, {
           messages: [
             createMockMessage.assistant('Generating tasks...'),
             createMockMessage.system({
@@ -419,15 +433,6 @@ Implement JWT-based authentication feature.
                 arguments: {
                   file_path: path.join(kugutsuDir, 'tasks.json'),
                   content: JSON.stringify(tasksData, null, 2),
-                },
-              },
-            }),
-            createMockMessage.system({
-              toolUse: {
-                tool: 'Write',
-                arguments: {
-                  file_path: path.join(kugutsuDir, 'tasks/task-001/instruction.md'),
-                  content: instructionContent,
                 },
               },
             }),
@@ -459,15 +464,7 @@ Implement JWT-based authentication feature.
         expect(tasks[0].id).toBe('task-001');
         expect(tasks[0].title).toBe('Implement authentication');
 
-        // Verify instruction.md was created
-        const instructionPath = path.join(kugutsuDir, 'tasks/task-001/instruction.md');
-        const instructionExists = await fs.access(instructionPath).then(() => true).catch(() => false);
-        expect(instructionExists).toBe(true);
-
-        // Verify instruction content
-        const instruction = await fs.readFile(instructionPath, 'utf-8');
-        expect(instruction).toContain('JWT-based authentication');
-        expect(instruction).toContain('TypeScript 5.0+');
+        // NOTE: instruction.md generation is now handled by TaskBreakdownNode
 
         // Verify state has file path
         expect(result.tasksPath).toBe('.kugutsu/tasks.json');

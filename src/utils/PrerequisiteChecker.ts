@@ -79,6 +79,17 @@ export class PrerequisiteChecker {
   ): Promise<CheckResult> {
     const tasksPath = state.tasksPath || '.kugutsu/tasks.json';
 
+    if (!state.activeSprint?.id) {
+      return {
+        success: false,
+        responsibleNode: 'sprint_planning',
+        error: 'アクティブなスプリントが設定されていません',
+        missingFields: ['activeSprint.id'],
+      };
+    }
+
+    const sprintId = state.activeSprint.id;
+
     // Step 1: tasks.json の存在・読み込みチェック
     let tasks: TaskArtifact[];
     try {
@@ -114,13 +125,13 @@ export class PrerequisiteChecker {
     }
 
     // Step 4: instruction.md の存在・読み込みチェック
-    const instructionPath = `.kugutsu/tasks/${taskId}/instruction.md`;
+    const instructionPath = `.kugutsu/sprints/${sprintId}/tasks/${taskId}/instruction.md`;
     try {
       await this.fileReader.readMarkdown(instructionPath);
     } catch (error) {
       return {
         success: false,
-        responsibleNode: 'product_owner',
+        responsibleNode: 'task_breakdown',
         error: `instruction.md が見つかりません: ${instructionPath}`,
         missingFiles: [instructionPath],
       };
@@ -250,6 +261,17 @@ export class PrerequisiteChecker {
   ): Promise<CheckResult> {
     const tasksPath = state.tasksPath || '.kugutsu/tasks.json';
 
+    if (!state.activeSprint?.id) {
+      return {
+        success: false,
+        responsibleNode: 'sprint_planning',
+        error: 'アクティブなスプリントが設定されていません',
+        missingFields: ['activeSprint.id'],
+      };
+    }
+
+    const sprintId = state.activeSprint.id;
+
     // tasks.json 読み込み
     try {
       const tasks = await this.fileReader.readJSON<TaskArtifact[]>(tasksPath);
@@ -272,7 +294,7 @@ export class PrerequisiteChecker {
     }
 
     // review.json 読み込み
-    const reviewPath = `.kugutsu/tasks/${taskId}/review.json`;
+    const reviewPath = `.kugutsu/sprints/${sprintId}/tasks/${taskId}/review.json`;
     try {
       const review = await this.fileReader.readJSON<any>(reviewPath);
 
@@ -309,7 +331,17 @@ export class PrerequisiteChecker {
     state: ParallelDevStateType,
     taskId: string
   ): Promise<CheckResult> {
-    const conflictsPath = `.kugutsu/tasks/${taskId}/conflicts.json`;
+    if (!state.activeSprint?.id) {
+      return {
+        success: false,
+        responsibleNode: 'sprint_planning',
+        error: 'アクティブなスプリントが設定されていません',
+        missingFields: ['activeSprint.id'],
+      };
+    }
+
+    const sprintId = state.activeSprint.id;
+    const conflictsPath = `.kugutsu/sprints/${sprintId}/tasks/${taskId}/conflicts.json`;
 
     try {
       const conflicts = await this.fileReader.readJSON<any>(conflictsPath);

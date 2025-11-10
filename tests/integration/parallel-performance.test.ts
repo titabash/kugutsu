@@ -35,6 +35,24 @@ jest.unstable_mockModule('child_process', () => ({
   execSync: mockExecSync,
 }));
 
+// Mock DataPersistence BEFORE importing
+jest.unstable_mockModule('../../src/utils/DataPersistence.js', () => ({
+  DataPersistence: jest.fn().mockImplementation(() => ({
+    initialize: jest.fn<any>().mockResolvedValue(undefined),
+    loadGlobalQueue: jest.fn<any>().mockResolvedValue([]),
+    loadAllProjectMetadata: jest.fn<any>().mockResolvedValue(new Map()),
+    loadRepositoryMetadata: jest.fn<any>().mockResolvedValue(null),
+    saveRepositoryMetadata: jest.fn<any>().mockResolvedValue(undefined),
+    saveTechStack: jest.fn<any>().mockResolvedValue(undefined),
+    saveArchitectureOverview: jest.fn<any>().mockResolvedValue(undefined),
+    saveCodingStandards: jest.fn<any>().mockResolvedValue(undefined),
+    saveProjectMetadata: jest.fn<any>().mockResolvedValue(undefined),
+    loadStoryMapping: jest.fn<any>().mockResolvedValue(null),
+    saveActiveSprint: jest.fn<any>().mockResolvedValue(undefined),
+    addToSprintHistory: jest.fn<any>().mockResolvedValue(undefined),
+  })),
+}));
+
 // Import AFTER mocking
 const { compileUnifiedScrumWorkflowGraph } = await import('../../src/graph/ParallelDevGraph.js');
 const { createInitialState } = await import('../../src/graph/state.js');

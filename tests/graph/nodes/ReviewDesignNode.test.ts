@@ -41,6 +41,13 @@ const { MockAIProvider, createMockMessage } = await import(
 );
 const { AIProviderFactory } = await import('../../../src/providers/AIProviderFactory.js');
 
+// Test helper to create state with currentProjectId
+function createTestState(userRequest: string, config: any) {
+  const state = createInitialState(userRequest, config);
+  state.currentProjectId = 'test-project-001';
+  return state;
+}
+
 describe('ReviewDesignNode', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -116,7 +123,7 @@ describe('ReviewDesignNode', () => {
         yield createMockMessage.result(true);
       });
 
-      const initialState = createInitialState('Implement authentication', {
+      const initialState = createTestState('Implement authentication', {
         maxEngineers: 3,
         maxTurns: 30,
         baseBranch: 'main',
@@ -197,7 +204,7 @@ describe('ReviewDesignNode', () => {
         yield createMockMessage.result(true);
       });
 
-      const initialState = createInitialState('Implement authentication', {
+      const initialState = createTestState('Implement authentication', {
         maxEngineers: 3,
         maxTurns: 30,
         baseBranch: 'main',
@@ -237,7 +244,7 @@ describe('ReviewDesignNode', () => {
       // Mock fs.readFile to throw error for missing files
       mockReadFile = jest.fn<any>().mockRejectedValue(new Error('File not found'));
 
-      const initialState = createInitialState('Request', {
+      const initialState = createTestState('Request', {
         maxEngineers: 3,
         maxTurns: 30,
         baseBranch: 'main',
@@ -264,7 +271,7 @@ describe('ReviewDesignNode', () => {
         yield createMockMessage.result(true);
       });
 
-      const initialState = createInitialState('Request', {
+      const initialState = createTestState('Request', {
         maxEngineers: 3,
         maxTurns: 30,
         baseBranch: 'main',
@@ -336,7 +343,7 @@ describe('ReviewDesignNode', () => {
         yield createMockMessage.result(true);
       });
 
-      const initialState = createInitialState('Request', {
+      const initialState = createTestState('Request', {
         maxEngineers: 3,
         maxTurns: 30,
         baseBranch: 'main',

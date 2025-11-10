@@ -41,12 +41,14 @@ describe('ClaudeAgentProvider', () => {
     expect(provider.isReady()).toBe(true);
   });
 
-  test('should throw error if API key is missing', () => {
+  test('should allow initialization without API key (for Claude Code environment)', () => {
     delete process.env.ANTHROPIC_API_KEY;
 
+    // API key is optional when running in Claude Code environment
+    // The SDK will use the logged-in session if no API key is provided
     expect(() => {
       new ClaudeAgentProvider({});
-    }).toThrow('Claude API key is required');
+    }).not.toThrow();
   });
 
   test('should return supported tools', () => {

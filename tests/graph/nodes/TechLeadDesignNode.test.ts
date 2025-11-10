@@ -28,6 +28,13 @@ const { MockAIProvider, createMockMessage } = await import(
 );
 const { AIProviderFactory } = await import('../../../src/providers/AIProviderFactory.js');
 
+// Test helper to create state with currentProjectId
+function createTestState(userRequest: string, config: any) {
+  const state = createInitialState(userRequest, config);
+  state.currentProjectId = 'test-project-001';
+  return state;
+}
+
 describe('TechLeadDesignNode', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -174,7 +181,7 @@ POST /api/auth/login
       const tempDir = mkdtempSync(path.join(tmpdir(), 'techlead-design-test-'));
       const worktreesDir = path.join(tempDir, 'worktrees');
 
-      const initialState = createInitialState('Implement authentication', {
+      const initialState = createTestState('Implement authentication', {
         maxEngineers: 3,
         maxTurns: 30,
         baseBranch: 'main',
@@ -254,7 +261,7 @@ POST /api/auth/login
     test('should handle AI execution failure', async () => {
       mockProvider.executeAIPrompt = jest.fn<any>().mockRejectedValue(new Error('AI execution failed'));
 
-      const initialState = createInitialState('Request', {
+      const initialState = createTestState('Request', {
         maxEngineers: 3,
         maxTurns: 30,
         baseBranch: 'main',
@@ -286,7 +293,7 @@ POST /api/auth/login
     test('should handle missing story mapping', async () => {
       mockPersistence.loadStoryMapping.mockResolvedValue(null);
 
-      const initialState = createInitialState('Request', {
+      const initialState = createTestState('Request', {
         maxEngineers: 3,
         maxTurns: 30,
         baseBranch: 'main',
@@ -317,7 +324,7 @@ POST /api/auth/login
 
       mockProvider.executeAIPrompt = jest.fn<any>().mockResolvedValue(invalidResponse);
 
-      const initialState = createInitialState('Request', {
+      const initialState = createTestState('Request', {
         maxEngineers: 3,
         maxTurns: 30,
         baseBranch: 'main',
@@ -381,7 +388,7 @@ Basic wireframes
       const tempDir = mkdtempSync(path.join(tmpdir(), 'techlead-json-test-'));
       const worktreesDir = path.join(tempDir, 'worktrees');
 
-      const initialState = createInitialState('Request', {
+      const initialState = createTestState('Request', {
         maxEngineers: 3,
         maxTurns: 30,
         baseBranch: 'main',

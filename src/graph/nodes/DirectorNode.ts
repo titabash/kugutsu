@@ -22,6 +22,21 @@ import { MessageHandler } from '../../utils/MessageHandler.js';
 export async function directorNode(state: ParallelDevStateType): Promise<ParallelDevStateUpdate> {
   console.log('📋 DirectorAI: ストーリーマッピング作成開始');
 
+  // currentProjectId 必須チェック
+  if (!state.currentProjectId) {
+    console.error('❌ currentProjectId が設定されていません');
+    return {
+      logs: [
+        {
+          timestamp: new Date(),
+          level: 'error',
+          source: 'DirectorNode',
+          message: 'currentProjectId が設定されていません（check_modeで設定されるべき）',
+        },
+      ],
+    };
+  }
+
   try {
     // Get AI provider
     const provider = state.config.provider
@@ -29,7 +44,7 @@ export async function directorNode(state: ParallelDevStateType): Promise<Paralle
       : AIProviderFactory.createFromEnv();
 
     const schemaValidator = getSchemaValidator();
-    const projectId = state.currentProjectId || 'default-project';
+    const projectId = state.currentProjectId;
 
     // Define file paths
     const storyMapJsonPath = path.join(
@@ -133,6 +148,15 @@ ${state.userRequest}
       includePartialMessages: true,
     })) {
       await handler.handleMessage(message);
+    }
+
+    // エラーチェック（Claude Agent SDK仕様準拠）
+    if (handler.getHasError()) {
+      const details = handler.getErrorDetails();
+      const errorMsg = details?.subtype === 'error_max_turns'
+        ? `AI実行がmaxTurns制限に到達しました: ${details?.message || '詳細不明'}`
+        : `AI実行中にエラーが発生しました: ${details?.message || '詳細不明'}`;
+      throw new Error(errorMsg);
     }
 
     handler.complete(true, 'ストーリーマッピング生成が完了しました');

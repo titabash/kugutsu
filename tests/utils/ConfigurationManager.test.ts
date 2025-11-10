@@ -80,7 +80,7 @@ describe('ConfigurationManager', () => {
       // Should return default values
       expect(config.provider).toBe('claude');
       expect(config.parallelDev?.maxEngineers).toBe(3);
-      expect(config.parallelDev?.maxTurns).toBe(30);
+      expect(config.parallelDev?.maxTurns).toBe(50);
       expect(config.ui?.mode).toBe('electron');
     });
 

@@ -23,6 +23,27 @@ const { MockAIProvider, createMockMessage } = await import(
 );
 const { AIProviderFactory } = await import('../../../src/providers/AIProviderFactory.js');
 
+// Test helper to create state with activeSprint
+function createTestState(userRequest: string, config: any) {
+  const state = createInitialState(userRequest, config);
+  state.activeSprint = {
+    id: 'sprint-1',
+    name: 'Sprint 1',
+    goal: 'Test sprint',
+    taskIds: [],
+    status: 'active' as const,
+    deployable: true,
+    metadata: {
+      estimatedHours: 0,
+      blockers: [],
+      completedTasksCount: 0,
+      failedTasksCount: 0,
+    },
+  };
+  state.nodeRetryCounters = {};
+  return state;
+}
+
 describe('EngineerNode', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -59,7 +80,7 @@ describe('EngineerNode', () => {
         },
       ];
 
-      await fs.mkdir(path.join(kugutsuDir, 'tasks/task-001'), { recursive: true });
+      await fs.mkdir(path.join(kugutsuDir, 'sprints/sprint-1/tasks/task-001'), { recursive: true });
       await fs.writeFile(
         path.join(kugutsuDir, 'tasks.json'),
         JSON.stringify(tasksData, null, 2),
@@ -79,7 +100,7 @@ Add new feature to the system.
 `;
 
       await fs.writeFile(
-        path.join(kugutsuDir, 'tasks/task-001/instruction.md'),
+        path.join(kugutsuDir, 'sprints/sprint-1/tasks/task-001/instruction.md'),
         instructionContent,
         'utf-8'
       );
@@ -107,7 +128,7 @@ Add new feature to the system.
       });
 
       // Create initial state
-      const initialState = createInitialState('Test request', {
+      const initialState = createTestState('Test request', {
         maxEngineers: 1,
         maxTurns: 30,
         baseBranch: 'main',
@@ -168,7 +189,7 @@ Add new feature to the system.
         },
       ];
 
-      await fs.mkdir(path.join(kugutsuDir, 'tasks/task-002'), { recursive: true });
+      await fs.mkdir(path.join(kugutsuDir, 'sprints/sprint-1/tasks/task-002'), { recursive: true });
       await fs.writeFile(
         path.join(kugutsuDir, 'tasks.json'),
         JSON.stringify(tasksData, null, 2),
@@ -186,7 +207,7 @@ This task depends on task-001 completion.
 `;
 
       await fs.writeFile(
-        path.join(kugutsuDir, 'tasks/task-002/instruction.md'),
+        path.join(kugutsuDir, 'sprints/sprint-1/tasks/task-002/instruction.md'),
         instructionContent,
         'utf-8'
       );
@@ -201,7 +222,7 @@ This task depends on task-001 completion.
       });
 
       // Create initial state
-      const initialState = createInitialState('Test request', {
+      const initialState = createTestState('Test request', {
         maxEngineers: 1,
         maxTurns: 30,
         baseBranch: 'main',
@@ -258,7 +279,7 @@ This task depends on task-001 completion.
         },
       ];
 
-      await fs.mkdir(path.join(kugutsuDir, 'tasks/task-003'), { recursive: true });
+      await fs.mkdir(path.join(kugutsuDir, 'sprints/sprint-1/tasks/task-003'), { recursive: true });
       await fs.writeFile(
         path.join(kugutsuDir, 'tasks.json'),
         JSON.stringify(tasksData, null, 2),
@@ -273,7 +294,7 @@ This task will fail for testing purposes.
 `;
 
       await fs.writeFile(
-        path.join(kugutsuDir, 'tasks/task-003/instruction.md'),
+        path.join(kugutsuDir, 'sprints/sprint-1/tasks/task-003/instruction.md'),
         instructionContent,
         'utf-8'
       );
@@ -286,7 +307,7 @@ This task will fail for testing purposes.
       });
 
       // Create initial state
-      const initialState = createInitialState('Test request', {
+      const initialState = createTestState('Test request', {
         maxEngineers: 1,
         maxTurns: 30,
         baseBranch: 'main',
@@ -340,7 +361,7 @@ This task will fail for testing purposes.
       );
 
       // Create initial state
-      const initialState = createInitialState('Test request', {
+      const initialState = createTestState('Test request', {
         maxEngineers: 1,
         maxTurns: 30,
         baseBranch: 'main',
@@ -395,7 +416,7 @@ This task will fail for testing purposes.
       );
 
       // Create initial state
-      const initialState = createInitialState('Test request', {
+      const initialState = createTestState('Test request', {
         maxEngineers: 1,
         maxTurns: 30,
         baseBranch: 'main',
@@ -444,7 +465,7 @@ This task will fail for testing purposes.
         },
       ];
 
-      await fs.mkdir(path.join(kugutsuDir, 'tasks/task-005'), { recursive: true });
+      await fs.mkdir(path.join(kugutsuDir, 'sprints/sprint-1/tasks/task-005'), { recursive: true });
       await fs.writeFile(
         path.join(kugutsuDir, 'tasks.json'),
         JSON.stringify(tasksData, null, 2),
@@ -459,7 +480,7 @@ Should preserve session ID for conflict resolution.
 `;
 
       await fs.writeFile(
-        path.join(kugutsuDir, 'tasks/task-005/instruction.md'),
+        path.join(kugutsuDir, 'sprints/sprint-1/tasks/task-005/instruction.md'),
         instructionContent,
         'utf-8'
       );
@@ -485,7 +506,7 @@ Should preserve session ID for conflict resolution.
       });
 
       // Create initial state
-      const initialState = createInitialState('Test request', {
+      const initialState = createTestState('Test request', {
         maxEngineers: 1,
         maxTurns: 30,
         baseBranch: 'main',
@@ -544,7 +565,7 @@ Should preserve session ID for conflict resolution.
           },
         ];
 
-        await fs.mkdir(path.join(kugutsuDir, 'tasks/task-001'), { recursive: true });
+        await fs.mkdir(path.join(kugutsuDir, 'sprints/sprint-1/tasks/task-001'), { recursive: true });
         await fs.writeFile(
           path.join(kugutsuDir, 'tasks.json'),
           JSON.stringify(tasksData, null, 2),
@@ -576,7 +597,7 @@ Implement JWT-based authentication feature.
 `;
 
         await fs.writeFile(
-          path.join(kugutsuDir, 'tasks/task-001/instruction.md'),
+          path.join(kugutsuDir, 'sprints/sprint-1/tasks/task-001/instruction.md'),
           instructionContent,
           'utf-8'
         );
@@ -605,7 +626,7 @@ Implement JWT-based authentication feature.
         });
 
         // Create initial state
-        const initialState = createInitialState('Implement authentication', {
+        const initialState = createTestState('Implement authentication', {
           maxEngineers: 1,
           maxTurns: 30,
           baseBranch: 'main',
@@ -680,7 +701,7 @@ Implement JWT-based authentication feature.
         );
 
         // Create initial state
-        const initialState = createInitialState('Test request', {
+        const initialState = createTestState('Test request', {
           maxEngineers: 1,
           maxTurns: 30,
           baseBranch: 'main',

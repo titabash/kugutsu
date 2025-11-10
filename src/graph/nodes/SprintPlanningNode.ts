@@ -14,6 +14,7 @@ import type { GlobalTask, Sprint } from '../types.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 import type { AIProviderConfig } from '../../providers/IAIProvider.js';
 import { AIFileWriter } from '../../utils/AIFileWriter.js';
+import { DataPersistence } from '../../utils/DataPersistence.js';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -109,6 +110,9 @@ export async function sprintPlanningNode(
 
   const provider = AIProviderFactory.create(providerConfig);
 
+  // DataPersistenceインスタンスを作成
+  const persistence = new DataPersistence(config.baseRepoPath);
+
   // スプリント計画プロンプト
   const sprintPlanningPrompt = `
 # Sprint Planning
@@ -183,6 +187,15 @@ JSON形式で以下の構造で出力してください：
     }
   }
 
+  // エラーチェック（Claude Agent SDK仕様準拠）
+  if (handler1.getHasError()) {
+    const details = handler1.getErrorDetails();
+    const errorMsg = details?.subtype === 'error_max_turns'
+      ? `AI実行がmaxTurns制限に到達しました: ${details?.message || '詳細不明'}`
+      : `AI実行中にエラーが発生しました: ${details?.message || '詳細不明'}`;
+    throw new Error(errorMsg);
+  }
+
   handler1.complete(true, 'スプリント計画作成が完了しました');
 
   console.log('✅ スプリント計画生成完了');
@@ -243,61 +256,22 @@ JSON形式で以下の構造で出力してください：
   newSprint.status = 'active';
   newSprint.startedAt = new Date();
 
-  // active-sprint.jsonを保存
-  const activeSprintSavePrompt = `
-以下のアクティブスプリント情報を${activeSprintPath}に保存してください。
+  // active-sprint.jsonを保存（DataPersistence使用）
+  await persistence.saveActiveSprint(newSprint);
+  console.log('✅ アクティブスプリント保存完了');
 
-\`\`\`json
-${JSON.stringify(newSprint, null, 2)}
-\`\`\`
+  // global-queue.jsonを保存（DataPersistence使用）
+  await persistence.saveGlobalQueue(updatedGlobalTasks);
+  console.log('✅ グローバルキュー保存完了');
 
-**重要**: Writeツールを使用してこのファイルを作成してください。
-`.trim();
-
-  const handler2 = new MessageHandler({
-    maxTurns,
-    nodeName: 'SprintPlanning - Save Active Sprint',
-  });
-
-  for await (const message of provider.execute(activeSprintSavePrompt, {
-    maxTurns,
-    cwd: config.baseRepoPath,
-    allowedTools: ['Write'],
-    permissionMode: 'acceptEdits',
-    includePartialMessages: true,
-  })) {
-    await handler2.handleMessage(message);
-  }
-
-  handler2.complete(true, 'アクティブスプリント保存が完了しました');
-
-  // global-queue.jsonを保存
-  const globalQueueSavePrompt = `
-以下のグローバルタスクキューを${globalQueuePath}に保存してください。
-
-\`\`\`json
-${JSON.stringify(updatedGlobalTasks, null, 2)}
-\`\`\`
-
-**重要**: Writeツールを使用してこのファイルを作成してください。
-`.trim();
-
-  const handler3 = new MessageHandler({
-    maxTurns,
-    nodeName: 'SprintPlanning - Save Global Queue',
-  });
-
-  for await (const message of provider.execute(globalQueueSavePrompt, {
-    maxTurns,
-    cwd: config.baseRepoPath,
-    allowedTools: ['Write'],
-    permissionMode: 'acceptEdits',
-    includePartialMessages: true,
-  })) {
-    await handler3.handleMessage(message);
-  }
-
-  handler3.complete(true, 'グローバルキュー保存が完了しました');
+  // Sprint Backlogを保存（DataPersistence使用）
+  const sprintBacklog = {
+    sprintId: newSprint.id,
+    sprintName: newSprint.name,
+    tasks: updatedGlobalTasks.filter((task) => newSprint.taskIds.includes(task.id)),
+  };
+  await persistence.saveSprintBacklog(sprintId, sprintBacklog);
+  console.log('✅ Sprint Backlog保存完了');
 
   return {
     activeSprint: newSprint,
@@ -323,13 +297,13 @@ ${JSON.stringify(updatedGlobalTasks, null, 2)}
 /**
  * SprintPlanningNodeのルーティング関数
  *
- * アクティブなスプリントがある場合: engineer_dispatch
+ * アクティブなスプリントがある場合: instruction_generator
  * スプリントがない場合: END
  */
 export function sprintPlanningRouter(state: ParallelDevStateType): string {
   if (state.activeSprint && state.activeSprint.status === 'active') {
-    console.log('➡️ ルーティング: engineer_dispatch (スプリント実行)');
-    return 'engineer_dispatch';
+    console.log('➡️ ルーティング: instruction_generator (instruction.md生成)');
+    return 'instruction_generator';
   } else {
     console.log('➡️ ルーティング: END (スプリント計画なし)');
     return 'END';

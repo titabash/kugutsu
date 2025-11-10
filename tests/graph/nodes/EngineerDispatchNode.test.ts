@@ -166,20 +166,17 @@ describe('EngineerDispatchNode', () => {
     // Execute node
     const result = await engineerDispatchNode(initialState);
 
-    // Verify all tasks that changed state are returned
+    // 🔄 Dynamic Task Pooling: Only dispatched tasks are returned
     expect(result.tasks).toBeDefined();
-    expect(result.tasks!.length).toBe(3); // All 3 tasks changed state (pending → ready or ready → in_progress)
+    expect(result.tasks!.length).toBe(1); // Only 1 task dispatched (maxEngineers=1)
 
     // Verify task-001 (highest priority) was dispatched to in_progress
     const task001 = result.tasks!.find((t) => t.id === 'task-001');
     expect(task001?.status).toBe('in_progress');
     expect(task001?.worktreePath).toBeDefined();
 
-    // Verify task-002 and task-003 moved to ready but not dispatched
-    const task002 = result.tasks!.find((t) => t.id === 'task-002');
-    const task003 = result.tasks!.find((t) => t.id === 'task-003');
-    expect(task002?.status).toBe('ready');
-    expect(task003?.status).toBe('ready');
+    // task-002 and task-003 remain pending (not returned, as they didn't change)
+    // They will be dispatched when task-001 completes and creates available slots
   });
 
   test('should skip tasks with unsatisfied dependencies', async () => {

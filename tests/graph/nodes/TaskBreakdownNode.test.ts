@@ -138,6 +138,23 @@ describe('TaskBreakdownNode', () => {
         worktreeBasePath: '/test/worktrees',
       });
 
+      // Set required fields (currentProjectId and activeSprint)
+      initialState.currentProjectId = 'test-project-001';
+      initialState.activeSprint = {
+        id: 'sprint-test-001',
+        name: 'Test Sprint',
+        goal: 'Test sprint goal',
+        taskIds: [],
+        status: 'active' as const,
+        deployable: true,
+        metadata: {
+          estimatedHours: 0,
+          blockers: [],
+          completedTasksCount: 0,
+          failedTasksCount: 0,
+        },
+      };
+
       const stateWithDesignDocs = {
         ...initialState,
         currentProjectId: 'test-project',

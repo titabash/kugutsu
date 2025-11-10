@@ -21,6 +21,8 @@ import { techLeadDesignNode } from './nodes/TechLeadDesignNode.js';
 import { reviewDesignNode } from './nodes/ReviewDesignNode.js';
 import { taskBreakdownNode } from './nodes/TaskBreakdownNode.js';
 import { analyzeComplexityNode } from './nodes/AnalyzeComplexityNode.js';
+import { instructionGeneratorNode } from './nodes/InstructionGeneratorNode.js';
+import { TaskStateMachine } from '../utils/TaskStateMachine.js';
 
 /**
  * Create the Unified Scrum Workflow Graph
@@ -66,6 +68,7 @@ export function createUnifiedScrumWorkflowGraph() {
     // ================================================
     .addNode('check_mode', checkModeNode)
     .addNode('sprint_planning', sprintPlanningNode)
+    .addNode('instruction_generator', instructionGeneratorNode)
     .addNode('engineer_dispatch', engineerDispatchNode)
 
     // ================================================
@@ -207,19 +210,15 @@ export function createUnifiedScrumWorkflowGraph() {
   // Entry point: __start__ → analyze_complexity
   workflow.addEdge('__start__', 'analyze_complexity');
 
-  // Conditional branching based on complexity
-  workflow.addConditionalEdges(
-    'analyze_complexity',
-    (state: ParallelDevStateType) => {
-      const requiresDetailedDesign = state.metadata.requiresDetailedDesign;
-      console.log(`🔍 複雑度判定結果: ${requiresDetailedDesign ? '高（詳細設計実行）' : '低（詳細設計スキップ）'}`);
-      return requiresDetailedDesign ? 'high_complexity' : 'low_complexity';
-    },
-    {
-      high_complexity: 'director_ai',
-      low_complexity: 'product_owner',
-    }
-  );
+  // Always go to check_mode first (both high and low complexity)
+  // CheckMode initializes repository metadata and tech stack
+  workflow.addEdge('analyze_complexity', 'check_mode');
+
+  // CheckMode routing: route based on complexity
+  workflow.addConditionalEdges('check_mode', checkModeRouter, {
+    director_ai: 'director_ai',
+    product_owner: 'product_owner',
+  });
 
   // High complexity path edges
   workflow.addEdge('director_ai', 'review_story_mapping');
@@ -252,22 +251,21 @@ export function createUnifiedScrumWorkflowGraph() {
     }
   );
 
-  workflow.addEdge('task_breakdown', 'check_mode');
+  // Task breakdown → sprint planning (high complexity path end)
+  workflow.addEdge('task_breakdown', 'sprint_planning');
 
-  // Low complexity path edge
-  workflow.addEdge('product_owner', 'check_mode');
+  // Product owner → sprint planning (low complexity path end)
+  workflow.addEdge('product_owner', 'sprint_planning');
 
-  // CheckMode routing: new mode or continuation mode
-  workflow.addConditionalEdges('check_mode', checkModeRouter, {
-    product_owner: 'product_owner',
-    sprint_planning: 'sprint_planning',
-  });
-
-  // Sprint planning → engineer dispatch
+  // Sprint planning → instruction generator
   workflow.addConditionalEdges('sprint_planning', sprintPlanningRouter, {
-    engineer_dispatch: 'engineer_dispatch',
+    instruction_generator: 'instruction_generator',
     sprint_review: 'sprint_review',
+    END: '__end__',
   });
+
+  // Instruction generator → engineer dispatch
+  workflow.addEdge('instruction_generator', 'engineer_dispatch');
 
   // Engineer dispatch → conditional (feedback routing or normal flow)
   workflow.addConditionalEdges(
@@ -296,10 +294,34 @@ export function createUnifiedScrumWorkflowGraph() {
   // Engineer → review
   workflow.addEdge('engineer', 'review');
 
-  // Review → merge_coordinator
-  workflow.addEdge('review', 'merge_coordinator');
+  // Review → conditional (dynamic task pooling)
+  workflow.addConditionalEdges(
+    'review',
+    (state: ParallelDevStateType) => {
+      // 🔄 Dynamic Task Pooling: Check for ready tasks and available slots
+      const readyTasks = state.tasks.filter(t =>
+        t.status === 'pending' &&
+        TaskStateMachine.canMoveToReady(t, state.tasks)
+      );
+      const inProgressCount = state.tasks.filter(t => t.status === 'in_progress').length;
+      const availableSlots = state.config.maxEngineers - inProgressCount;
 
-  // Merge coordinator → conditional
+      // If there are ready tasks and available slots, dispatch immediately
+      if (readyTasks.length > 0 && availableSlots > 0) {
+        console.log(`[Graph] Review complete, ${readyTasks.length} ready tasks, ${availableSlots} slots available - dispatching`);
+        return 'dispatch_next';
+      }
+
+      console.log('[Graph] Review complete, proceeding to merge');
+      return 'continue';
+    },
+    {
+      dispatch_next: 'engineer_dispatch',
+      continue: 'merge_coordinator',
+    }
+  );
+
+  // Merge coordinator → conditional (dynamic task pooling)
   workflow.addConditionalEdges(
     'merge_coordinator',
     (state: ParallelDevStateType) => {
@@ -308,8 +330,34 @@ export function createUnifiedScrumWorkflowGraph() {
         return 'has_conflicts';
       }
 
-      const pendingTasks = state.tasks.filter((t) => t.status === 'pending');
-      return pendingTasks.length > 0 ? 'has_pending' : 'no_pending';
+      // 🔄 Dynamic Task Pooling: Check for ready tasks and available slots
+      const readyTasks = state.tasks.filter(t =>
+        t.status === 'pending' &&
+        TaskStateMachine.canMoveToReady(t, state.tasks)
+      );
+      const inProgressCount = state.tasks.filter(t => t.status === 'in_progress').length;
+      const availableSlots = state.config.maxEngineers - inProgressCount;
+
+      // If there are ready tasks and available slots, dispatch immediately
+      if (readyTasks.length > 0 && availableSlots > 0) {
+        console.log(`[Graph] Merge complete, ${readyTasks.length} ready tasks, ${availableSlots} slots available - dispatching`);
+        return 'has_pending';
+      }
+
+      // Check if all tasks are completed
+      const allPendingTasks = state.tasks.filter(t => t.status === 'pending');
+      if (allPendingTasks.length === 0) {
+        console.log('[Graph] All tasks completed, proceeding to sprint review');
+        return 'no_pending';
+      }
+
+      // Pending tasks exist but either no slots or dependencies not resolved
+      if (availableSlots <= 0) {
+        console.log('[Graph] Pending tasks exist but no available slots');
+      } else {
+        console.log('[Graph] Pending tasks exist but dependencies not resolved');
+      }
+      return 'no_pending';
     },
     {
       has_conflicts: 'conflict_resolver',
@@ -324,7 +372,8 @@ export function createUnifiedScrumWorkflowGraph() {
   // Sprint review → conditional (__end__ or continue)
   workflow.addConditionalEdges('sprint_review', sprintReviewRouter, {
     sprint_planning: 'sprint_planning',
-    __end__: '__end__',
+    engineer_dispatch: 'engineer_dispatch',
+    END: '__end__',
   });
 
   return workflow;

@@ -108,7 +108,8 @@ export class MockAIProvider implements IAIProvider {
     }
 
     // TASK-014: Detect output file pattern in prompt and create file
-    const filePathMatch = prompt.match(/\*\*出力ファイル\*\*:\s*(.+?)(?:\n|$)/);
+    // Support both "**出力ファイル**:" and "**ファイルパス**:" patterns
+    const filePathMatch = prompt.match(/\*\*(?:出力ファイル|ファイルパス)\*\*:\s*(.+?)(?:\n|$)/);
     if (filePathMatch && options.allowedTools?.includes('Write')) {
       const filePath = filePathMatch[1].trim();
 
@@ -151,13 +152,38 @@ export class MockAIProvider implements IAIProvider {
     }
 
     // Yield messages and simulate tools if enabled
+    let hasResultMessage = false;
     for (const message of response.messages) {
       // Simulate tool execution if enabled
       if (response.simulateTools && message.type === 'system' && message.content?.toolUse) {
         await this.simulateTool(message.content.toolUse);
       }
 
+      // Track if a result message already exists
+      if (message.type === 'result') {
+        hasResultMessage = true;
+      }
+
       yield message;
+    }
+
+    // If includePartialMessages is enabled and no result message was provided, send one
+    if (options.includePartialMessages && !hasResultMessage) {
+      yield {
+        type: 'result',
+        content: {
+          success: true,
+          duration: 100,
+          tokenUsage: { input: 10, output: 20, total: 30 },
+          cost: 0.001,
+          permissionDenials: 0,
+          usage: {
+            input_tokens: 10,
+            output_tokens: 20,
+          },
+          stop_reason: 'end_turn',
+        },
+      } as AIMessage;
     }
   }
 

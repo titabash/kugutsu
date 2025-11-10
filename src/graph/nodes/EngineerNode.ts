@@ -50,6 +50,12 @@ export async function engineerNode(
 
   // Retrieve task ID from parameter (backward compatibility) or state (Send API pattern)
   const taskId = taskIdParam || currentTaskId;
+
+  // DEBUG: 型チェック
+  console.log(`[DEBUG] taskIdParam type: ${typeof taskIdParam}, value: ${JSON.stringify(taskIdParam)}`);
+  console.log(`[DEBUG] currentTaskId type: ${typeof currentTaskId}, value: ${JSON.stringify(currentTaskId)}`);
+  console.log(`[DEBUG] taskId type: ${typeof taskId}, value: ${JSON.stringify(taskId)}`);
+
   if (!taskId) {
     console.error('❌ taskId is not provided (neither as parameter nor in state.currentTaskId)');
     return {
@@ -59,6 +65,21 @@ export async function engineerNode(
           level: 'error',
           source: 'EngineerNode',
           message: 'taskId is not provided (neither as parameter nor in state.currentTaskId)',
+        },
+      ],
+    };
+  }
+
+  // taskId が文字列でない場合のエラーハンドリング
+  if (typeof taskId !== 'string') {
+    console.error(`❌ taskId is not a string: type=${typeof taskId}, value=${JSON.stringify(taskId)}`);
+    return {
+      logs: [
+        {
+          timestamp: new Date(),
+          level: 'error',
+          source: 'EngineerNode',
+          message: `taskId is not a string: ${typeof taskId}`,
         },
       ],
     };

@@ -339,9 +339,13 @@ export function createUnifiedScrumWorkflowGraph() {
       }
 
       // Return array of Send objects (fan-out)
-      return inProgressTasks.map(task =>
-        new Send('engineer', {
-          currentTaskId: task.id,
+      return inProgressTasks.map(t => {
+        console.log(`[DEBUG ParallelDevGraph] Task object:`, JSON.stringify(t, null, 2));
+        console.log(`[DEBUG ParallelDevGraph] task.id type=${typeof t.id}, value="${t.id}"`);
+        const taskIdValue = t.id;
+        console.log(`[DEBUG ParallelDevGraph] Extracted taskIdValue type=${typeof taskIdValue}, value="${taskIdValue}"`);
+        return new Send('engineer', {
+          currentTaskId: taskIdValue,
           config: state.config,
           tasks: state.tasks,
           tasksPath: state.tasksPath,
@@ -350,8 +354,8 @@ export function createUnifiedScrumWorkflowGraph() {
           metadata: state.metadata,
           feedbackRequest: state.feedbackRequest,
           nodeRetryCounters: state.nodeRetryCounters,
-        })
-      );
+        });
+      });
     },
     {
       // Normal routes

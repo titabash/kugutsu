@@ -23,6 +23,7 @@ import { taskBreakdownNode } from './nodes/TaskBreakdownNode.js';
 import { analyzeComplexityNode } from './nodes/AnalyzeComplexityNode.js';
 import { instructionGeneratorNode } from './nodes/InstructionGeneratorNode.js';
 import { TaskStateMachine } from '../utils/TaskStateMachine.js';
+import { ParallelProgressTracker } from '../utils/ParallelProgressTracker.js';
 
 /**
  * Create the Unified Scrum Workflow Graph
@@ -90,7 +91,17 @@ export function createUnifiedScrumWorkflowGraph() {
         };
       }
 
-      console.log(`👷 ${inProgressTasks.length}個のタスクを並列実装中...`);
+      // ✨ 並列実行ステータスボードを作成
+      const tracker = new ParallelProgressTracker(`🚀 ${inProgressTasks.length}個のタスクを並列実装中`);
+
+      // タスクをトラッカーに追加
+      console.log(`\n${'='.repeat(70)}`);
+      console.log(`👷 並列実装開始: ${inProgressTasks.length}タスク`);
+      for (const task of inProgressTasks) {
+        console.log(`   - [${task.id}] ${task.title}`);
+        tracker.addTask(task.id, task.title, state.config.maxTurns);
+      }
+      console.log(`${'='.repeat(70)}\n`);
 
       // Execute all in-progress tasks in parallel (with allSettled to continue on failures)
       const taskResults = await Promise.allSettled(
@@ -106,7 +117,10 @@ export function createUnifiedScrumWorkflowGraph() {
         metadata: {},
       };
 
-      for (const settledResult of taskResults) {
+      for (let i = 0; i < taskResults.length; i++) {
+        const settledResult = taskResults[i];
+        const task = inProgressTasks[i];
+
         if (settledResult.status === 'fulfilled') {
           // タスク実行成功
           const result = settledResult.value;
@@ -115,6 +129,10 @@ export function createUnifiedScrumWorkflowGraph() {
           if (result.failedTasks) results.failedTasks.push(...result.failedTasks);
           if (result.logs) results.logs.push(...result.logs);
           if (result.metadata) results.metadata = { ...results.metadata, ...result.metadata };
+
+          // ✨ トラッカーに成功を通知
+          const success = !result.failedTasks || result.failedTasks.length === 0;
+          tracker.completeTask(task.id, success);
         } else {
           // タスク実行失敗
           results.logs.push({
@@ -124,8 +142,21 @@ export function createUnifiedScrumWorkflowGraph() {
             message: `タスク実行エラー: ${settledResult.reason?.message || settledResult.reason}`,
             data: { error: settledResult.reason },
           });
+
+          // ✨ トラッカーに失敗を通知
+          tracker.failTask(task.id, settledResult.reason?.message);
         }
       }
+
+      // ✨ トラッカーを終了
+      await tracker.close();
+
+      // 並列実装終了ログ
+      const successCount = results.tasks.filter(t => t.status === 'in_review').length;
+      const failedCount = results.failedTasks?.length || 0;
+      console.log(`\n${'='.repeat(70)}`);
+      console.log(`📊 並列実装完了: 成功 ${successCount}/${inProgressTasks.length}, 失敗 ${failedCount}/${inProgressTasks.length}`);
+      console.log(`${'='.repeat(70)}\n`);
 
       return results;
     })
@@ -154,7 +185,17 @@ export function createUnifiedScrumWorkflowGraph() {
         };
       }
 
-      console.log(`🔍 ${completedTasks.length}個のタスクを並列レビュー中...`);
+      // ✨ 並列実行ステータスボードを作成
+      const tracker = new ParallelProgressTracker(`🔍 ${completedTasks.length}個のタスクを並列レビュー中`);
+
+      // タスクをトラッカーに追加
+      console.log(`\n${'='.repeat(70)}`);
+      console.log(`🔍 並列レビュー開始: ${completedTasks.length}タスク`);
+      for (const task of completedTasks) {
+        console.log(`   - [${task.id}] ${task.title}`);
+        tracker.addTask(task.id, task.title, state.config.maxTurns);
+      }
+      console.log(`${'='.repeat(70)}\n`);
 
       // Review all completed tasks in parallel (with allSettled to continue on failures)
       const reviewResults = await Promise.allSettled(
@@ -169,7 +210,10 @@ export function createUnifiedScrumWorkflowGraph() {
         logs: [] as any[],
       };
 
-      for (const settledResult of reviewResults) {
+      for (let i = 0; i < reviewResults.length; i++) {
+        const settledResult = reviewResults[i];
+        const task = completedTasks[i];
+
         if (settledResult.status === 'fulfilled') {
           // レビュー成功
           const result = settledResult.value;
@@ -177,6 +221,9 @@ export function createUnifiedScrumWorkflowGraph() {
           if (result.completedTasks) results.completedTasks.push(...result.completedTasks);
           if (result.reviews) results.reviews.push(...result.reviews);
           if (result.logs) results.logs.push(...result.logs);
+
+          // ✨ トラッカーに成功を通知
+          tracker.completeTask(task.id, true);
         } else {
           // レビュー失敗
           results.logs.push({
@@ -186,8 +233,21 @@ export function createUnifiedScrumWorkflowGraph() {
             message: `レビュー実行エラー: ${settledResult.reason?.message || settledResult.reason}`,
             data: { error: settledResult.reason },
           });
+
+          // ✨ トラッカーに失敗を通知
+          tracker.failTask(task.id, settledResult.reason?.message);
         }
       }
+
+      // ✨ トラッカーを終了
+      await tracker.close();
+
+      // 並列レビュー終了ログ
+      const approvedCount = results.tasks.filter(t => t.status === 'completed').length;
+      const changesRequestedCount = results.tasks.filter(t => t.status === 'in_progress').length;
+      console.log(`\n${'='.repeat(70)}`);
+      console.log(`📊 並列レビュー完了: 承認 ${approvedCount}/${completedTasks.length}, 修正要求 ${changesRequestedCount}/${completedTasks.length}`);
+      console.log(`${'='.repeat(70)}\n`);
 
       return results;
     })

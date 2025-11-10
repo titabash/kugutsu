@@ -39,8 +39,7 @@ export async function engineerNode(
   taskId: string
 ): Promise<ParallelDevStateUpdate> {
   const { config, tasks, tasksPath, activeSprint } = state;
-
-  console.log(`👷 Engineer: タスク ${taskId} を実装しています...`);
+  const startTime = Date.now();
 
   // アクティブスプリントIDを取得
   if (!activeSprint?.id) {
@@ -48,8 +47,20 @@ export async function engineerNode(
     const task = tasks.find((t) => t.id === taskId);
     if (task) {
       const failedTask = TaskStateMachine.transition(task, 'failed');
+
+      // Sync to globalTasks
+      const globalTask = state.globalTasks.find((t) => t.id === taskId);
+      const updatedGlobalTasks = globalTask
+        ? [{
+            ...globalTask,
+            status: 'failed' as const,
+            updatedAt: new Date(),
+          }]
+        : [];
+
       return {
         tasks: [failedTask],
+        globalTasks: updatedGlobalTasks,
         failedTasks: [failedTask],
         logs: [
           {
@@ -134,8 +145,20 @@ export async function engineerNode(
         const task = state.tasks.find((t) => t.id === taskId);
         if (task) {
           const failedTask = TaskStateMachine.transition(task, 'failed');
+
+          // Sync to globalTasks
+          const globalTask = state.globalTasks.find((t) => t.id === taskId);
+          const updatedGlobalTasks = globalTask
+            ? [{
+                ...globalTask,
+                status: 'failed' as const,
+                updatedAt: new Date(),
+              }]
+            : [];
+
           return {
             tasks: [failedTask],
+            globalTasks: updatedGlobalTasks,
             failedTasks: [failedTask],
             logs: [
               {
@@ -167,8 +190,19 @@ export async function engineerNode(
       if (task) {
         const failedTask = TaskStateMachine.transition(task, 'failed');
 
+        // Sync to globalTasks
+        const globalTask = state.globalTasks.find((t) => t.id === taskId);
+        const updatedGlobalTasks = globalTask
+          ? [{
+              ...globalTask,
+              status: 'failed' as const,
+              updatedAt: new Date(),
+            }]
+          : [];
+
         return {
           tasks: [failedTask],
+          globalTasks: updatedGlobalTasks,
           failedTasks: [failedTask],
           logs: [
             {
@@ -274,6 +308,23 @@ export async function engineerNode(
     };
   }
 
+  // ✨ 実装開始ログ（詳細版）
+  const task = tasks.find((t) => t.id === taskId);
+  console.log(`\n${'='.repeat(70)}`);
+  console.log(`👷 [${taskId}] ${task?.title || taskArtifact.title} - 実装開始`);
+  console.log(`   Engineer: EngineerAI-${taskId}`);
+  if (taskArtifact.worktreePath) {
+    console.log(`   Worktree: ${taskArtifact.worktreePath}`);
+  }
+  if (taskArtifact.branchName) {
+    console.log(`   Branch: ${taskArtifact.branchName}`);
+  }
+  console.log(`   最大ターン数: ${config.maxTurns}`);
+  if (taskArtifact.dependencies.length > 0) {
+    console.log(`   依存タスク: ${taskArtifact.dependencies.join(', ')}`);
+  }
+  console.log(`${'='.repeat(70)}\n`);
+
   if (!taskArtifact.worktreePath) {
     console.error(`❌ タスク ${taskId} のworktreeが設定されていません`);
 
@@ -282,8 +333,19 @@ export async function engineerNode(
     if (task) {
       const failedTask = TaskStateMachine.transition(task, 'failed');
 
+      // Sync to globalTasks
+      const globalTask = state.globalTasks.find((t) => t.id === taskId);
+      const updatedGlobalTasks = globalTask
+        ? [{
+            ...globalTask,
+            status: 'failed' as const,
+            updatedAt: new Date(),
+          }]
+        : [];
+
       return {
         tasks: [failedTask],
+        globalTasks: updatedGlobalTasks,
         failedTasks: [failedTask],
         logs: [
           {
@@ -331,8 +393,19 @@ export async function engineerNode(
     if (task) {
       const failedTask = TaskStateMachine.transition(task, 'failed');
 
+      // Sync to globalTasks
+      const globalTask = state.globalTasks.find((t) => t.id === taskId);
+      const updatedGlobalTasks = globalTask
+        ? [{
+            ...globalTask,
+            status: 'failed' as const,
+            updatedAt: new Date(),
+          }]
+        : [];
+
       return {
         tasks: [failedTask],
+        globalTasks: updatedGlobalTasks,
         failedTasks: [failedTask],
         logs: [
           {
@@ -589,8 +662,19 @@ ${dependenciesSection}
           config.baseRepoPath
         );
 
+        // Sync to globalTasks
+        const globalTask = state.globalTasks.find((t) => t.id === taskId);
+        const updatedGlobalTasks = globalTask
+          ? [{
+              ...globalTask,
+              status: 'failed' as const,
+              updatedAt: new Date(),
+            }]
+          : [];
+
         return {
           tasks: [failedTask],
+          globalTasks: updatedGlobalTasks,
           failedTasks: [failedTask],
           logs: [
             {
@@ -614,7 +698,13 @@ ${dependenciesSection}
     messages.push(...executionResult.data!.messages);
     sessionId = executionResult.data!.sessionId;
 
-    console.log(`✅ タスク ${taskId} の実装が完了しました`);
+    // ✨ 実装完了ログ（詳細版）
+    const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.log(`\n${'='.repeat(70)}`);
+    console.log(`✅ [${taskId}] ${task?.title || taskArtifact.title} - 実装完了`);
+    console.log(`   所要時間: ${duration}秒`);
+    console.log(`   SessionID: ${sessionId}`);
+    console.log(`${'='.repeat(70)}\n`);
 
     // Update task status in file artifact using AI
     await AIFileWriter.updateTaskInTasksJson(
@@ -643,8 +733,21 @@ ${dependenciesSection}
 
       console.log(`📝 タスクステータス(State)を更新しました: in_progress → in_review`);
 
+      // Sync to globalTasks
+      const globalTask = state.globalTasks.find((t) => t.id === taskId);
+      const updatedGlobalTasks = globalTask
+        ? [{
+            ...globalTask,
+            status: 'in_review' as const,
+            worktreePath: taskArtifact.worktreePath,
+            branchName: taskArtifact.branchName,
+            updatedAt: new Date(),
+          }]
+        : [];
+
       return {
         tasks: [inReviewTask],
+        globalTasks: updatedGlobalTasks,
         feedbackRequest: null, // フィードバッククリア（成功）
         logs: [
           {
@@ -734,8 +837,19 @@ ${dependenciesSection}
       console.log(`📝 タスクステータス(State)を更新しました: in_progress → failed`);
     }
 
+    // Sync to globalTasks
+    const globalTask = state.globalTasks.find((t) => t.id === taskId);
+    const updatedGlobalTasks = globalTask
+      ? [{
+          ...globalTask,
+          status: 'failed' as const,
+          updatedAt: new Date(),
+        }]
+      : [];
+
     return {
       tasks: failedTask ? [failedTask] : [],
+      globalTasks: updatedGlobalTasks,
       failedTasks: failedTask ? [failedTask] : [],
       logs: [
         {

@@ -26,7 +26,7 @@ import type { TaskArtifact } from '../../types/artifacts.js';
 export async function engineerDispatchNode(
   state: ParallelDevStateType
 ): Promise<ParallelDevStateUpdate> {
-  const { tasks, config, tasksPath } = state;
+  const { tasks, config, tasksPath, globalTasks } = state;
 
   console.log('🚀 Engineer Dispatch: タスクを割り当てています...');
   console.log(`📝 tasksPath: ${tasksPath}`);
@@ -224,9 +224,25 @@ export async function engineerDispatchNode(
       }
     }
 
+    // Sync updatedTasks to globalTasks
+    const updatedGlobalTasks: any[] = [];
+    for (const task of updatedTasks) {
+      const globalTask = globalTasks.find((t) => t.id === task.id);
+      if (globalTask) {
+        updatedGlobalTasks.push({
+          ...globalTask,
+          status: task.status,
+          worktreePath: task.worktreePath,
+          branchName: task.branchName,
+          updatedAt: new Date(),
+        });
+      }
+    }
+
     // Return state update
     return {
       tasks: updatedTasks,
+      globalTasks: updatedGlobalTasks,
       worktrees: newWorktrees,
       logs,
     };

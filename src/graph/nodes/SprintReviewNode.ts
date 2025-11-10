@@ -313,18 +313,60 @@ JSON形式で以下を出力してください：
  * 未完了タスクがある場合: engineer_dispatch (スプリント継続)
  */
 export function sprintReviewRouter(state: ParallelDevStateType): string {
-  // 全タスク完了チェック
-  const allTasksCompleted = state.globalTasks.every(
+  // アクティブスプリントがない場合の処理
+  if (!state.activeSprint) {
+    // 全グローバルタスク完了チェック
+    const allTasksCompleted = state.globalTasks.every(
+      (task) => task.status === 'completed' || task.status === 'failed'
+    );
+
+    if (allTasksCompleted) {
+      console.log('➡️ ルーティング: END (全タスク完了)');
+      return 'END';
+    }
+
+    console.log('➡️ ルーティング: sprint_planning (次スプリント計画)');
+    return 'sprint_planning';
+  }
+
+  // アクティブスプリントが完了済みの場合
+  if (state.activeSprint.status === 'completed') {
+    console.log('➡️ ルーティング: sprint_planning (次スプリント計画)');
+    return 'sprint_planning';
+  }
+
+  // アクティブスプリント内のタスクのみをチェック
+  const sprintTasks = state.globalTasks.filter((task) =>
+    state.activeSprint!.taskIds.includes(task.id)
+  );
+
+  const completedOrFailedTasks = sprintTasks.filter(
     (task) => task.status === 'completed' || task.status === 'failed'
   );
 
-  if (allTasksCompleted) {
-    console.log('➡️ ルーティング: END (全タスク完了)');
-    return 'END';
-  }
+  const incompleteTasks = sprintTasks.filter(
+    (task) =>
+      task.status !== 'completed' &&
+      task.status !== 'failed'
+  );
 
-  // アクティブスプリントがない場合、次スプリント計画
-  if (!state.activeSprint || state.activeSprint.status === 'completed') {
+  console.log(`[SprintReviewRouter] スプリントタスク: ${sprintTasks.length}件`);
+  console.log(`[SprintReviewRouter] 完了/失敗: ${completedOrFailedTasks.length}件`);
+  console.log(`[SprintReviewRouter] 未完了: ${incompleteTasks.length}件`);
+
+  // スプリント内の全タスクが完了または失敗している場合
+  if (incompleteTasks.length === 0) {
+    // 全グローバルタスクも確認
+    const allGlobalTasksCompleted = state.globalTasks.every(
+      (task) => task.status === 'completed' || task.status === 'failed'
+    );
+
+    if (allGlobalTasksCompleted) {
+      console.log('➡️ ルーティング: END (全タスク完了)');
+      return 'END';
+    }
+
+    // スプリント外に未割り当てタスクが残っている場合
     console.log('➡️ ルーティング: sprint_planning (次スプリント計画)');
     return 'sprint_planning';
   }

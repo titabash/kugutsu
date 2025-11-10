@@ -6,6 +6,7 @@
  */
 
 import type { AIMessage } from '../providers/IAIProvider.js';
+import type { ParallelProgressTracker } from './ParallelProgressTracker.js';
 
 /**
  * MessageHandler のオプション
@@ -89,6 +90,7 @@ export class MessageHandler {
   private dotCounter = 0;
   private hasError = false;
   private errorDetails?: ErrorDetails;
+  private progressTracker?: ParallelProgressTracker;
 
   constructor(options: MessageHandlerOptions) {
     this.options = options;
@@ -272,6 +274,9 @@ export class MessageHandler {
    * Resultメッセージ（完了）を処理
    */
   private handleResult(message: AIMessage): void {
+    // ターン数をインクリメント（各ターンの終わりでResultメッセージが送信される）
+    this.incrementTurnCount();
+
     // ドット表示中なら改行
     if (this.dotCounter > 0) {
       console.log(''); // 改行
@@ -396,5 +401,40 @@ export class MessageHandler {
       }
     }
     console.log('');
+  }
+
+  /**
+   * プログレストラッカーを設定
+   * @param tracker ParallelProgressTracker インスタンス
+   */
+  public setProgressTracker(tracker: ParallelProgressTracker): void {
+    this.progressTracker = tracker;
+  }
+
+  /**
+   * プログレストラッカーに進捗を通知
+   * タスクIDが設定されている場合のみ通知されます
+   */
+  public notifyProgress(): void {
+    if (this.progressTracker && this.options.taskId) {
+      this.progressTracker.updateProgress(this.options.taskId, this.turnCount);
+    }
+  }
+
+  /**
+   * 現在のターン数を取得
+   * @returns 現在のターン数
+   */
+  public getTurnCount(): number {
+    return this.turnCount;
+  }
+
+  /**
+   * ターン数をインクリメント（内部使用）
+   * Result メッセージを受信したときに呼び出されます
+   */
+  private incrementTurnCount(): void {
+    this.turnCount++;
+    this.notifyProgress();
   }
 }

@@ -36,10 +36,9 @@ export async function reviewNode(
   state: ParallelDevStateType,
   taskId: string
 ): Promise<ParallelDevStateUpdate> {
-  const { config, tasks, tasksPath, activeSprint } = state;
+  const { config, tasks, tasksPath, activeSprint, globalTasks } = state;
   const maxTurns = config.maxTurns || 50;
-
-  console.log(`🔍 Review: タスク ${taskId} をレビューしています...`);
+  const startTime = Date.now();
 
   // アクティブスプリントIDを取得
   if (!activeSprint?.id) {
@@ -95,6 +94,20 @@ export async function reviewNode(
       ],
     };
   }
+
+  // ✨ レビュー開始ログ（詳細版）
+  const task = tasks.find((t) => t.id === taskId);
+  console.log(`\n${'='.repeat(70)}`);
+  console.log(`🔍 [${taskId}] ${task?.title || taskArtifact.title} - レビュー開始`);
+  console.log(`   Reviewer: TechLead-${taskId}`);
+  if (taskArtifact.worktreePath) {
+    console.log(`   Worktree: ${taskArtifact.worktreePath}`);
+  }
+  if (taskArtifact.branchName) {
+    console.log(`   Branch: ${taskArtifact.branchName}`);
+  }
+  console.log(`   最大ターン数: ${maxTurns}`);
+  console.log(`${'='.repeat(70)}\n`);
 
   if (!taskArtifact.worktreePath) {
     return {
@@ -364,7 +377,18 @@ REVIEW_STATUS: APPROVED または CHANGES_REQUESTED
       ? 'changes_requested'
       : 'approved';
 
-    console.log(`${finalStatus === 'approved' ? '✅' : '⚠️'} タスク ${taskId} のレビュー: ${finalStatus}`);
+    // ✨ レビュー完了ログ（詳細版）
+    const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+    const statusIcon = finalStatus === 'approved' ? '✅' : '⚠️';
+    const statusText = finalStatus === 'approved' ? 'レビュー承認' : '修正要求';
+    console.log(`\n${'='.repeat(70)}`);
+    console.log(`${statusIcon} [${taskId}] ${task?.title || taskArtifact.title} - ${statusText}`);
+    console.log(`   所要時間: ${duration}秒`);
+    console.log(`   コメント数: ${reviewComments.length}件`);
+    if (reviewComments.length > 0) {
+      console.log(`   主なコメント: ${reviewComments[0].substring(0, 60)}...`);
+    }
+    console.log(`${'='.repeat(70)}\n`);
 
     // Create review artifact for file
     const reviewArtifact: ReviewArtifact = {
@@ -433,8 +457,19 @@ REVIEW_STATUS: APPROVED または CHANGES_REQUESTED
       }
     }
 
+    // Sync to globalTasks
+    const globalTask = globalTasks.find((t) => t.id === taskId);
+    const updatedGlobalTasks = globalTask && updatedTask
+      ? [{
+          ...globalTask,
+          status: updatedTask.status,
+          updatedAt: new Date(),
+        }]
+      : [];
+
     return {
       tasks: updatedTask ? [updatedTask] : [],
+      globalTasks: updatedGlobalTasks,
       completedTasks: finalStatus === 'approved' && updatedTask ? [updatedTask] : [],
       reviews: [stateReview],
       logs: [

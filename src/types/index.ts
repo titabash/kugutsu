@@ -223,7 +223,7 @@ export interface GlobalTask {
   description: string;
   priority: number;               // 基礎優先度（0-100）
   dependencies: string[];
-  status: 'pending' | 'in_progress' | 'completed' | 'failed';
+  status: 'pending' | 'in_progress' | 'in_review' | 'completed' | 'failed';
   worktreePath?: string;
   branchName?: string;
   createdAt?: Date;

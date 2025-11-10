@@ -4,6 +4,7 @@
 
 import { jest } from '@jest/globals';
 import type { Task } from '../../../src/graph/types.js';
+import fs from 'fs/promises';
 
 // Mock AIProviderFactory BEFORE importing
 let mockProvider: any;
@@ -12,6 +13,27 @@ jest.unstable_mockModule('../../../src/providers/AIProviderFactory.js', () => ({
     create: jest.fn(() => mockProvider),
     getSupportedProviders: jest.fn(() => ['claude', 'mock']),
     isProviderSupported: jest.fn((provider: string) => ['claude', 'mock'].includes(provider)),
+  },
+}));
+
+// Mock AIFileWriter to properly handle file updates
+jest.unstable_mockModule('../../../src/utils/AIFileWriter.js', () => ({
+  AIFileWriter: {
+    updateTaskInTasksJson: jest.fn(async (provider: any, tasksPath: string, taskId: string, updates: Record<string, any>, cwd: string) => {
+      // Read tasks.json
+      const fullPath = `${cwd}/${tasksPath}`;
+      const content = await fs.readFile(fullPath, 'utf-8');
+      const tasks = JSON.parse(content);
+
+      // Update the task
+      const taskIndex = tasks.findIndex((t: any) => t.id === taskId);
+      if (taskIndex >= 0) {
+        Object.assign(tasks[taskIndex], updates);
+      }
+
+      // Write back
+      await fs.writeFile(fullPath, JSON.stringify(tasks, null, 2), 'utf-8');
+    }),
   },
 }));
 
@@ -125,6 +147,7 @@ Add new feature to the system.
             timestamp: new Date(),
           },
         ],
+        simulateTools: true,  // Enable tool simulation for AIFileWriter
       });
 
       // Create initial state
@@ -219,6 +242,7 @@ This task depends on task-001 completion.
           createMockMessage.assistant('実装が完了しました'),
           createMockMessage.result(true),
         ],
+        simulateTools: true,  // Enable tool simulation for AIFileWriter
       });
 
       // Create initial state
@@ -304,6 +328,7 @@ This task will fail for testing purposes.
         messages: [],
         shouldThrowError: true,
         errorMessage: 'Implementation error',
+        simulateTools: true,  // Enable tool simulation
       });
 
       // Create initial state
@@ -503,6 +528,7 @@ Should preserve session ID for conflict resolution.
             timestamp: new Date(),
           },
         ],
+        simulateTools: true,  // Enable tool simulation for AIFileWriter
       });
 
       // Create initial state
@@ -623,6 +649,7 @@ Implement JWT-based authentication feature.
               timestamp: new Date(),
             },
           ],
+          simulateTools: true,  // Enable tool simulation for AIFileWriter
         });
 
         // Create initial state

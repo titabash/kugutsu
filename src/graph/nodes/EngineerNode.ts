@@ -13,7 +13,6 @@ import { Command, interrupt } from '@langchain/langgraph';
 import type { ParallelDevStateType, ParallelDevStateUpdate, FeedbackRequest } from '../state.js';
 import type { Task } from '../types.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
-import type { AIProviderConfig } from '../../providers/IAIProvider.js';
 import { FileReader } from '../../utils/FileReader.js';
 import { AIFileWriter } from '../../utils/AIFileWriter.js';
 import { TaskStateMachine } from '../../utils/TaskStateMachine.js';
@@ -488,13 +487,9 @@ export async function engineerNode(
 
   try {
     // Create AI provider
-    const providerConfig: AIProviderConfig = {
+    const providerConfig = AIProviderFactory.buildProviderConfig({
       provider: state.config.provider || 'claude',
-      claude: {
-        model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-5-20250929',
-      },
-    };
-
+    });
     const provider = AIProviderFactory.create(providerConfig);
 
     // Build implementation prompt with instruction.md content
@@ -842,12 +837,9 @@ ${dependenciesSection}
     // Update task status to 'failed' in tasks.json using AI
     try {
       // Create AI provider for this error path
-      const providerConfig: AIProviderConfig = {
+      const providerConfig = AIProviderFactory.buildProviderConfig({
         provider: state.config.provider || 'claude',
-        claude: {
-          model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-5-20250929',
-        },
-      };
+      });
       const provider = AIProviderFactory.create(providerConfig);
 
       await AIFileWriter.updateTaskInTasksJson(

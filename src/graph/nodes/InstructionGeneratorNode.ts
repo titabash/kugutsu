@@ -10,7 +10,6 @@ import type { ParallelDevStateType, ParallelDevStateUpdate } from '../state.js';
 import type { ParallelDevConfig, LogEntry } from '../types.js';
 import type { GlobalTask } from '../../types/index.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
-import type { AIProviderConfig } from '../../providers/IAIProvider.js';
 import { MessageHandler } from '../../utils/MessageHandler.js';
 import { DataPersistence } from '../../utils/DataPersistence.js';
 
@@ -106,12 +105,9 @@ async function generateInstructionForTask(
   task: GlobalTask,
   config: ParallelDevConfig
 ): Promise<void> {
-  const providerConfig: AIProviderConfig = {
+  const providerConfig = AIProviderFactory.buildProviderConfig({
     provider: config.provider || 'claude',
-    claude: {
-      model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-5-20250929',
-    },
-  };
+  });
 
   const provider = AIProviderFactory.create(providerConfig);
 

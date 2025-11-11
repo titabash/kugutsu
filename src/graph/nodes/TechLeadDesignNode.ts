@@ -12,7 +12,6 @@
 
 import type { ParallelDevStateType, ParallelDevStateUpdate } from '../state.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
-import type { AIProviderConfig } from '../../providers/IAIProvider.js';
 import { AIFileWriter } from '../../utils/AIFileWriter.js';
 import { GitWorktreeManager } from '../../managers/GitWorktreeManager.js';
 import type { StoryMapping } from '../../types/scrum.js';
@@ -96,12 +95,9 @@ export async function techLeadDesignNode(
   }
 
   // AIプロバイダーを作成
-  const providerConfig: AIProviderConfig = {
+  const providerConfig = AIProviderFactory.buildProviderConfig({
     provider: config.provider || 'claude',
-    claude: {
-      model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-5-20250929',
-    },
-  };
+  });
 
   const provider = AIProviderFactory.create(providerConfig);
 
@@ -593,4 +589,3 @@ Markdown形式（必須セクション）:
 **重要**: Writeツールを使用してこれら2つのファイルを作成してください。作成後、Readツールで内容を確認してください。
 `.trim();
 }
-

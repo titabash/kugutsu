@@ -14,7 +14,6 @@ import * as path from 'path';
 import type { ParallelDevStateType, ParallelDevStateUpdate, FeedbackRequest } from '../state.js';
 import type { Task } from '../types.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
-import type { AIProviderConfig } from '../../providers/IAIProvider.js';
 import { FileReader } from '../../utils/FileReader.js';
 import type { TaskArtifact } from '../../types/artifacts.js';
 import { RetryManager } from '../../utils/RetryManager.js';
@@ -53,13 +52,9 @@ export async function productOwnerNode(
   }
 
   // Create AI provider
-  const providerConfig: AIProviderConfig = {
+  const providerConfig = AIProviderFactory.buildProviderConfig({
     provider: config.provider || 'claude',
-    claude: {
-      model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-5-20250929',
-    },
-  };
-
+  });
   const provider = AIProviderFactory.create(providerConfig);
 
   // フィードバック受信チェック
@@ -640,4 +635,3 @@ ${userRequest}
     };
   }
 }
-

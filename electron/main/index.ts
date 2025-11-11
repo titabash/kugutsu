@@ -29,7 +29,7 @@ function createWindow() {
   const preloadPath = path.join(__dirname, '../preload/index.mjs');
   console.log('[Electron Main] Preload script path:', preloadPath);
   console.log('[Electron Main] Preload script exists:', existsSync(preloadPath));
-  
+
   mainWindow = new BrowserWindow({
     width: 1600,
     height: 1000,
@@ -69,13 +69,13 @@ function createWindow() {
       mainWindow.webContents.openDevTools();
       console.log('[Electron Main] DevTools opened');
     }
-    
+
     // 親プロセスに準備完了を通知
     if (process.send) {
       process.send({ type: 'ready' });
       console.log('[Electron Main] Sent ready message to parent process');
     }
-    
+
     // テストメッセージを送信
     setTimeout(() => {
       console.log('[Electron Main] Sending test message to renderer');
@@ -313,7 +313,7 @@ ipcMain.handle('get-tasks', async (event) => {
       };
       process.on('message', messageHandler);
       process.send!({ type: 'get-tasks' });
-      
+
       // タイムアウト処理
       setTimeout(() => {
         (process as any).removeListener('message', messageHandler);
@@ -336,7 +336,7 @@ ipcMain.handle('get-task-overview', async (event) => {
       };
       process.on('message', messageHandler);
       process.send!({ type: 'get-task-overview' });
-      
+
       // タイムアウト処理
       setTimeout(() => {
         (process as any).removeListener('message', messageHandler);
@@ -359,7 +359,7 @@ ipcMain.handle('get-task-instruction', async (event, taskId: string) => {
       };
       process.on('message', messageHandler);
       process.send!({ type: 'get-task-instruction', taskId });
-      
+
       // タイムアウト処理
       setTimeout(() => {
         (process as any).removeListener('message', messageHandler);
@@ -537,7 +537,6 @@ ipcMain.handle('execute-prompt', async (event, { prompt, options }: {
       userRequest: prompt,
       config,
       window: mainWindow,
-      workflowType: 'parallel', // Use standard parallel workflow
     }).then(finalState => {
       console.log('[Electron Main] Workflow completed successfully');
       console.log(`[Electron Main] Tasks completed: ${finalState.completedTasks.length}/${finalState.tasks.length}`);
@@ -576,7 +575,7 @@ ipcMain.handle('execute-prompt', async (event, { prompt, options }: {
 // 親プロセスからのメッセージを処理（並列開発システムとの通信）
 if (process.send) {
   console.log('[Electron Main] IPC communication enabled');
-  
+
   process.on('message', (message: any) => {
     // console.log('[Electron Main] Received message:', message);
     if (!message || !message.type) return;
@@ -606,26 +605,26 @@ if (process.send) {
           mainWindow.webContents.send('structured-log-data', message.data);
         }
         break;
-      
+
       case 'update-engineer-count':
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('layout-update', message.data);
         }
         break;
-      
+
       case 'update-task-status':
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('task-status-update', message.data);
         }
         break;
-        
+
       case 'associate-techlead-engineer':
         // TechLeadとEngineerの関連付けを伝える
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('associate-techlead-engineer', message.data);
         }
         break;
-        
+
       case 'all-tasks-completed':
         // 全タスク完了通知
         console.log('[Electron Main] Received all-tasks-completed message:', message.data);
@@ -637,21 +636,21 @@ if (process.send) {
           console.warn('[Electron Main] Cannot send to renderer - window not available');
         }
         break;
-        
+
       case 'tasks-updated':
         // タスク一覧の更新
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('tasks-updated', message.data);
         }
         break;
-        
+
       case 'task-overview-updated':
         // タスクオーバービューの更新
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('task-overview-updated', message.data);
         }
         break;
-        
+
       case 'set-current-project-id':
         // 現在のプロジェクトIDを設定
         if (mainWindow && !mainWindow.isDestroyed()) {

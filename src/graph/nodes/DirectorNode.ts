@@ -39,9 +39,14 @@ export async function directorNode(state: ParallelDevStateType): Promise<Paralle
 
   try {
     // Get AI provider
-    const provider = state.config.provider
-      ? AIProviderFactory.create({ provider: state.config.provider })
-      : AIProviderFactory.createFromEnv();
+    const providerConfig = AIProviderFactory.buildProviderConfig({
+      provider:
+        state.config.provider ||
+        (process.env.KUGUTSU_PROVIDER as 'claude' | 'codex' | 'mock') ||
+        'mock',
+    });
+
+    const provider = AIProviderFactory.create(providerConfig);
 
     const schemaValidator = getSchemaValidator();
     const projectId = state.currentProjectId;

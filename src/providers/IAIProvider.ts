@@ -175,6 +175,7 @@ export interface AIProviderConfig {
   codex?: {
     apiKey?: string;
     model?: string;
+    baseUrl?: string;
   };
 }
 

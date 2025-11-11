@@ -6,7 +6,6 @@
 
 import type { ParallelDevStateType, ParallelDevStateUpdate } from '../state.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
-import type { AIProviderConfig } from '../../providers/IAIProvider.js';
 import { MessageHandler } from '../../utils/MessageHandler.js';
 
 /**
@@ -36,12 +35,9 @@ export async function analyzeComplexityNode(
 
   try {
     // Create AI provider
-    const providerConfig: AIProviderConfig = {
+    const providerConfig = AIProviderFactory.buildProviderConfig({
       provider: config.provider || 'claude',
-      claude: {
-        model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-5-20250929',
-      },
-    };
+    });
     const provider = AIProviderFactory.create(providerConfig);
 
     // AI analysis prompt

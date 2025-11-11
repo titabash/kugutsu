@@ -69,7 +69,14 @@ describe('ClaudeAgentProvider', () => {
     const mockMessages = [
       {
         type: 'assistant',
-        message: 'Hello, I am Claude',
+        message: {
+          content: [
+            {
+              type: 'text',
+              text: 'Hello, I am Claude',
+            },
+          ],
+        },
         session_id: 'test-session-1',
         uuid: 'msg-1',
       },
@@ -123,7 +130,14 @@ describe('ClaudeAgentProvider', () => {
       async *[Symbol.asyncIterator]() {
         yield {
           type: 'assistant',
-          message: 'Test',
+          message: {
+            content: [
+              {
+                type: 'text',
+                text: 'Test',
+              },
+            ],
+          },
           session_id: 'test',
         };
       },
@@ -246,7 +260,14 @@ describe('ClaudeAgentProvider', () => {
       async *[Symbol.asyncIterator]() {
         yield {
           type: 'assistant',
-          message: 'Resumed',
+          message: {
+            content: [
+              {
+                type: 'text',
+                text: 'Resumed',
+              },
+            ],
+          },
           session_id: 'resumed-session',
         };
       },

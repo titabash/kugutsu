@@ -238,8 +238,11 @@ export class MessageHandler {
 
     // コマンド実行（OpenAI Codex）
     if (content?.commandExecution) {
-      const { command, output } = content.commandExecution;
+      const { command, output, status } = content.commandExecution;
       console.log(`⚙️  コマンド実行: ${command}`);
+      if (status && status !== 'in_progress') {
+        console.log(`   ステータス: ${status}`);
+      }
       if (this.options.verbose && output) {
         const preview = output.length > 200
           ? output.substring(0, 200) + '...'
@@ -252,13 +255,18 @@ export class MessageHandler {
     // ファイル変更（OpenAI Codex）
     if (content?.fileChange) {
       const changeCount = content.fileChange.changes?.length || 0;
-      console.log(`📝 ファイル変更: ${changeCount}件`);
+      const status = content.fileChange.status;
+      const statusSuffix = status ? ` (${status})` : '';
+      console.log(`📝 ファイル変更: ${changeCount}件${statusSuffix}`);
       return;
     }
 
     // MCP Tool Call（OpenAI Codex）
     if (content?.mcpToolCall) {
-      console.log(`🔌 MCP Tool: ${content.mcpToolCall.tool_name}`);
+      const toolName = content.mcpToolCall.tool ?? content.mcpToolCall.tool_name ?? 'unknown';
+      const server = content.mcpToolCall.server ? `${content.mcpToolCall.server}/` : '';
+      const status = content.mcpToolCall.status ? ` (${content.mcpToolCall.status})` : '';
+      console.log(`🔌 MCP Tool: ${server}${toolName}${status}`);
       return;
     }
 

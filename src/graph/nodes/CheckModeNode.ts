@@ -12,7 +12,6 @@ import type { ProjectMetadata } from '../../types/index.js';
 import { PriorityCalculator } from '../../utils/PriorityCalculator.js';
 import { DataPersistence } from '../../utils/DataPersistence.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
-import type { AIProviderConfig } from '../../providers/IAIProvider.js';
 import { GitWorktreeManager } from '../../managers/GitWorktreeManager.js';
 import { randomUUID } from 'crypto';
 import { MessageHandler } from '../../utils/MessageHandler.js';
@@ -48,12 +47,9 @@ export async function checkModeNode(
   console.log(`📁 既存プロジェクト数: ${projects.size}`);
 
   // AI Provider設定
-  const providerConfig: AIProviderConfig = {
+  const providerConfig = AIProviderFactory.buildProviderConfig({
     provider: config.provider || 'claude',
-    claude: {
-      model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-5-20250929',
-    },
-  };
+  });
 
   // リポジトリメタデータの初期化（初回実行時のみ）
   const repositoryMetadata = await persistence.loadRepositoryMetadata();

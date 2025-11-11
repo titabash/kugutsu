@@ -8,13 +8,24 @@ import { jest } from '@jest/globals';
 
 // Mock AIProviderFactory BEFORE importing
 let mockProvider: any;
-jest.unstable_mockModule('../../src/providers/AIProviderFactory.js', () => ({
-  AIProviderFactory: {
-    create: jest.fn(() => mockProvider),
-    getSupportedProviders: jest.fn(() => ['claude', 'mock']),
-    isProviderSupported: jest.fn((provider: string) => ['claude', 'mock'].includes(provider)),
-  },
-}));
+const actualAIProviderFactoryModule = (await import(
+  '../../src/providers/AIProviderFactory.js'
+)) as typeof import('../../src/providers/AIProviderFactory.js');
+const actualAIProviderFactory = actualAIProviderFactoryModule.AIProviderFactory;
+jest.unstable_mockModule('../../src/providers/AIProviderFactory.js', () => {
+  const buildProviderConfig = jest.fn<typeof actualAIProviderFactory.buildProviderConfig>(
+    (options) => actualAIProviderFactory.buildProviderConfig(options)
+  );
+  return {
+    AIProviderFactory: {
+      ...actualAIProviderFactory,
+      create: jest.fn(() => mockProvider),
+      buildProviderConfig,
+      getSupportedProviders: jest.fn(() => ['claude', 'mock']),
+      isProviderSupported: jest.fn((provider: string) => ['claude', 'mock'].includes(provider)),
+    },
+  };
+});
 
 // Mock GitWorktreeManager BEFORE importing
 const mockCreateWorktree = jest.fn<any>();
@@ -33,6 +44,12 @@ jest.unstable_mockModule('../../src/managers/GitWorktreeManager.js', () => ({
 const mockExecSync = jest.fn<any>();
 jest.unstable_mockModule('child_process', () => ({
   execSync: mockExecSync,
+}));
+
+// Mock DataPersistence to prevent file system operations
+let mockPersistence: any;
+jest.unstable_mockModule('../../src/utils/DataPersistence.js', () => ({
+  DataPersistence: jest.fn().mockImplementation(() => mockPersistence),
 }));
 
 // Import AFTER mocking
@@ -57,6 +74,19 @@ describe('Dependency Graph Execution', () => {
 
     // Setup mock provider
     mockProvider = new MockAIProvider();
+
+    // Setup mock persistence
+    mockPersistence = {
+      initialize: jest.fn<any>().mockResolvedValue(undefined),
+      loadGlobalQueue: jest.fn<any>().mockResolvedValue([]),
+      loadAllProjectMetadata: jest.fn<any>().mockResolvedValue(new Map()),
+      loadRepositoryMetadata: jest.fn<any>().mockResolvedValue(null),
+      saveRepositoryMetadata: jest.fn<any>().mockResolvedValue(undefined),
+      saveTechStack: jest.fn<any>().mockResolvedValue(undefined),
+      saveArchitectureOverview: jest.fn<any>().mockResolvedValue(undefined),
+      saveCodingStandards: jest.fn<any>().mockResolvedValue(undefined),
+      saveProjectMetadata: jest.fn<any>().mockResolvedValue(undefined),
+    };
 
     // Setup default git worktree mock
     mockCreateWorktree.mockImplementation(async (taskId: string) => ({

@@ -9,13 +9,13 @@ import { jest } from '@jest/globals';
 // Mock the @openai/codex-sdk package
 const mockStartThread = jest.fn<any>();
 const mockResumeThread = jest.fn<any>();
-const mockRun = jest.fn<any>();
+const mockCodexConstructor = jest.fn().mockImplementation(() => ({
+  startThread: mockStartThread,
+  resumeThread: mockResumeThread,
+}));
 
 jest.unstable_mockModule('@openai/codex-sdk', () => ({
-  Codex: jest.fn().mockImplementation(() => ({
-    startThread: mockStartThread,
-    resumeThread: mockResumeThread,
-  })),
+  Codex: mockCodexConstructor,
 }));
 
 // Import after mocking
@@ -27,10 +27,8 @@ describe('OpenAICodexProvider', () => {
   beforeEach(() => {
     jest.clearAllMocks();
 
-    // Set API key environment variable
     process.env.OPENAI_API_KEY = 'test-api-key';
 
-    // Create provider instance
     provider = new OpenAICodexProvider({
       apiKey: 'test-api-key',
       model: 'gpt-5-codex',
@@ -39,20 +37,37 @@ describe('OpenAICodexProvider', () => {
 
   afterEach(() => {
     delete process.env.OPENAI_API_KEY;
+    delete process.env.OPENAI_BASE_URL;
+    delete process.env.OPENAI_CODEX_BASE_URL;
   });
 
   test('should initialize with correct configuration', () => {
     expect(provider.getProviderName()).toBe('codex');
     expect(provider.getModel()).toBe('gpt-5-codex');
     expect(provider.isReady()).toBe(true);
+    expect(mockCodexConstructor).toHaveBeenCalledWith({
+      apiKey: 'test-api-key',
+    });
   });
 
-  test('should throw error if API key is missing', () => {
+  test('should initialize without API key', () => {
     delete process.env.OPENAI_API_KEY;
+    mockCodexConstructor.mockClear();
 
-    expect(() => {
-      new OpenAICodexProvider({});
-    }).toThrow('OpenAI API key is required');
+    expect(() => new OpenAICodexProvider({})).not.toThrow();
+    expect(mockCodexConstructor).toHaveBeenCalledWith({});
+  });
+
+  test('should respect custom base URL from environment', () => {
+    delete process.env.OPENAI_API_KEY;
+    process.env.OPENAI_CODEX_BASE_URL = 'https://codex.internal/v1';
+    mockCodexConstructor.mockClear();
+
+    new OpenAICodexProvider({});
+
+    expect(mockCodexConstructor).toHaveBeenCalledWith({
+      baseUrl: 'https://codex.internal/v1',
+    });
   });
 
   test('should return supported tools', () => {

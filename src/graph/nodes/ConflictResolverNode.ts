@@ -12,7 +12,6 @@
 
 import type { ParallelDevStateType, ParallelDevStateUpdate } from '../state.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
-import type { AIProviderConfig } from '../../providers/IAIProvider.js';
 import { FileReader } from '../../utils/FileReader.js';
 import { AIFileWriter } from '../../utils/AIFileWriter.js';
 import type { TaskArtifact, Conflicts } from '../../types/artifacts.js';
@@ -105,12 +104,9 @@ export async function conflictResolverNode(
     console.log(`⚠️ ${tasksToResolve.length}個のコンフリクトを処理します`);
 
     // Create AI provider
-    const providerConfig: AIProviderConfig = {
+    const providerConfig = AIProviderFactory.buildProviderConfig({
       provider: state.config.provider || 'claude',
-      claude: {
-        model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-5-20250929',
-      },
-    };
+    });
 
     const provider = AIProviderFactory.create(providerConfig);
 

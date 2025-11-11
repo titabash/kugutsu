@@ -8,13 +8,24 @@ import fs from 'fs/promises';
 
 // Mock AIProviderFactory BEFORE importing
 let mockProvider: any;
-jest.unstable_mockModule('../../../src/providers/AIProviderFactory.js', () => ({
-  AIProviderFactory: {
-    create: jest.fn(() => mockProvider),
-    getSupportedProviders: jest.fn(() => ['claude', 'mock']),
-    isProviderSupported: jest.fn((provider: string) => ['claude', 'mock'].includes(provider)),
-  },
-}));
+const actualAIProviderFactoryModule = (await import(
+  '../../../src/providers/AIProviderFactory.js'
+)) as typeof import('../../../src/providers/AIProviderFactory.js');
+const actualAIProviderFactory = actualAIProviderFactoryModule.AIProviderFactory;
+jest.unstable_mockModule('../../../src/providers/AIProviderFactory.js', () => {
+  const buildProviderConfig = jest.fn<typeof actualAIProviderFactory.buildProviderConfig>(
+    (options) => actualAIProviderFactory.buildProviderConfig(options)
+  );
+  return {
+    AIProviderFactory: {
+      ...actualAIProviderFactory,
+      create: jest.fn(() => mockProvider),
+      buildProviderConfig,
+      getSupportedProviders: jest.fn(() => ['claude', 'mock']),
+      isProviderSupported: jest.fn((provider: string) => ['claude', 'mock'].includes(provider)),
+    },
+  };
+});
 
 // Mock AIFileWriter to properly handle file updates
 jest.unstable_mockModule('../../../src/utils/AIFileWriter.js', () => ({

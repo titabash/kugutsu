@@ -13,7 +13,6 @@
 import type { ParallelDevStateType, ParallelDevStateUpdate } from '../state.js';
 import type { Sprint } from '../types.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
-import type { AIProviderConfig } from '../../providers/IAIProvider.js';
 import { DataPersistence } from '../../utils/DataPersistence.js';
 import { MessageHandler } from '../../utils/MessageHandler.js';
 
@@ -90,12 +89,9 @@ export async function sprintReviewNode(
     console.log('✨ スプリント内の全タスクが完了しました');
 
     // AIプロバイダーを作成してデプロイ可能性を判定
-    const providerConfig: AIProviderConfig = {
+    const providerConfig = AIProviderFactory.buildProviderConfig({
       provider: config.provider || 'claude',
-      claude: {
-        model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-5-20250929',
-      },
-    };
+    });
 
     const provider = AIProviderFactory.create(providerConfig);
 

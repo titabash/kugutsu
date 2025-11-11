@@ -166,7 +166,8 @@ function showUsage(): void {
 環境変数:
   KUGUTSU_PROVIDER              AIプロバイダー (mock|claude|codex, デフォルト: mock)
   ANTHROPIC_API_KEY             Claude API キー (provider=claude時に必須)
-  OPENAI_API_KEY                OpenAI API キー (provider=codex時に必須)
+  OPENAI_API_KEY                OpenAI API キー (Codex利用時。ログイン済みなら省略可)
+  OPENAI_CODEX_BASE_URL         Codex API Base URL (任意。デフォルトはローカルセッション)
 
 例:
   # モックプロバイダーでテスト実行（デフォルト、APIコストなし）
@@ -306,14 +307,6 @@ async function main(): Promise<void> {
     console.error('❌ エラー: ANTHROPIC_API_KEY環境変数が設定されていません\n');
     console.error('Claude APIキーを設定してください:');
     console.error('  export ANTHROPIC_API_KEY="your-api-key"\n');
-    process.exit(1);
-  }
-
-  // Validate API key for Codex
-  if (cliConfig.provider === 'codex' && !process.env.OPENAI_API_KEY) {
-    console.error('❌ エラー: OPENAI_API_KEY環境変数が設定されていません\n');
-    console.error('OpenAI APIキーを設定してください:');
-    console.error('  export OPENAI_API_KEY="your-api-key"\n');
     process.exit(1);
   }
 

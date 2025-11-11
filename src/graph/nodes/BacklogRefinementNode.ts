@@ -19,7 +19,6 @@ import type { ParallelDevStateType, ParallelDevStateUpdate } from '../state.js';
 import type { GlobalTask } from '../types.js';
 import type { TaskSplitSuggestion, TaskMergeSuggestion } from '../../types/index.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
-import type { AIProviderConfig } from '../../providers/IAIProvider.js';
 import { DataPersistence } from '../../utils/DataPersistence.js';
 import { MessageHandler } from '../../utils/MessageHandler.js';
 import { JSONExtractor } from '../../utils/JSONExtractor.js';
@@ -81,13 +80,9 @@ export async function backlogRefinementNode(
   }
 
   // AIプロバイダーを作成
-  const providerConfig: AIProviderConfig = {
+  const providerConfig = AIProviderFactory.buildProviderConfig({
     provider: config.provider || 'claude',
-    claude: {
-      model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-5-20250929',
-    },
-  };
-
+  });
   const provider = AIProviderFactory.create(providerConfig);
 
   // バックログリファインメントプロンプトを構築

@@ -7,6 +7,7 @@
 import type { IAIProvider, AIProviderConfig } from './IAIProvider.js';
 import { ClaudeAgentProvider } from './ClaudeAgentProvider.js';
 import { MockAIProvider } from './MockAIProvider.js';
+import { OpenAICodexProvider } from './OpenAICodexProvider.js';
 
 /**
  * Factory class for creating AI provider instances
@@ -33,18 +34,19 @@ export class AIProviderFactory {
           model: (config as AIProviderConfig).claude?.model,
         });
 
-      case 'codex':
-        // OpenAI Codex provider will be implemented in later phase
-        throw new Error(
-          'OpenAI Codex provider is not yet implemented. ' +
-            'This will be added in a future release. ' +
-            'Please use "claude" provider for now.'
-        );
+      case 'codex': {
+        const codexConfig = (config as AIProviderConfig).codex ?? {};
+        return new OpenAICodexProvider({
+          apiKey: codexConfig.apiKey,
+          model: codexConfig.model,
+          baseUrl: codexConfig.baseUrl,
+        });
+      }
 
       default:
         throw new Error(
           `Unknown AI provider: ${provider}. ` +
-            `Supported providers: claude, mock`
+            `Supported providers: claude, codex, mock`
         );
     }
   }
@@ -59,22 +61,9 @@ export class AIProviderFactory {
     // Use 'claude' or 'codex' explicitly when needed
     const provider = (process.env.KUGUTSU_PROVIDER || 'mock') as 'claude' | 'codex' | 'mock';
 
-    // If mock provider is requested, return pre-configured mock provider
-    if (provider === 'mock') {
-      return AIProviderFactory.createMockProvider();
-    }
-
-    const config: AIProviderConfig = {
+    const config = AIProviderFactory.buildProviderConfig({
       provider,
-      claude: {
-        apiKey: process.env.ANTHROPIC_API_KEY,
-        model: process.env.CLAUDE_MODEL,
-      },
-      codex: {
-        apiKey: process.env.OPENAI_API_KEY,
-        model: process.env.OPENAI_MODEL,
-      },
-    };
+    });
 
     return AIProviderFactory.create(config);
   }
@@ -175,8 +164,7 @@ export class AIProviderFactory {
    * @returns Array of provider names
    */
   static getSupportedProviders(): string[] {
-    return ['claude', 'mock'];
-    // Will add 'codex' in future release
+    return ['claude', 'codex', 'mock'];
   }
 
   /**
@@ -187,5 +175,52 @@ export class AIProviderFactory {
    */
   static isProviderSupported(provider: string): boolean {
     return AIProviderFactory.getSupportedProviders().includes(provider);
+  }
+
+  /**
+   * Build provider configuration with sensible defaults.
+   */
+  static buildProviderConfig(options?: {
+    provider?: 'claude' | 'codex' | 'mock';
+    claudeModel?: string;
+    claudeApiKey?: string;
+    codexModel?: string;
+    codexApiKey?: string;
+    codexBaseUrl?: string;
+  }): AIProviderConfig {
+    const provider = options?.provider ?? 'claude';
+
+    const claudeModel =
+      options?.claudeModel ?? process.env.CLAUDE_MODEL ?? 'claude-sonnet-4-5-20250929';
+    const claudeApiKey = options?.claudeApiKey ?? process.env.ANTHROPIC_API_KEY;
+
+    const codexModel =
+      options?.codexModel ?? process.env.OPENAI_MODEL ?? 'gpt-5-codex';
+    const codexApiKey = options?.codexApiKey ?? process.env.OPENAI_API_KEY;
+    const codexBaseUrl =
+      options?.codexBaseUrl ??
+      process.env.OPENAI_CODEX_BASE_URL ??
+      process.env.OPENAI_BASE_URL;
+
+    const config: AIProviderConfig = {
+      provider,
+    };
+
+    if (provider === 'claude') {
+      config.claude = {
+        apiKey: claudeApiKey,
+        model: claudeModel,
+      };
+    }
+
+    if (provider === 'codex') {
+      config.codex = {
+        apiKey: codexApiKey,
+        model: codexModel,
+        baseUrl: codexBaseUrl,
+      };
+    }
+
+    return config;
   }
 }

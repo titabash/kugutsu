@@ -42,20 +42,25 @@ export class OpenAICodexProvider implements IAIProvider {
   ];
 
   constructor(config: { apiKey?: string; model?: string; baseUrl?: string }) {
-    const apiKey = config.apiKey || process.env.OPENAI_API_KEY || '';
-    this.model = config.model || 'gpt-5-codex';
+    const apiKey = config.apiKey ?? process.env.OPENAI_API_KEY ?? undefined;
+    const baseUrl =
+      config.baseUrl ??
+      process.env.OPENAI_CODEX_BASE_URL ??
+      process.env.OPENAI_BASE_URL ??
+      undefined;
 
-    if (!apiKey) {
-      throw new Error(
-        'OpenAI API key is required. Set OPENAI_API_KEY environment variable or pass apiKey in config.'
-      );
+    this.model = config.model || process.env.OPENAI_MODEL || 'gpt-5-codex';
+
+    const codexOptions: { apiKey?: string; baseUrl?: string } = {};
+    if (apiKey) {
+      codexOptions.apiKey = apiKey;
+    }
+    if (baseUrl) {
+      codexOptions.baseUrl = baseUrl;
     }
 
-    // Initialize Codex SDK
-    this.codex = new Codex({
-      apiKey,
-      baseUrl: config.baseUrl,
-    });
+    // Initialize Codex SDK (relies on logged-in session when apiKey is absent)
+    this.codex = new Codex(codexOptions);
 
     this.ready = true;
   }

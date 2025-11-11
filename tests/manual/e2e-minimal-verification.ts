@@ -92,20 +92,21 @@ async function runE2EMinimalVerification() {
     console.log('');
 
     // 初期状態作成
+    const provider = 'claude';
     const initialState = createInitialState(taskRequest, {
       maxEngineers: 5,
       maxTurns: 50,
       baseBranch: 'main',
       baseRepoPath: testDir,
       worktreeBasePath: path.join(testDir, 'worktrees'),
-      provider: 'claude', // Claude Code環境ではログイン済みセッションを使用
+      provider: provider, // Claude Code環境ではログイン済みセッションを使用
     });
 
     console.log('🔧 Configuration:');
     console.log(`  - Max Engineers: 5`);
     console.log(`  - Max Turns: 50`);
     console.log(`  - Base Repo: ${testDir}`);
-    console.log(`  - Provider: claude (logged-in session)`);
+    console.log(`  - Provider: ${provider} (logged-in session)`);
     console.log('');
 
     // グラフをコンパイル

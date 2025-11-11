@@ -435,9 +435,16 @@ JSON形式で以下を出力してください：
  * CheckModeNodeのルーティング関数
  *
  * CheckModeは両方の複雑度パスで最初に実行されるため、
- * 複雑度判定結果に基づいて次のノードにルーティングする
+ * continuationModeがtrueの場合はsprint_planningにルーティングし、
+ * そうでない場合は複雑度判定結果に基づいて次のノードにルーティングする
  */
 export function checkModeRouter(state: ParallelDevStateType): string {
+  // continuationModeがtrueの場合は、sprint_planningにルーティング
+  if (state.continuationMode) {
+    console.log('➡️ ルーティング: sprint_planning (継続モード)');
+    return 'sprint_planning';
+  }
+
   const requiresDetailedDesign = state.metadata.requiresDetailedDesign;
 
   if (requiresDetailedDesign) {

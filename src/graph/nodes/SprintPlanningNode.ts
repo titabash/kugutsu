@@ -194,7 +194,7 @@ export async function sprintPlanningNode(
 ### 検出方法
 
 - **タスクの依存関係分析**: 複数タスクから参照される要素を検出
-- **コードベース分析**: 既存の共通基盤を確認（Glob, Readツールで `/lib/*.ts`, `/types/*.ts`, `/utils/*.ts` 等）
+- **コードベース分析**: 既存の共通基盤を確認（Glob, Readツールで \`/lib/*.ts\`, \`/types/*.ts\`, \`/utils/*.ts\` 等）
 - **新規共通基盤**: 未実装だが複数タスクで必要となる基盤を検出
 
 ### 配置ルール
@@ -206,7 +206,7 @@ export async function sprintPlanningNode(
 ### 例
 
 ❌ **悪い例（共通基盤を後回し）**:
-```json
+\`\`\`json
 {
   "sprints": [
     {
@@ -215,10 +215,10 @@ export async function sprintPlanningNode(
     }
   ]
 }
-```
+\`\`\`
 
 ✅ **良い例（共通基盤を先行）**:
-```json
+\`\`\`json
 {
   "sprints": [
     {
@@ -227,7 +227,7 @@ export async function sprintPlanningNode(
     }
   ]
 }
-```
+\`\`\`
 
 ## 未割り当てタスク
 ${JSON.stringify(

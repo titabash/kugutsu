@@ -401,12 +401,12 @@ ${uiuxScreensStr}
 
 **各タスク分解時に、以下の共通基盤を検出し、独立タスクとして先に生成してください:**
 
-1. **DBクライアントのシングルトン** (例: `lib/supabase.ts`, `lib/prisma.ts`)
-2. **外部サービスクライアント** (例: `lib/stripe.ts`, `lib/sendgrid.ts`)
-3. **共通データモデル・型定義** (例: `models/User.ts`, `types/api.ts`)
-4. **共通ユーティリティ関数** (例: `utils/date.ts`, `utils/validation.ts`)
+1. **DBクライアントのシングルトン** (例: \`lib/supabase.ts\`, \`lib/prisma.ts\`)
+2. **外部サービスクライアント** (例: \`lib/stripe.ts\`, \`lib/sendgrid.ts\`)
+3. **共通データモデル・型定義** (例: \`models/User.ts\`, \`types/api.ts\`)
+4. **共通ユーティリティ関数** (例: \`utils/date.ts\`, \`utils/validation.ts\`)
 5. **認証・認可基盤** (例: JWT認証、セッション管理)
-6. **共通UIコンポーネント** (例: `components/ui/Button.tsx`)
+6. **共通UIコンポーネント** (例: \`components/ui/Button.tsx\`)
 
 **検出方法**:
 - ユーザーストーリーから必要な共通基盤を推測

@@ -333,24 +333,69 @@ ${userRequest}
 以下は**複数タスクで共有される基盤**のため、**必ず独立タスクとして先に実行**する必要があります:
 
 1. **データベース関連**:
+   - **DBクライアントのシングルトン** (例: \`lib/supabase.ts\`, \`lib/prisma.ts\`, \`lib/mongodb.ts\`)
    - DBマイグレーション（テーブル作成、カラム追加、インデックス作成）
    - データベーススキーマ設計
    - シードデータ投入
 
-2. **認証・認可基盤**:
+2. **外部サービスクライアント**:
+   - **決済クライアント** (例: \`lib/stripe.ts\`, \`lib/paypal.ts\`)
+   - **メール送信クライアント** (例: \`lib/sendgrid.ts\`, \`lib/resend.ts\`)
+   - **ストレージクライアント** (例: \`lib/s3.ts\`, \`lib/cloudinary.ts\`)
+   - **その他API クライアント** (例: \`lib/openai.ts\`, \`lib/maps.ts\`)
+
+3. **共通データモデル・型定義**:
+   - **共通型定義・インターフェース** (例: \`types/api.ts\`, \`types/error.ts\`, \`types/response.ts\`)
+   - **共通データモデル** (例: \`models/User.ts\`, \`models/Product.ts\`, \`models/Order.ts\`)
+   - **共通Enum定義** (例: \`types/enums.ts\` - UserRole, OrderStatus等)
+   - **共通バリデーションスキーマ** (例: \`schemas/user.ts\`, \`schemas/product.ts\`)
+
+4. **共通ユーティリティ・ヘルパー**:
+   - **共通ユーティリティ関数** (例: \`utils/date.ts\`, \`utils/string.ts\`, \`utils/validation.ts\`)
+   - **共通バリデーション関数** (例: \`utils/validators.ts\`)
+   - **共通エラーハンドリング** (例: \`utils/error.ts\`, \`lib/api-error.ts\`)
+   - **共通定数** (例: \`constants/index.ts\`, \`config/app.ts\`)
+
+5. **認証・認可基盤**:
    - 認証システム構築（JWT、OAuth等）
    - 権限管理システム
    - セッション管理
+   - 認証ミドルウェア
 
-3. **共通基盤・ライブラリ**:
-   - 共通UIコンポーネントライブラリ
-   - 共通ユーティリティ関数
-   - 共通型定義・インターフェース
+6. **共通UIコンポーネント**:
+   - 共通UIコンポーネントライブラリ (例: \`components/ui/Button.tsx\`, \`components/ui/Input.tsx\`)
+   - 共通レイアウトコンポーネント (例: \`components/Layout.tsx\`, \`components/Header.tsx\`)
+   - 共通フック (例: \`hooks/useAuth.ts\`, \`hooks/useApi.ts\`)
 
-4. **インフラ・環境設定**:
+7. **インフラ・環境設定**:
    - CI/CDパイプライン構築
    - 環境変数・設定ファイル
    - Docker/コンテナ設定
+
+### 自動検出方法
+
+**以下の方法で共通基盤を検出してください:**
+
+1. **ファイルパターンでの検出** (Glob, Readツール使用):
+   - \`/lib/*.ts\` → DBクライアント、外部サービスクライアント
+   - \`/types/*.ts\`, \`/models/*.ts\` → 共通型定義、データモデル
+   - \`/utils/*.ts\`, \`/helpers/*.ts\` → 共通ユーティリティ関数
+   - \`/components/ui/*.tsx\` → 共通UIコンポーネント
+   - \`/middleware/*.ts\` → 認証ミドルウェア
+
+2. **依存関係分析** (Grepツール使用):
+   - 複数ファイルから\`import\`されているモジュールを検出
+   - 例: \`grep -r "from '@/lib/supabase'"\` で参照箇所を確認
+
+3. **命名規則での検出**:
+   - \`*Client.ts\`, \`*Service.ts\` → クライアント・サービス
+   - \`*Model.ts\`, \`*Entity.ts\` → データモデル
+   - \`use*.ts\` (hooks) → 共通フック
+   - \`*Schema.ts\`, \`*Validator.ts\` → バリデーション
+
+4. **未実装の共通基盤検出**:
+   - ユーザーリクエストから新規機能に必要な共通基盤を推測
+   - 例: 「決済機能を追加」→ Stripeクライアント、決済型定義が必要
 
 ### なぜ分離が必要か
 

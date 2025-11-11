@@ -16,9 +16,8 @@ import type {
   GlobalTask,
   ProjectMetadata,
   Sprint,
-  TaskSplitSuggestion,
-  TaskMergeSuggestion,
 } from './types.js';
+import type { TaskSplitSuggestion, TaskMergeSuggestion } from '../types/index.js';
 import type { StoryMapping } from '../types/scrum.js';
 
 /**
@@ -757,6 +756,9 @@ export function createInitialState(
     maxGlobalRetries: 10,
     // Send API fields
     currentTaskId: null,
+    // Backlog Refinement fields
+    taskSplitSuggestions: [],
+    taskMergeSuggestions: [],
   };
 }
 

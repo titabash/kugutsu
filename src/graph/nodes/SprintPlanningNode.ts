@@ -33,7 +33,7 @@ import { JSONExtractor } from '../../utils/JSONExtractor.js';
 export async function sprintPlanningNode(
   state: ParallelDevStateType
 ): Promise<ParallelDevStateUpdate> {
-  const { globalTasks, projects, currentProjectId, config } = state;
+  const { globalTasks, projects, currentProjectId, config, activeSprint } = state;
   const maxTurns = config.maxTurns || 50;
 
   console.log('📅 SprintPlanning: スプリント計画を作成しています...');
@@ -55,13 +55,30 @@ export async function sprintPlanningNode(
   // DataPersistenceインスタンスを作成（早期に定義）
   const persistence = new DataPersistence(config.baseRepoPath);
 
-  // アクティブなスプリントを確認
-  let existingActiveSprint: Sprint | null = null;
-  try {
-    const activeSprintContent = await fs.readFile(activeSprintPath, 'utf-8');
-    existingActiveSprint = JSON.parse(activeSprintContent);
-  } catch (error) {
-    // ファイルが存在しない場合はnull
+  // ✅ 修正: state.activeSprint を優先的に使用
+  // state.activeSprint が null の場合、ファイルも確実にクリアする
+  if (activeSprint === null) {
+    try {
+      await persistence.saveActiveSprint(null);
+      console.log('🗑️ state.activeSprint が null のため、ファイルもクリアしました');
+    } catch (error) {
+      console.warn('⚠️ アクティブスプリントファイルのクリアに失敗しましたが、処理を続行します:', error);
+    }
+  }
+
+  // アクティブなスプリントを確認（state を優先、なければファイルから）
+  let existingActiveSprint: Sprint | null = activeSprint || null;
+
+  if (!existingActiveSprint) {
+    try {
+      const activeSprintContent = await fs.readFile(activeSprintPath, 'utf-8');
+      const parsed = JSON.parse(activeSprintContent);
+      // null が保存されている場合は null として扱う
+      existingActiveSprint = parsed === null ? null : parsed;
+    } catch (error) {
+      // ファイルが存在しない場合はnull
+      existingActiveSprint = null;
+    }
   }
 
   if (existingActiveSprint &&

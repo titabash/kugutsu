@@ -270,8 +270,12 @@ JSON形式で以下を出力してください：
     }
 
     // アクティブスプリントをクリア
+    try {
     await persistence.saveActiveSprint(null);
     console.log('🗑️ アクティブスプリントをクリアしました');
+    } catch (error) {
+      console.warn('⚠️ アクティブスプリントのクリアに失敗しましたが、処理を続行します:', error);
+    }
 
     // 未割り当てタスクが残っているか確認（Product Backlogから）
     let remainingUnassignedTasks: any[] = [];

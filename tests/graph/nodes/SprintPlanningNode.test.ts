@@ -385,4 +385,69 @@ describe('SprintPlanningNode', () => {
       expect(result.logs![0].message).toContain('スプリント計画の生成に失敗');
     });
   });
+
+  describe('State.activeSprint handling', () => {
+    test('should clear file when state.activeSprint is null', async () => {
+      const initialState = createInitialState('Request', {
+        maxEngineers: 3,
+        maxTurns: 30,
+        baseBranch: 'main',
+        baseRepoPath: '/test/repo',
+        worktreeBasePath: '/test/worktrees',
+      });
+
+      const stateWithNullSprint = {
+        ...initialState,
+        activeSprint: null,
+        globalTasks: [],
+      };
+
+      await sprintPlanningNode(stateWithNullSprint);
+
+      // Verify that saveActiveSprint(null) was called to clear the file
+      // This prevents infinite loop when sprintReviewNode sets activeSprint to null
+      expect(mockPersistence.saveActiveSprint).toHaveBeenCalledWith(null);
+    });
+
+    test('should use state.activeSprint when provided', async () => {
+      const sprintFromState = {
+        id: 'sprint-from-state',
+        name: 'Sprint from State',
+        goal: 'Goal from state',
+        taskIds: ['task-1'],
+        status: 'active' as const,
+        deployable: true,
+        startedAt: new Date(),
+        metadata: {
+          estimatedHours: 8,
+          blockers: [],
+          completedTasksCount: 0,
+          failedTasksCount: 0,
+        },
+      };
+
+      const initialState = createInitialState('Request', {
+        maxEngineers: 3,
+        maxTurns: 30,
+        baseBranch: 'main',
+        baseRepoPath: '/test/repo',
+        worktreeBasePath: '/test/worktrees',
+      });
+
+      const stateWithSprint = {
+        ...initialState,
+        activeSprint: sprintFromState,
+        globalTasks: [],
+      };
+
+      const result = await sprintPlanningNode(stateWithSprint);
+
+      // Should use sprint from state (prioritized over file)
+      expect(result.activeSprint).toBeDefined();
+      expect(result.activeSprint!.id).toBe('sprint-from-state');
+      expect(result.activeSprint!.name).toBe('Sprint from State');
+      // Should not clear file when state has active sprint
+      expect(mockPersistence.saveActiveSprint).not.toHaveBeenCalledWith(null);
+    });
+  });
 });

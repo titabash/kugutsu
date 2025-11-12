@@ -16,6 +16,7 @@ import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 import { DataPersistence } from '../../utils/DataPersistence.js';
 import type { StoryMapping } from '../../types/scrum.js';
 import { MessageHandler } from '../../utils/MessageHandler.js';
+import { JSONExtractor } from '../../utils/JSONExtractor.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
@@ -317,45 +318,27 @@ JSON形式で以下を出力してください：
  * AIレスポンスからレビュー結果を抽出
  */
 function extractReviewResult(response: string): StoryMappingReviewResult {
-  // JSONコードブロックを抽出
-  const jsonMatch = response.match(/```json\s*([\s\S]*?)\s*```/);
+  // JSONを抽出
+  const extractionResult = JSONExtractor.extractFromCodeBlock<StoryMappingReviewResult>(response);
 
-  let parsedResult: any;
-
-  if (jsonMatch) {
-    try {
-      parsedResult = JSON.parse(jsonMatch[1]);
-    } catch (error) {
-      console.error('JSONパースエラー:', error);
-      // パースエラーの場合はデフォルト値
-      parsedResult = {
-        approved: false,
-        issues: [
-          {
-            severity: 'critical',
-            category: 'parse_error',
-            message: 'AIレスポンスのパースに失敗しました',
-          },
-        ],
-        suggestions: [],
-        overallAssessment: 'レビュー結果の解析に失敗',
-      };
-    }
-  } else {
-    // JSONブロックが見つからない場合
-    parsedResult = {
+  if (!extractionResult.success) {
+    console.error('JSON抽出エラー:', extractionResult.error);
+    // 抽出エラーの場合はデフォルト値
+    return {
       approved: false,
       issues: [
         {
           severity: 'critical',
           category: 'format_error',
-          message: 'AIレスポンスが期待された形式ではありません',
+          message: `AIレスポンスの抽出に失敗しました: ${extractionResult.error}`,
         },
       ],
       suggestions: [],
-      overallAssessment: 'レビュー結果が不正な形式',
+      overallAssessment: 'レビュー結果の解析に失敗',
     };
   }
+
+  const parsedResult = extractionResult.data!;
 
   return {
     approved: parsedResult.approved || false,

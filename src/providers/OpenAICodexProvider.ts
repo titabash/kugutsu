@@ -9,6 +9,7 @@ import {
   type ThreadEvent,
   type ThreadOptions,
   type TurnOptions,
+  type SandboxMode,
 } from '@openai/codex-sdk';
 import type {
   IAIProvider,
@@ -66,6 +67,25 @@ export class OpenAICodexProvider implements IAIProvider {
   }
 
   /**
+   * Map permissionMode to Codex SDK sandboxMode
+   */
+  private mapPermissionModeToSandboxMode(
+    permissionMode?: 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan'
+  ): SandboxMode {
+    switch (permissionMode) {
+      case 'acceptEdits':
+        return 'workspace-write';
+      case 'bypassPermissions':
+        return 'danger-full-access';
+      case 'default':
+      case 'plan':
+      case undefined:
+      default:
+        return 'read-only';
+    }
+  }
+
+  /**
    * Execute a prompt using Codex SDK
    */
   async *execute(
@@ -79,14 +99,19 @@ export class OpenAICodexProvider implements IAIProvider {
       resume,
       model,
       includePartialMessages = false,
+      permissionMode,
       providerOptions = {},
     } = options;
 
     try {
+      // Map permissionMode to sandboxMode
+      const sandboxMode = this.mapPermissionModeToSandboxMode(permissionMode);
+
       // Build thread options
       const threadOptions: ThreadOptions = {
         model: model || this.model,
         workingDirectory: cwd,
+        sandboxMode,
         ...providerOptions,
       };
 
@@ -124,11 +149,14 @@ export class OpenAICodexProvider implements IAIProvider {
       }
     } catch (error) {
       // Yield error message
+      const errorMessage = error instanceof Error ? error.message : String(error);
       yield {
         type: 'result',
         content: {
           success: false,
-          error: error instanceof Error ? error.message : String(error),
+          subtype: 'exception', // Include subtype for MessageHandler error detection
+          error: errorMessage,
+          errors: [errorMessage], // Also include in errors array for consistency
         },
         timestamp: new Date(),
       };
@@ -193,6 +221,7 @@ export class OpenAICodexProvider implements IAIProvider {
           type: 'result',
           content: {
             success: false,
+            subtype: 'turn_failed', // Include subtype for MessageHandler error detection
             errors: [event.error.message],
           },
           session_id: this.currentSession || undefined,
@@ -215,7 +244,9 @@ export class OpenAICodexProvider implements IAIProvider {
           type: 'result',
           content: {
             success: false,
+            subtype: 'error', // Include subtype for MessageHandler error detection
             error: event.message,
+            errors: [event.message], // Also include in errors array for consistency
           },
           session_id: this.currentSession || undefined,
         };

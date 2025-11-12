@@ -46,6 +46,21 @@ describe('EngineerDispatchNode', () => {
     });
 
     initialState.tasks = [];
+    initialState.activeSprint = {
+      id: 'sprint-test-empty',
+      name: 'Empty Sprint',
+      goal: 'Test empty',
+      taskIds: [],
+      startedAt: new Date(),
+      status: 'active',
+      deployable: false,
+      metadata: {
+        estimatedHours: 8,
+        blockers: [],
+        completedTasksCount: 0,
+        failedTasksCount: 0,
+      },
+    };
 
     // Execute node
     const result = await engineerDispatchNode(initialState);
@@ -90,6 +105,21 @@ describe('EngineerDispatchNode', () => {
     };
 
     initialState.tasks = [task1, task2];
+    initialState.activeSprint = {
+      id: 'sprint-test-001',
+      name: 'Test Sprint',
+      goal: 'Test goal',
+      taskIds: ['task-001', 'task-002'],
+      startedAt: new Date(),
+      status: 'active',
+      deployable: false,
+      metadata: {
+        estimatedHours: 8,
+        blockers: [],
+        completedTasksCount: 0,
+        failedTasksCount: 0,
+      },
+    };
 
     // Execute node
     const result = await engineerDispatchNode(initialState);
@@ -162,6 +192,21 @@ describe('EngineerDispatchNode', () => {
     ];
 
     initialState.tasks = tasks;
+    initialState.activeSprint = {
+      id: 'sprint-test-002',
+      name: 'Test Sprint 2',
+      goal: 'Test goal',
+      taskIds: ['task-001', 'task-002', 'task-003'],
+      startedAt: new Date(),
+      status: 'active',
+      deployable: false,
+      metadata: {
+        estimatedHours: 8,
+        blockers: [],
+        completedTasksCount: 0,
+        failedTasksCount: 0,
+      },
+    };
 
     // Execute node
     const result = await engineerDispatchNode(initialState);
@@ -214,6 +259,21 @@ describe('EngineerDispatchNode', () => {
 
     initialState.tasks = [task1, task2];
     initialState.completedTasks = []; // task-001 not completed yet
+    initialState.activeSprint = {
+      id: 'sprint-test-003',
+      name: 'Test Sprint 3',
+      goal: 'Test goal',
+      taskIds: ['task-001', 'task-002'],
+      startedAt: new Date(),
+      status: 'active',
+      deployable: false,
+      metadata: {
+        estimatedHours: 8,
+        blockers: [],
+        completedTasksCount: 0,
+        failedTasksCount: 0,
+      },
+    };
 
     // Execute node
     const result = await engineerDispatchNode(initialState);

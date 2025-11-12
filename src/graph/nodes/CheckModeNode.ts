@@ -15,6 +15,7 @@ import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 import { GitWorktreeManager } from '../../managers/GitWorktreeManager.js';
 import { randomUUID } from 'crypto';
 import { MessageHandler } from '../../utils/MessageHandler.js';
+import { JSONExtractor } from '../../utils/JSONExtractor.js';
 
 /**
  * Check Mode Node
@@ -146,10 +147,10 @@ export async function checkModeNode(
     }
 
     // JSONを抽出してパース
-    const repositoryJsonMatch = repositoryAnalysisText.match(/```json\n([\s\S]*?)\n```/);
-    if (repositoryJsonMatch) {
+    const repositoryExtractionResult = JSONExtractor.extractFromCodeBlock(repositoryAnalysisText);
+    if (repositoryExtractionResult.success) {
       try {
-        const analysisResult = JSON.parse(repositoryJsonMatch[1]);
+        const analysisResult = repositoryExtractionResult.data!;
 
         // メタデータを保存
         const metadata = {
@@ -310,13 +311,13 @@ JSON形式で以下を出力してください：
   handler.complete(true, '継続モード判定が完了しました');
 
   // JSONを抽出してパース
-  const jsonMatch = aiResponseText.match(/```json\n([\s\S]*?)\n```/);
+  const extractionResult = JSONExtractor.extractFromCodeBlock<{ isContinuation: boolean; reasoning: string }>(aiResponseText);
   let isContinuation = false;
   let reasoning = '';
 
-  if (jsonMatch) {
+  if (extractionResult.success) {
     try {
-      const result = JSON.parse(jsonMatch[1]);
+      const result = extractionResult.data!;
       isContinuation = result.isContinuation;
       reasoning = result.reasoning;
       console.log(`✅ AI判定: ${isContinuation ? '継続モード' : '新規モード'}`);
@@ -327,7 +328,7 @@ JSON形式で以下を出力してください：
       isContinuation = false;
     }
   } else {
-    console.warn('⚠️ AI応答からJSONを抽出できませんでした。新規モードとして扱います。');
+    console.warn(`⚠️ AI応答からJSONを抽出できませんでした: ${extractionResult.error}。新規モードとして扱います。`);
     isContinuation = false;
   }
 

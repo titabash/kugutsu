@@ -496,7 +496,58 @@ describe('SprintReviewNode', () => {
       expect(route).toBe('sprint_planning');
     });
 
-    test('should route to engineer_dispatch when sprint has incomplete tasks', () => {
+    test('should route to review_dispatch when sprint has in_review tasks', () => {
+      const activeSprint = {
+        id: 'sprint-1',
+        name: 'Sprint 1',
+        goal: 'Goal',
+        taskIds: ['task-1'],
+        status: 'active' as const,
+        deployable: true,
+        startedAt: new Date(),
+        metadata: {
+          estimatedHours: 8,
+          blockers: [],
+          completedTasksCount: 0,
+          failedTasksCount: 0,
+        },
+      };
+
+      const initialState = createInitialState('Request', {
+        maxEngineers: 3,
+        maxTurns: 30,
+        baseBranch: 'main',
+        baseRepoPath: '/test/repo',
+        worktreeBasePath: '/test/worktrees',
+      });
+
+      const inReviewTask = {
+        id: 'task-1',
+        type: 'feature' as const,
+        projectId: 'project-1',
+        title: 'Task',
+        description: 'Desc',
+        priority: 90,
+        dynamicPriority: 90,
+        dependencies: [],
+        status: 'in_review' as const,
+        sprint: 'sprint-1',
+        requestTimestamp: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      const stateWithActiveSprint = {
+        ...initialState,
+        activeSprint,
+        globalTasks: [inReviewTask],
+      };
+
+      const route = sprintReviewRouter(stateWithActiveSprint);
+      expect(route).toBe('review_dispatch');
+    });
+
+    test('should route to engineer_dispatch when sprint has pending tasks', () => {
       const activeSprint = {
         id: 'sprint-1',
         name: 'Sprint 1',
@@ -541,6 +592,125 @@ describe('SprintReviewNode', () => {
         ...initialState,
         activeSprint,
         globalTasks: [pendingTask],
+      };
+
+      const route = sprintReviewRouter(stateWithActiveSprint);
+      expect(route).toBe('engineer_dispatch');
+    });
+
+    test('should prioritize in_review tasks over pending tasks', () => {
+      const activeSprint = {
+        id: 'sprint-1',
+        name: 'Sprint 1',
+        goal: 'Goal',
+        taskIds: ['task-1', 'task-2'],
+        status: 'active' as const,
+        deployable: true,
+        startedAt: new Date(),
+        metadata: {
+          estimatedHours: 8,
+          blockers: [],
+          completedTasksCount: 0,
+          failedTasksCount: 0,
+        },
+      };
+
+      const initialState = createInitialState('Request', {
+        maxEngineers: 3,
+        maxTurns: 30,
+        baseBranch: 'main',
+        baseRepoPath: '/test/repo',
+        worktreeBasePath: '/test/worktrees',
+      });
+
+      const inReviewTask = {
+        id: 'task-1',
+        type: 'feature' as const,
+        projectId: 'project-1',
+        title: 'Task 1',
+        description: 'Desc',
+        priority: 90,
+        dynamicPriority: 90,
+        dependencies: [],
+        status: 'in_review' as const,
+        sprint: 'sprint-1',
+        requestTimestamp: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      const pendingTask = {
+        id: 'task-2',
+        type: 'feature' as const,
+        projectId: 'project-1',
+        title: 'Task 2',
+        description: 'Desc',
+        priority: 85,
+        dynamicPriority: 85,
+        dependencies: [],
+        status: 'pending' as const,
+        sprint: 'sprint-1',
+        requestTimestamp: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      const stateWithActiveSprint = {
+        ...initialState,
+        activeSprint,
+        globalTasks: [inReviewTask, pendingTask],
+      };
+
+      const route = sprintReviewRouter(stateWithActiveSprint);
+      // Should route to review_dispatch (in_review takes priority)
+      expect(route).toBe('review_dispatch');
+    });
+
+    test('should route to engineer_dispatch when sprint has in_progress tasks', () => {
+      const activeSprint = {
+        id: 'sprint-1',
+        name: 'Sprint 1',
+        goal: 'Goal',
+        taskIds: ['task-1'],
+        status: 'active' as const,
+        deployable: true,
+        startedAt: new Date(),
+        metadata: {
+          estimatedHours: 8,
+          blockers: [],
+          completedTasksCount: 0,
+          failedTasksCount: 0,
+        },
+      };
+
+      const initialState = createInitialState('Request', {
+        maxEngineers: 3,
+        maxTurns: 30,
+        baseBranch: 'main',
+        baseRepoPath: '/test/repo',
+        worktreeBasePath: '/test/worktrees',
+      });
+
+      const inProgressTask = {
+        id: 'task-1',
+        type: 'feature' as const,
+        projectId: 'project-1',
+        title: 'Task',
+        description: 'Desc',
+        priority: 90,
+        dynamicPriority: 90,
+        dependencies: [],
+        status: 'in_progress' as const,
+        sprint: 'sprint-1',
+        requestTimestamp: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      const stateWithActiveSprint = {
+        ...initialState,
+        activeSprint,
+        globalTasks: [inProgressTask],
       };
 
       const route = sprintReviewRouter(stateWithActiveSprint);

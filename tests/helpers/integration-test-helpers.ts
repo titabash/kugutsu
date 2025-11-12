@@ -221,14 +221,35 @@ export function createProductOwnerMockResponses(
   });
 
   // Phase 3: Task Generation
+  // Create Product Backlog instead of tasks.json
+  const productBacklogDir = path.join(kugutsuDir, 'product-backlog');
+  const productBacklog = {
+    tasks: tasks.map((task) => ({
+      id: task.id,
+      type: 'feature',
+      title: task.title,
+      description: task.description,
+      priority: task.priority,
+      estimatedPoints: 8,
+      dependencies: task.dependencies,
+      status: task.status,
+      createdAt: task.createdAt || new Date().toISOString(),
+      updatedAt: task.updatedAt || new Date().toISOString(),
+    })),
+    metadata: {
+      totalTasks: tasks.length,
+      lastUpdated: new Date().toISOString(),
+    },
+  };
+
   const taskMessages = [
     createMockMessage.assistant('Generating tasks...'),
     createMockMessage.system({
       toolUse: {
         tool: 'Write',
         arguments: {
-          file_path: path.join(kugutsuDir, 'tasks.json'),
-          content: JSON.stringify(tasks, null, 2),
+          file_path: path.join(productBacklogDir, 'backlog.json'),
+          content: JSON.stringify(productBacklog, null, 2),
         },
       },
     }),

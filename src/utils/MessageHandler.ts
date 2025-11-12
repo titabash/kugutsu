@@ -115,6 +115,25 @@ export class MessageHandler {
     switch (message.type) {
       case 'assistant':
         this.handleAssistant(message);
+        // Check if assistant message contains error messages (e.g., "Weekly limit reached")
+        if (typeof message.content === 'string') {
+          const contentLower = message.content.toLowerCase();
+          if (
+            contentLower.includes('weekly limit') ||
+            contentLower.includes('monthly limit') ||
+            contentLower.includes('quota') ||
+            contentLower.includes('limit reached') ||
+            contentLower.includes('subscription') ||
+            contentLower.includes('billing')
+          ) {
+            this.hasError = true;
+            this.errorDetails = {
+              subtype: 'rate_limit',
+              message: message.content.trim(),
+              errors: [message.content.trim()],
+            };
+          }
+        }
         break;
       case 'partial':
         this.handlePartial(message);
@@ -124,20 +143,41 @@ export class MessageHandler {
         break;
       case 'result':
         this.handleResult(message);
-        // resultメッセージでエラーを検出（Claude Agent SDK仕様準拠）
+        // resultメッセージでエラーを検出（Claude Agent SDK / Codex SDK仕様準拠）
         if (message.content && !message.content.success) {
           this.hasError = true;
 
-          // Claude Agent SDK の errors フィールド（配列）から取得
+          // Claude Agent SDK / Codex SDK の errors フィールド（配列）から取得
           const errors = message.content.errors || [];
-          const errorMessage = errors.length > 0
-            ? errors.join('; ')
-            : `エラーが発生しました (subtype: ${message.content.subtype})`;
+          // Codex SDK の error フィールドもチェック（errors配列がない場合）
+          const errorField = message.content.error;
+          const allErrors = errors.length > 0
+            ? errors
+            : errorField
+              ? [errorField]
+              : [];
+
+          const errorMessage = allErrors.length > 0
+            ? allErrors.join('; ')
+            : `エラーが発生しました (subtype: ${message.content.subtype || 'unknown'})`;
+
+          // Check if error message contains permanent error patterns
+          const errorMessageLower = errorMessage.toLowerCase();
+          const isPermanentError = (
+            errorMessageLower.includes('weekly limit') ||
+            errorMessageLower.includes('monthly limit') ||
+            errorMessageLower.includes('quota') ||
+            errorMessageLower.includes('limit reached') ||
+            errorMessageLower.includes('subscription') ||
+            errorMessageLower.includes('billing') ||
+            errorMessageLower.includes('rate limit') ||
+            errorMessageLower.includes('rate_limit')
+          );
 
           this.errorDetails = {
-            subtype: message.content.subtype,
+            subtype: isPermanentError ? 'rate_limit' : (message.content.subtype || 'unknown'),
             message: errorMessage,
-            errors: errors,
+            errors: allErrors,
           };
         }
         break;

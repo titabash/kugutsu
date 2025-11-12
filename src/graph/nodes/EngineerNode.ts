@@ -4,9 +4,9 @@
  * Executes code implementation for a specific task
  *
  * **File-based Artifact Management:**
- * - Reads tasks from `.kugutsu/tasks.json`
+ * - Reads tasks from Sprint Backlog (`.kugutsu/sprints/{sprintId}/sprint-backlog.json`)
  * - Reads instruction from `.kugutsu/sprints/{sprintId}/tasks/{taskId}/instruction.md`
- * - Updates task status to `implemented` in tasks.json after completion
+ * - Updates task status in Sprint Backlog after completion
  */
 
 import { Command, interrupt } from '@langchain/langgraph';
@@ -14,7 +14,7 @@ import type { ParallelDevStateType, ParallelDevStateUpdate, FeedbackRequest } fr
 import type { Task } from '../types.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 import { FileReader } from '../../utils/FileReader.js';
-import { AIFileWriter } from '../../utils/AIFileWriter.js';
+import { DataPersistence } from '../../utils/DataPersistence.js';
 import { TaskStateMachine } from '../../utils/TaskStateMachine.js';
 import type { TaskArtifact } from '../../types/artifacts.js';
 import { RetryManager } from '../../utils/RetryManager.js';
@@ -37,33 +37,29 @@ import { MessageHandler } from '../../utils/MessageHandler.js';
  * This node is designed to be called via Send API with `currentTaskId` in state.
  * The taskId is retrieved from `state.currentTaskId` for parallel execution.
  *
- * **Backward Compatibility:**
- * For backward compatibility with tests, taskId can also be passed as a second parameter.
+ * **LangGraph Node Function Signature:**
+ * LangGraph nodes receive only `(state)` as parameter. The second parameter
+ * passed by LangGraph is the config object, not a custom parameter.
  */
 export async function engineerNode(
-  state: ParallelDevStateType,
-  taskIdParam?: string
+  state: ParallelDevStateType
 ): Promise<ParallelDevStateUpdate> {
   const { config, tasks, tasksPath, activeSprint, currentTaskId } = state;
   const startTime = Date.now();
 
-  // Retrieve task ID from parameter (backward compatibility) or state (Send API pattern)
-  const taskId = taskIdParam || currentTaskId;
-
-  // DEBUG: 型チェック
-  console.log(`[DEBUG] taskIdParam type: ${typeof taskIdParam}, value: ${JSON.stringify(taskIdParam)}`);
-  console.log(`[DEBUG] currentTaskId type: ${typeof currentTaskId}, value: ${JSON.stringify(currentTaskId)}`);
-  console.log(`[DEBUG] taskId type: ${typeof taskId}, value: ${JSON.stringify(taskId)}`);
+  // Retrieve task ID from state (Send API pattern)
+  // LangGraph Send API sets currentTaskId in state when calling this node
+  const taskId = currentTaskId;
 
   if (!taskId) {
-    console.error('❌ taskId is not provided (neither as parameter nor in state.currentTaskId)');
+    console.error('❌ taskId is not provided in state.currentTaskId');
     return {
       logs: [
         {
           timestamp: new Date(),
           level: 'error',
           source: 'EngineerNode',
-          message: 'taskId is not provided (neither as parameter nor in state.currentTaskId)',
+          message: 'taskId is not provided in state.currentTaskId',
         },
       ],
     };
@@ -314,12 +310,19 @@ export async function engineerNode(
     };
   }
 
-  // Read tasks from file
-  const fileReader = new FileReader(config.baseRepoPath);
+  // Read task from Sprint Backlog
+  const persistence = new DataPersistence(config.baseRepoPath);
 
-  let taskArtifacts: TaskArtifact[];
+  let taskArtifact: any;
   try {
-    taskArtifacts = await fileReader.readJSON<TaskArtifact[]>(tasksPath || '.kugutsu/tasks.json');
+    const backlog = await persistence.loadSprintBacklog(sprintId);
+    if (!backlog || !backlog.tasks) {
+      throw new Error(`Sprint Backlog not found: ${sprintId}`);
+    }
+    taskArtifact = backlog.tasks.find((t: any) => t.id === taskId);
+    if (!taskArtifact) {
+      throw new Error(`Task ${taskId} not found in Sprint Backlog`);
+    }
   } catch (error) {
     return {
       logs: [
@@ -327,15 +330,12 @@ export async function engineerNode(
           timestamp: new Date(),
           level: 'error',
           source: 'EngineerNode',
-          message: `tasks.json の読み込みに失敗: ${error instanceof Error ? error.message : String(error)}`,
+          message: `Sprint Backlog の読み込みに失敗: ${error instanceof Error ? error.message : String(error)}`,
           taskId,
         },
       ],
     };
   }
-
-  // Find the task
-  const taskArtifact = taskArtifacts.find((t) => t.id === taskId);
 
   if (!taskArtifact) {
     return {
@@ -424,6 +424,7 @@ export async function engineerNode(
   }
 
   // Read instruction.md
+  const fileReader = new FileReader(config.baseRepoPath);
   const instructionPath = `.kugutsu/sprints/${sprintId}/tasks/${taskId}/instruction.md`;
   let instruction: string;
   try {
@@ -550,12 +551,12 @@ ${state.designDocs.uiuxPath ? `### UI/UX設計
 以下のタスクを実装してください。
 
 ## 【前提条件：必須ファイル】
-以下のファイルは前のノード（ProductOwner）が作成済みです。このタスクの実装に必要な情報が含まれています：
+以下のファイルは前のノードが作成済みです。このタスクの実装に必要な情報が含まれています：
 
-1. **.kugutsu/tasks.json** - タスク一覧と自分の担当タスク情報
+1. **Sprint Backlog** (\`.kugutsu/sprints/\${sprintId}/sprint-backlog.json\`) - タスク一覧と自分の担当タスク情報
    → このファイルからタスクの状態を確認できます
 
-2. **.kugutsu/sprints/${sprintId}/tasks/${taskArtifact.id}/instruction.md** - このタスクの実装詳細指示
+2. **.kugutsu/sprints/\${sprintId}/tasks/\${taskArtifact.id}/instruction.md** - このタスクの実装詳細指示
    → 下記「タスクの詳細指示」に既に読み込まれています
 
 これらのファイルが存在しない場合はエラーです。
@@ -689,17 +690,10 @@ ${dependenciesSection}
 
         const failedTask = TaskStateMachine.transition(taskWithError, 'failed');
 
-        // tasks.jsonを更新 using AI
-        await AIFileWriter.updateTaskInTasksJson(
-          provider,
-          tasksPath || '.kugutsu/tasks.json',
-          taskId,
-          {
-            status: 'failed',
-            updatedAt: new Date().toISOString(),
-          },
-          config.baseRepoPath
-        );
+        // Sprint Backlogを更新
+        await persistence.updateSprintBacklogTask(sprintId, taskId, {
+          status: 'failed',
+        });
 
         // Sync to globalTasks
         const globalTask = state.globalTasks.find((t) => t.id === taskId);
@@ -745,19 +739,12 @@ ${dependenciesSection}
     console.log(`   SessionID: ${sessionId}`);
     console.log(`${'='.repeat(70)}\n`);
 
-    // Update task status in file artifact using AI
-    await AIFileWriter.updateTaskInTasksJson(
-      provider,
-      tasksPath || '.kugutsu/tasks.json',
-      taskId,
-      {
-        status: 'implemented',
-        sessionId,
-        updatedAt: new Date().toISOString(),
-      },
-      config.baseRepoPath
-    );
-    console.log(`📝 タスクステータス(ファイル)を更新しました: implemented`);
+    // Update task status in Sprint Backlog
+    await persistence.updateSprintBacklogTask(sprintId, taskId, {
+      status: 'in_review', // implementedではなくin_reviewに変更（TaskStateMachineに合わせる）
+      sessionId,
+    });
+    console.log(`📝 Sprint Backlogのタスクステータスを更新しました: in_review`);
 
     // Update State task: in_progress → in_review
     const stateTask = state.tasks.find((t) => t.id === taskId);
@@ -834,7 +821,7 @@ ${dependenciesSection}
   } catch (error) {
     console.error(`❌ タスク ${taskId} の実装に失敗:`, error);
 
-    // Update task status to 'failed' in tasks.json using AI
+    // Update task status to 'failed' in Sprint Backlog
     try {
       // Create AI provider for this error path
       const providerConfig = AIProviderFactory.buildProviderConfig({
@@ -842,19 +829,12 @@ ${dependenciesSection}
       });
       const provider = AIProviderFactory.create(providerConfig);
 
-      await AIFileWriter.updateTaskInTasksJson(
-        provider,
-        tasksPath || '.kugutsu/tasks.json',
-        taskId,
-        {
-          status: 'failed',
-          updatedAt: new Date().toISOString(),
-        },
-        config.baseRepoPath
-      );
-      console.log(`📝 タスクステータス(ファイル)を更新しました: failed`);
+      await persistence.updateSprintBacklogTask(sprintId, taskId, {
+        status: 'failed',
+      });
+      console.log(`📝 Sprint Backlogのタスクステータスを更新しました: failed`);
     } catch (fileError) {
-      console.error(`❌ tasks.json の更新に失敗:`, fileError);
+      console.error(`❌ Sprint Backlog の更新に失敗:`, fileError);
     }
 
     // Update State task: in_progress → failed

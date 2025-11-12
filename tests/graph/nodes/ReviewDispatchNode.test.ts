@@ -151,7 +151,7 @@ describe('ReviewDispatchNode', () => {
     expect(logMessage?.message).toContain('1個のタスクをレビュー開始');
   });
 
-  test('should skip already reviewed tasks', async () => {
+  test('should skip already reviewed tasks with approved status', async () => {
     // Create initial state
     const initialState = createInitialState('Test request', {
       maxEngineers: 3,
@@ -188,7 +188,7 @@ describe('ReviewDispatchNode', () => {
       updatedAt: new Date(),
     };
 
-    // task-001 already has a review
+    // task-001 already has an approved review
     const existingReview: Review = {
       taskId: 'task-001',
       reviewer: 'tech-lead-001',
@@ -203,7 +203,120 @@ describe('ReviewDispatchNode', () => {
     // Execute node
     const result = await reviewDispatchNode(initialState);
 
-    // Verify only task-002 is dispatched (task-001 already reviewed)
+    // Verify only task-002 is dispatched (task-001 already reviewed and approved)
+    expect(result.logs).toBeDefined();
+    const logMessage = result.logs!.find(log => log.message.includes('個のタスクをレビュー開始'));
+    expect(logMessage).toBeDefined();
+    expect(logMessage?.message).toContain('1個のタスクをレビュー開始');
+  });
+
+  test('should allow re-review for tasks with changes_requested status', async () => {
+    // Create initial state
+    const initialState = createInitialState('Test request', {
+      maxEngineers: 3,
+      maxTurns: 30,
+      baseBranch: 'main',
+      baseRepoPath: '/test/repo',
+      worktreeBasePath: '/test/worktrees',
+    });
+
+    // Add task that was returned to in_review after changes_requested
+    const task1: Task = {
+      id: 'task-001',
+      title: 'Task 1',
+      description: 'First task',
+      status: 'in_review',
+      priority: 100,
+      dependencies: [],
+      worktreePath: '/test/worktrees/task-001',
+      branchName: 'task/task-001',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    const task2: Task = {
+      id: 'task-002',
+      title: 'Task 2',
+      description: 'Second task',
+      status: 'in_review',
+      priority: 80,
+      dependencies: [],
+      worktreePath: '/test/worktrees/task-002',
+      branchName: 'task/task-002',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    // task-001 has a changes_requested review (should be re-reviewable)
+    const changesRequestedReview: Review = {
+      taskId: 'task-001',
+      reviewer: 'tech-lead-001',
+      status: 'changes_requested',
+      comments: ['Please fix the bug'],
+      timestamp: new Date(Date.now() - 1000), // Older review
+    };
+
+    initialState.tasks = [task1, task2];
+    initialState.reviews = [changesRequestedReview];
+
+    // Execute node
+    const result = await reviewDispatchNode(initialState);
+
+    // Verify both tasks are dispatched (task-001 can be re-reviewed)
+    expect(result.logs).toBeDefined();
+    const logMessage = result.logs!.find(log => log.message.includes('個のタスクをレビュー開始'));
+    expect(logMessage).toBeDefined();
+    expect(logMessage?.message).toContain('2個のタスクをレビュー開始');
+  });
+
+  test('should use latest review status when multiple reviews exist', async () => {
+    // Create initial state
+    const initialState = createInitialState('Test request', {
+      maxEngineers: 3,
+      maxTurns: 30,
+      baseBranch: 'main',
+      baseRepoPath: '/test/repo',
+      worktreeBasePath: '/test/worktrees',
+    });
+
+    // Add task
+    const task1: Task = {
+      id: 'task-001',
+      title: 'Task 1',
+      description: 'First task',
+      status: 'in_review',
+      priority: 100,
+      dependencies: [],
+      worktreePath: '/test/worktrees/task-001',
+      branchName: 'task/task-001',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    // task-001 has multiple reviews: first approved, then changes_requested
+    const oldApprovedReview: Review = {
+      taskId: 'task-001',
+      reviewer: 'tech-lead-001',
+      status: 'approved',
+      comments: ['LGTM'],
+      timestamp: new Date(Date.now() - 2000), // Older review
+    };
+
+    const latestChangesRequestedReview: Review = {
+      taskId: 'task-001',
+      reviewer: 'tech-lead-002',
+      status: 'changes_requested',
+      comments: ['Found new issue'],
+      timestamp: new Date(Date.now() - 1000), // Newer review
+    };
+
+    initialState.tasks = [task1];
+    initialState.reviews = [oldApprovedReview, latestChangesRequestedReview];
+
+    // Execute node
+    const result = await reviewDispatchNode(initialState);
+
+    // Verify task-001 is dispatched (latest review is changes_requested)
     expect(result.logs).toBeDefined();
     const logMessage = result.logs!.find(log => log.message.includes('個のタスクをレビュー開始'));
     expect(logMessage).toBeDefined();

@@ -969,6 +969,60 @@ export class DataPersistence {
   }
 
   /**
+   * Sprint Backlog内のタスクを取得
+   *
+   * @param sprintId - スプリントID
+   * @param taskId - タスクID
+   * @returns タスクデータ、または null
+   */
+  async getSprintBacklogTask(sprintId: string, taskId: string): Promise<any | null> {
+    const backlog = await this.loadSprintBacklog(sprintId);
+    if (!backlog || !backlog.tasks) {
+      return null;
+    }
+    return backlog.tasks.find((task: any) => task.id === taskId) || null;
+  }
+
+  /**
+   * Sprint Backlog内のタスクを更新
+   *
+   * @param sprintId - スプリントID
+   * @param taskId - タスクID
+   * @param updates - 更新するフィールド
+   */
+  async updateSprintBacklogTask(
+    sprintId: string,
+    taskId: string,
+    updates: Partial<any>
+  ): Promise<void> {
+    const backlog = await this.loadSprintBacklog(sprintId);
+    if (!backlog || !backlog.tasks) {
+      throw new Error(`Sprint Backlog not found: ${sprintId}`);
+    }
+
+    const taskIndex = backlog.tasks.findIndex((task: any) => task.id === taskId);
+    if (taskIndex === -1) {
+      throw new Error(`Task not found in Sprint Backlog: ${taskId}`);
+    }
+
+    // タスクを更新
+    backlog.tasks[taskIndex] = {
+      ...backlog.tasks[taskIndex],
+      ...updates,
+      updatedAt: new Date().toISOString(),
+    };
+
+    // メタデータを更新
+    backlog.metadata = {
+      ...backlog.metadata,
+      lastUpdated: new Date().toISOString(),
+    };
+
+    // 保存
+    await this.saveSprintBacklog(sprintId, backlog);
+  }
+
+  /**
    * Sprint Planを保存
    *
    * @param sprintId - スプリントID（例: "sprint-1"）

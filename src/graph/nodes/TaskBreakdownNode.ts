@@ -246,23 +246,6 @@ export async function taskBreakdownNode(
 
   console.log('💾 タスク情報を保存しました');
 
-  // Convert to TaskArtifact format and save to .kugutsu/tasks.json
-  // This ensures compatibility with EngineerNode which expects this file
-  const taskArtifacts = taskList.map((task) => ({
-    id: task.id,
-    title: task.title,
-    description: task.description,
-    priority: task.priority,
-    dependencies: task.dependencies,
-    status: task.status,
-    createdAt: task.createdAt,
-    updatedAt: task.createdAt,
-  }));
-
-  const tasksJsonPath = path.join(config.baseRepoPath, '.kugutsu', 'tasks.json');
-  await FileSystemManager.writeJSON(tasksJsonPath, taskArtifacts);
-  console.log(`💾 .kugutsu/tasks.json を保存しました（${taskArtifacts.length}タスク）`);
-
   // サマリー表示
   console.log('\n📊 タスク分解サマリー:');
   console.log(`  - タスク総数: ${taskList.length}個`);
@@ -328,7 +311,6 @@ export async function taskBreakdownNode(
   return {
     globalTasks: globalTasks,
     dependencyGraph: dependencyGraph,
-    tasksPath: '.kugutsu/tasks.json',
     logs: [
       {
         timestamp: new Date(),

@@ -49,6 +49,8 @@ export class JSONExtractor {
   /**
    * コードブロックからJSONを抽出
    *
+   * コードブロック形式（```json ... ```）と生のJSONオブジェクトの両方を自動判別・抽出します。
+   *
    * @param response AI応答テキスト
    * @param options 抽出オプション
    * @returns 抽出結果
@@ -58,7 +60,7 @@ export class JSONExtractor {
     options: JSONExtractionOptions = {}
   ): JSONExtractionResult<T> {
     const {
-      allowRawJSON = false,
+      allowRawJSON = true, // デフォルトで生のJSONも自動検出
       allowedBlockTypes = ['json'],
       maxJSONLength = 1000,
     } = options;
@@ -72,13 +74,30 @@ export class JSONExtractor {
 
     let jsonText: string | undefined;
 
-    // コードブロックからJSON抽出を試みる
+    // まずコードブロック形式を試す
     const match = response.match(codeBlockPattern);
     if (match && match[1]) {
       jsonText = match[1].trim();
     } else if (allowRawJSON) {
-      // コードブロックがない場合、全体をJSONとして扱う
-      jsonText = response.trim();
+      // コードブロックがない場合、生のJSONとしてパースを試みる
+      // テキスト全体をトリムして、JSONオブジェクトまたは配列として有効か確認
+      const trimmed = response.trim();
+
+      // JSONオブジェクトまたは配列で始まる場合のみ試す
+      if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+        jsonText = trimmed;
+      } else {
+        // 周囲にテキストがある可能性があるため、JSON部分を抽出を試みる
+        // 最初の { または [ から最後の } または ] までを抽出
+        const objectMatch = trimmed.match(/\{[\s\S]*\}/);
+        const arrayMatch = trimmed.match(/\[[\s\S]*\]/);
+
+        if (objectMatch) {
+          jsonText = objectMatch[0];
+        } else if (arrayMatch) {
+          jsonText = arrayMatch[0];
+        }
+      }
     }
 
     if (!jsonText) {

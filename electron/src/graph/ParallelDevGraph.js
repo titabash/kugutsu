@@ -305,13 +305,35 @@ export function createUnifiedScrumWorkflowGraph() {
     workflow.addEdge('engineer_aggregator', 'review_dispatch');
     // Review dispatch → conditional (Send API fan-out for review with maxEngineers limit)
     workflow.addConditionalEdges('review_dispatch', (state) => {
-        // Get tasks ready for review (in_review status, not yet reviewed)
-        const tasksToReview = state.tasks.filter(t => t.status === 'in_review' &&
-            !state.reviews.some(r => r.taskId === t.id));
+        // Get tasks ready for review (in_review status)
+        // Allow re-review if latest review was changes_requested
+        const tasksToReview = state.tasks.filter((t) => {
+            if (t.status !== 'in_review')
+                return false;
+            // Find the latest review for this task
+            const taskReviews = state.reviews
+                .filter((r) => r.taskId === t.id)
+                .sort((a, b) => {
+                const timeA = a.timestamp instanceof Date ? a.timestamp.getTime() : new Date(a.timestamp).getTime();
+                const timeB = b.timestamp instanceof Date ? b.timestamp.getTime() : new Date(b.timestamp).getTime();
+                return timeB - timeA;
+            });
+            // If no review exists, task is reviewable
+            if (taskReviews.length === 0)
+                return true;
+            // If latest review is changes_requested, allow re-review
+            const latestReview = taskReviews[0];
+            if (latestReview.status === 'changes_requested')
+                return true;
+            // If latest review is approved, task should not be in_review (but check anyway)
+            return false;
+        });
         if (tasksToReview.length === 0) {
             console.log('[Graph] No tasks to review, proceeding to merge');
             return '__end__'; // Special marker for "no tasks" case
         }
+        // Sort by priority (highest first)
+        tasksToReview.sort((a, b) => b.priority - a.priority);
         // Apply maxEngineers limit (same as engineer dispatch)
         const tasksToDispatch = tasksToReview.slice(0, state.config.maxEngineers);
         console.log(`[Graph] 📤 Fan-out: Sending ${tasksToDispatch.length}/${tasksToReview.length} tasks to parallel review nodes (maxEngineers: ${state.config.maxEngineers})`);
@@ -338,8 +360,46 @@ export function createUnifiedScrumWorkflowGraph() {
     });
     // Review → review_aggregator (fan-in)
     workflow.addEdge('review', 'review_aggregator');
-    // Review aggregator → conditional (dynamic task pooling)
+    // Review aggregator → conditional (dynamic task pooling + changes_requested handling)
     workflow.addConditionalEdges('review_aggregator', (state) => {
+        // Check for tasks that were returned to in_progress due to changes_requested
+        // These tasks already have worktrees and should go directly to engineer
+        const changesRequestedTasks = state.tasks.filter(t => {
+            if (t.status !== 'in_progress')
+                return false;
+            // Check if there's a recent changes_requested review for this task
+            const taskReviews = state.reviews
+                .filter(r => r.taskId === t.id)
+                .sort((a, b) => {
+                const timeA = a.timestamp instanceof Date ? a.timestamp.getTime() : new Date(a.timestamp).getTime();
+                const timeB = b.timestamp instanceof Date ? b.timestamp.getTime() : new Date(b.timestamp).getTime();
+                return timeB - timeA;
+            });
+            if (taskReviews.length === 0)
+                return false;
+            const latestReview = taskReviews[0];
+            // Task has worktree and latest review is changes_requested
+            return latestReview.status === 'changes_requested' && t.worktreePath;
+        });
+        if (changesRequestedTasks.length > 0) {
+            console.log(`[Graph] Review complete, ${changesRequestedTasks.length} tasks need rework (changes_requested) - sending to engineer`);
+            // Return Send objects for parallel execution
+            return changesRequestedTasks.map(task => new Send('engineer', {
+                currentTaskId: task.id,
+                config: state.config,
+                tasks: state.tasks,
+                tasksPath: state.tasksPath,
+                activeSprint: state.activeSprint,
+                globalTasks: state.globalTasks,
+                worktrees: state.worktrees,
+                reviews: state.reviews,
+                mergeQueue: state.mergeQueue,
+                storyMapping: state.storyMapping,
+                designDocs: state.designDocs,
+                sprintPlanPath: state.sprintPlanPath,
+                metadata: state.metadata,
+            }));
+        }
         // 🔄 Dynamic Task Pooling: Check for ready tasks and available slots
         const readyTasks = state.tasks.filter(t => t.status === 'pending' &&
             TaskStateMachine.canMoveToReady(t, state.tasks));
@@ -355,12 +415,38 @@ export function createUnifiedScrumWorkflowGraph() {
     }, {
         dispatch_next: 'engineer_dispatch',
         continue: 'merge_coordinator',
+        // Send destination for changes_requested tasks
+        engineer: 'engineer',
     });
     // Merge coordinator → conditional (dynamic task pooling)
     workflow.addConditionalEdges('merge_coordinator', (state) => {
         const conflicts = state.mergeQueue.filter((m) => m.status === 'conflict');
         if (conflicts.length > 0) {
             return 'has_conflicts';
+        }
+        // Check for pending merge tasks in queue
+        const pendingMerges = state.mergeQueue.filter((m) => m.status === 'pending');
+        if (pendingMerges.length > 0) {
+            console.log(`[Graph] ${pendingMerges.length} tasks still pending merge, continuing merge process`);
+            // Continue merge process (will be handled by merge_coordinator node itself)
+            return 'has_pending_merges';
+        }
+        // Check if sprint has unmerged completed tasks
+        if (state.activeSprint) {
+            const sprintTasks = (state.globalTasks || []).filter((task) => state.activeSprint.taskIds.includes(task.id));
+            const completedTasks = sprintTasks.filter((t) => t.status === 'completed');
+            // Check if any completed tasks are not yet merged (no merge-result.json)
+            // This is a safety check - if there are completed tasks without merge results,
+            // they should be processed by merge_coordinator in the next iteration
+            const unmergedCompletedTasks = completedTasks.filter((task) => {
+                // Check if task is in merge queue with completed status
+                const mergeTask = state.mergeQueue.find((m) => m.taskId === task.id);
+                return !mergeTask || mergeTask.status !== 'completed';
+            });
+            if (unmergedCompletedTasks.length > 0) {
+                console.log(`[Graph] ${unmergedCompletedTasks.length} completed tasks not yet merged, continuing merge process`);
+                return 'has_pending_merges';
+            }
         }
         // 🔄 Dynamic Task Pooling: Check for ready tasks and available slots
         const readyTasks = state.tasks.filter(t => t.status === 'pending' &&
@@ -372,10 +458,17 @@ export function createUnifiedScrumWorkflowGraph() {
             console.log(`[Graph] Merge complete, ${readyTasks.length} ready tasks, ${availableSlots} slots available - dispatching`);
             return 'has_pending';
         }
-        // Check if all tasks are completed
+        // Check if all tasks are completed AND all merges are completed
         const allPendingTasks = state.tasks.filter(t => t.status === 'pending');
-        if (allPendingTasks.length === 0) {
-            console.log('[Graph] All tasks completed, proceeding to sprint review');
+        const allInReviewTasks = state.tasks.filter(t => t.status === 'in_review');
+        const allInProgressTasks = state.tasks.filter(t => t.status === 'in_progress');
+        // Only proceed to sprint review if:
+        // 1. No pending tasks
+        // 2. No in_review tasks (all reviews completed)
+        // 3. No in_progress tasks (all implementations completed)
+        // 4. All merges are completed (checked above)
+        if (allPendingTasks.length === 0 && allInReviewTasks.length === 0 && allInProgressTasks.length === 0) {
+            console.log('[Graph] All tasks completed and merged, proceeding to sprint review');
             return 'no_pending';
         }
         // Pending tasks exist but either no slots or dependencies not resolved
@@ -388,6 +481,7 @@ export function createUnifiedScrumWorkflowGraph() {
         return 'no_pending';
     }, {
         has_conflicts: 'conflict_resolver',
+        has_pending_merges: 'merge_coordinator', // Loop back to continue merging
         has_pending: 'engineer_dispatch',
         no_pending: 'sprint_review',
     });
@@ -397,6 +491,7 @@ export function createUnifiedScrumWorkflowGraph() {
     workflow.addConditionalEdges('sprint_review', sprintReviewRouter, {
         sprint_planning: 'sprint_planning',
         engineer_dispatch: 'engineer_dispatch',
+        review_dispatch: 'review_dispatch',
         END: '__end__',
     });
     return workflow;

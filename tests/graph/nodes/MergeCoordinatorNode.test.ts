@@ -346,26 +346,40 @@ describe('MergeCoordinatorNode', () => {
       const kugutsuDir = path.join(tempDir, '.kugutsu');
 
       try {
-        // Create tasks.json with reviewed task
-        const tasksData = [
-          {
-            id: 'task-001',
-            title: 'Reviewed task',
-            description: 'Ready to merge',
-            priority: 100,
-            dependencies: [],
-            status: 'reviewed',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            worktreePath: path.join(tempDir, 'worktrees/task-001'),
-            branchName: 'task/task-001',
-          },
-        ];
+        // Create Sprint Backlog with completed task
+        const sprintId = 'sprint-test-001';
+        const sprintDir = path.join(kugutsuDir, 'sprints', sprintId);
+        await fs.mkdir(sprintDir, { recursive: true });
+        await fs.mkdir(path.join(sprintDir, 'tasks/task-001'), { recursive: true });
 
-        await fs.mkdir(path.join(kugutsuDir, 'tasks/task-001'), { recursive: true });
+        const sprintBacklog = {
+          sprintId,
+          sprintName: 'Test Sprint',
+          tasks: [
+            {
+              id: 'task-001',
+              type: 'feature',
+              title: 'Reviewed task',
+              description: 'Ready to merge',
+              priority: 100,
+              estimatedPoints: 8,
+              dependencies: [],
+              status: 'completed',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              worktreePath: path.join(tempDir, 'worktrees/task-001'),
+              branchName: 'task/task-001',
+            },
+          ],
+          metadata: {
+            totalTasks: 1,
+            lastUpdated: new Date().toISOString(),
+          },
+        };
+
         await fs.writeFile(
-          path.join(kugutsuDir, 'tasks.json'),
-          JSON.stringify(tasksData, null, 2),
+          path.join(sprintDir, 'sprint-backlog.json'),
+          JSON.stringify(sprintBacklog, null, 2),
           'utf-8'
         );
 
@@ -381,7 +395,7 @@ describe('MergeCoordinatorNode', () => {
         };
 
         await fs.writeFile(
-          path.join(kugutsuDir, 'tasks/task-001/review.json'),
+          path.join(sprintDir, 'tasks/task-001/review.json'),
           JSON.stringify(reviewData, null, 2),
           'utf-8'
         );
@@ -395,7 +409,21 @@ describe('MergeCoordinatorNode', () => {
           worktreeBasePath: path.join(tempDir, 'worktrees'),
         });
 
-        state.tasksPath = '.kugutsu/tasks.json';
+        state.activeSprint = {
+          id: sprintId,
+          name: 'Test Sprint',
+          goal: 'Test goal',
+          taskIds: ['task-001'],
+          startedAt: new Date(),
+          status: 'active',
+          deployable: false,
+          metadata: {
+            estimatedHours: 8,
+            blockers: [],
+            completedTasksCount: 0,
+            failedTasksCount: 0,
+          },
+        };
 
         // TODO: Mock git merge to succeed
         // const result = await mergeCoordinatorNode(state);
@@ -412,22 +440,13 @@ describe('MergeCoordinatorNode', () => {
         };
 
         await fs.writeFile(
-          path.join(kugutsuDir, 'tasks/task-001/merge-result.json'),
+          path.join(sprintDir, 'tasks/task-001/merge-result.json'),
           JSON.stringify(mergeResult, null, 2),
           'utf-8'
         );
 
-        // Update tasks.json status to completed
-        tasksData[0].status = 'completed';
-        tasksData[0].updatedAt = new Date().toISOString();
-        await fs.writeFile(
-          path.join(kugutsuDir, 'tasks.json'),
-          JSON.stringify(tasksData, null, 2),
-          'utf-8'
-        );
-
         // Verify merge-result.json was created
-        const mergeResultPath = path.join(kugutsuDir, 'tasks/task-001/merge-result.json');
+        const mergeResultPath = path.join(sprintDir, 'tasks/task-001/merge-result.json');
         const mergeResultExists = await fs.access(mergeResultPath).then(() => true).catch(() => false);
         expect(mergeResultExists).toBe(true);
 
@@ -438,10 +457,10 @@ describe('MergeCoordinatorNode', () => {
         expect(savedMergeResult.status).toBe('success');
         expect(savedMergeResult.commitHash).toBeDefined();
 
-        // Verify tasks.json was updated to 'completed'
-        const tasksContent = await fs.readFile(path.join(kugutsuDir, 'tasks.json'), 'utf-8');
-        const updatedTasks = JSON.parse(tasksContent);
-        expect(updatedTasks[0].status).toBe('completed');
+        // Verify Sprint Backlog was updated to 'completed' (already set in test data)
+        const backlogContent = await fs.readFile(path.join(sprintDir, 'sprint-backlog.json'), 'utf-8');
+        const updatedBacklog = JSON.parse(backlogContent);
+        expect(updatedBacklog.tasks[0].status).toBe('completed');
       } finally {
         await rm(tempDir, { recursive: true, force: true });
       }
@@ -579,6 +598,321 @@ describe('MergeCoordinatorNode', () => {
       } finally {
         await rm(tempDir, { recursive: true, force: true });
       }
+    });
+  });
+
+  describe('mergeCoordinatorRouter', () => {
+    let mergeCoordinatorRouter: (state: ParallelDevStateType) => string;
+
+    beforeAll(async () => {
+      const module = await import('../../../src/graph/ParallelDevGraph.js');
+      mergeCoordinatorRouter = (module as any).mergeCoordinatorRouter;
+      if (!mergeCoordinatorRouter) {
+        throw new Error('mergeCoordinatorRouter not found in module');
+      }
+    });
+
+    test('should route to has_conflicts when merge conflicts exist', () => {
+      if (!mergeCoordinatorRouter) {
+        throw new Error('mergeCoordinatorRouter not initialized');
+      }
+      const state = createInitialState('Test', {
+        maxEngineers: 3,
+        maxTurns: 30,
+        baseBranch: 'main',
+        baseRepoPath: '/test/repo',
+        worktreeBasePath: '/test/worktrees',
+      });
+
+      state.mergeQueue = [
+        {
+          taskId: 'task-001',
+          sourceBranch: 'task/task-001',
+          targetBranch: 'main',
+          status: 'conflict',
+          attemptedAt: new Date(),
+        },
+      ];
+
+      const route = mergeCoordinatorRouter(state);
+      expect(route).toBe('has_conflicts');
+    });
+
+    test('should route to has_pending_merges when pending merges exist', () => {
+      const state = createInitialState('Test', {
+        maxEngineers: 3,
+        maxTurns: 30,
+        baseBranch: 'main',
+        baseRepoPath: '/test/repo',
+        worktreeBasePath: '/test/worktrees',
+      });
+
+      state.mergeQueue = [
+        {
+          taskId: 'task-001',
+          sourceBranch: 'task/task-001',
+          targetBranch: 'main',
+          status: 'pending',
+          attemptedAt: new Date(),
+        },
+      ];
+
+      const route = mergeCoordinatorRouter(state);
+      expect(route).toBe('has_pending_merges');
+    });
+
+    test('should route to has_pending_merges when unmerged completed tasks exist in sprint', () => {
+      const state = createInitialState('Test', {
+        maxEngineers: 3,
+        maxTurns: 30,
+        baseBranch: 'main',
+        baseRepoPath: '/test/repo',
+        worktreeBasePath: '/test/worktrees',
+      });
+
+      state.activeSprint = {
+        id: 'sprint-1',
+        name: 'Sprint 1',
+        goal: 'Test goal',
+        taskIds: ['task-001'],
+        startedAt: new Date(),
+        status: 'active',
+        deployable: false,
+        metadata: {
+          estimatedHours: 8,
+          blockers: [],
+          completedTasksCount: 0,
+          failedTasksCount: 0,
+        },
+      };
+
+      state.globalTasks = [
+        {
+          id: 'task-001',
+          type: 'feature',
+          projectId: 'project-1',
+          title: 'Task 1',
+          description: 'Description',
+          priority: 90,
+          dynamicPriority: 90,
+          dependencies: [],
+          status: 'completed',
+          sprint: 'sprint-1',
+          requestTimestamp: new Date(),
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ];
+
+      state.mergeQueue = []; // No merge tasks in queue
+
+      const route = mergeCoordinatorRouter(state);
+      expect(route).toBe('has_pending_merges');
+    });
+
+    test('should route to has_pending when ready tasks and available slots exist', () => {
+      const state = createInitialState('Test', {
+        maxEngineers: 3,
+        maxTurns: 30,
+        baseBranch: 'main',
+        baseRepoPath: '/test/repo',
+        worktreeBasePath: '/test/worktrees',
+      });
+
+      state.tasks = [
+        {
+          id: 'task-001',
+          title: 'Task 1',
+          description: 'Description',
+          status: 'pending',
+          priority: 100,
+          dependencies: [],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ];
+
+      state.mergeQueue = [];
+
+      const route = mergeCoordinatorRouter(state);
+      expect(route).toBe('has_pending');
+    });
+
+    test('should route to no_pending when all tasks completed and merged', () => {
+      const state = createInitialState('Test', {
+        maxEngineers: 3,
+        maxTurns: 30,
+        baseBranch: 'main',
+        baseRepoPath: '/test/repo',
+        worktreeBasePath: '/test/worktrees',
+      });
+
+      state.activeSprint = {
+        id: 'sprint-1',
+        name: 'Sprint 1',
+        goal: 'Test goal',
+        taskIds: ['task-001'],
+        startedAt: new Date(),
+        status: 'active',
+        deployable: false,
+        metadata: {
+          estimatedHours: 8,
+          blockers: [],
+          completedTasksCount: 0,
+          failedTasksCount: 0,
+        },
+      };
+
+      state.globalTasks = [
+        {
+          id: 'task-001',
+          type: 'feature',
+          projectId: 'project-1',
+          title: 'Task 1',
+          description: 'Description',
+          priority: 90,
+          dynamicPriority: 90,
+          dependencies: [],
+          status: 'completed',
+          sprint: 'sprint-1',
+          requestTimestamp: new Date(),
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ];
+
+      // Task is merged (in merge queue with completed status)
+      state.mergeQueue = [
+        {
+          taskId: 'task-001',
+          sourceBranch: 'task/task-001',
+          targetBranch: 'main',
+          status: 'completed',
+          attemptedAt: new Date(),
+        },
+      ];
+
+      state.tasks = []; // No pending, in_review, or in_progress tasks
+
+      const route = mergeCoordinatorRouter(state);
+      expect(route).toBe('no_pending');
+    });
+
+    test('should NOT route to sprint_review when in_review tasks exist', () => {
+      const state = createInitialState('Test', {
+        maxEngineers: 3,
+        maxTurns: 30,
+        baseBranch: 'main',
+        baseRepoPath: '/test/repo',
+        worktreeBasePath: '/test/worktrees',
+      });
+
+      state.tasks = [
+        {
+          id: 'task-001',
+          title: 'Task 1',
+          description: 'Description',
+          status: 'in_review',
+          priority: 100,
+          dependencies: [],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ];
+
+      state.mergeQueue = [];
+
+      const route = mergeCoordinatorRouter(state);
+      expect(route).toBe('no_pending'); // Should not route to sprint_review
+    });
+
+    test('should NOT route to sprint_review when in_progress tasks exist', () => {
+      const state = createInitialState('Test', {
+        maxEngineers: 3,
+        maxTurns: 30,
+        baseBranch: 'main',
+        baseRepoPath: '/test/repo',
+        worktreeBasePath: '/test/worktrees',
+      });
+
+      state.tasks = [
+        {
+          id: 'task-001',
+          title: 'Task 1',
+          description: 'Description',
+          status: 'in_progress',
+          priority: 100,
+          dependencies: [],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ];
+
+      state.mergeQueue = [];
+
+      const route = mergeCoordinatorRouter(state);
+      expect(route).toBe('no_pending'); // Should not route to sprint_review
+    });
+
+    test('should route to sprint_review only when all conditions met', () => {
+      const state = createInitialState('Test', {
+        maxEngineers: 3,
+        maxTurns: 30,
+        baseBranch: 'main',
+        baseRepoPath: '/test/repo',
+        worktreeBasePath: '/test/worktrees',
+      });
+
+      state.activeSprint = {
+        id: 'sprint-1',
+        name: 'Sprint 1',
+        goal: 'Test goal',
+        taskIds: ['task-001'],
+        startedAt: new Date(),
+        status: 'active',
+        deployable: false,
+        metadata: {
+          estimatedHours: 8,
+          blockers: [],
+          completedTasksCount: 1,
+          failedTasksCount: 0,
+        },
+      };
+
+      state.globalTasks = [
+        {
+          id: 'task-001',
+          type: 'feature',
+          projectId: 'project-1',
+          title: 'Task 1',
+          description: 'Description',
+          priority: 90,
+          dynamicPriority: 90,
+          dependencies: [],
+          status: 'completed',
+          sprint: 'sprint-1',
+          requestTimestamp: new Date(),
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ];
+
+      // Task is merged (in merge queue with completed status)
+      state.mergeQueue = [
+        {
+          taskId: 'task-001',
+          sourceBranch: 'task/task-001',
+          targetBranch: 'main',
+          status: 'completed',
+          attemptedAt: new Date(),
+        },
+      ];
+
+      // No pending, in_review, or in_progress tasks
+      state.tasks = [];
+
+      const route = mergeCoordinatorRouter(state);
+      expect(route).toBe('no_pending'); // Routes to sprint_review
     });
   });
 });

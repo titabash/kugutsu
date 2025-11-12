@@ -291,18 +291,37 @@ export function sprintReviewRouter(state) {
     }
     // アクティブスプリント内のタスクのみをチェック
     const sprintTasks = state.globalTasks.filter((task) => state.activeSprint.taskIds.includes(task.id));
+    // Check for tasks in different states
+    const pendingTasks = sprintTasks.filter((task) => task.status === 'pending');
+    const inReviewTasks = sprintTasks.filter((task) => task.status === 'in_review');
+    const inProgressTasks = sprintTasks.filter((task) => task.status === 'in_progress');
     const incompleteTasks = sprintTasks.filter((task) => task.status !== 'completed' &&
         task.status !== 'failed');
     console.log(`[SprintReviewRouter] スプリントタスク: ${sprintTasks.length}件`);
-    console.log(`[SprintReviewRouter] 未完了: ${incompleteTasks.length}件`);
-    // スプリント内に未完了タスクがある場合、スプリント継続
-    if (incompleteTasks.length > 0) {
-        console.log('➡️ ルーティング: engineer_dispatch (スプリント継続)');
+    console.log(`[SprintReviewRouter] pending: ${pendingTasks.length}件, in_progress: ${inProgressTasks.length}件, in_review: ${inReviewTasks.length}件`);
+    // Priority routing:
+    // 1. If there are in_review tasks, route to review_dispatch
+    if (inReviewTasks.length > 0) {
+        console.log('➡️ ルーティング: review_dispatch (レビュー待ちタスクあり)');
+        return 'review_dispatch';
+    }
+    // 2. If there are pending tasks, route to engineer_dispatch
+    if (pendingTasks.length > 0) {
+        console.log('➡️ ルーティング: engineer_dispatch (pendingタスクあり)');
         return 'engineer_dispatch';
     }
-    // スプリント内の全タスク完了 → SprintReviewNode が状態を更新する
-    // 次の呼び出しで activeSprint がクリアされるため、ここでは sprint_planning にルーティング
-    console.log('➡️ ルーティング: sprint_planning (スプリント完了、次スプリント検討)');
-    return 'sprint_planning';
+    // 3. If there are in_progress tasks, wait (they're being worked on)
+    if (inProgressTasks.length > 0) {
+        console.log('➡️ ルーティング: engineer_dispatch (in_progressタスク処理中)');
+        return 'engineer_dispatch'; // This will be a no-op but maintains flow
+    }
+    // 4. All tasks completed
+    if (incompleteTasks.length === 0) {
+        console.log('➡️ ルーティング: sprint_planning (スプリント完了、次スプリント検討)');
+        return 'sprint_planning';
+    }
+    // Fallback (should not reach here)
+    console.log('➡️ ルーティング: engineer_dispatch (スプリント継続)');
+    return 'engineer_dispatch';
 }
 //# sourceMappingURL=SprintReviewNode.js.map

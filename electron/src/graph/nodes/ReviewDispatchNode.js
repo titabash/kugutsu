@@ -17,9 +17,29 @@ export async function reviewDispatchNode(state) {
     console.log('🔍 Review Dispatch: レビュータスクを割り当てています...');
     try {
         const logs = [];
-        // Get tasks that are in_review and haven't been reviewed yet
-        const reviewableTasks = tasks.filter((task) => task.status === 'in_review' &&
-            !reviews.some((review) => review.taskId === task.id));
+        // Get tasks that are in_review and need review
+        // Allow re-review if latest review was changes_requested
+        const reviewableTasks = tasks.filter((task) => {
+            if (task.status !== 'in_review')
+                return false;
+            // Find the latest review for this task
+            const taskReviews = reviews
+                .filter((r) => r.taskId === task.id)
+                .sort((a, b) => {
+                const timeA = a.timestamp instanceof Date ? a.timestamp.getTime() : new Date(a.timestamp).getTime();
+                const timeB = b.timestamp instanceof Date ? b.timestamp.getTime() : new Date(b.timestamp).getTime();
+                return timeB - timeA;
+            });
+            // If no review exists, task is reviewable
+            if (taskReviews.length === 0)
+                return true;
+            // If latest review is changes_requested, allow re-review
+            const latestReview = taskReviews[0];
+            if (latestReview.status === 'changes_requested')
+                return true;
+            // If latest review is approved, task should not be in_review (but check anyway)
+            return false;
+        });
         if (reviewableTasks.length === 0) {
             console.log('⏸️ レビュー可能なタスクがありません');
             return {

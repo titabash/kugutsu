@@ -4,15 +4,16 @@
  * Performs code review for completed tasks
  *
  * **File-based Artifact Management:**
- * - Reads tasks from `.kugutsu/tasks.json`
+ * - Reads tasks from Sprint Backlog (`.kugutsu/sprints/{sprintId}/sprint-backlog.json`)
  * - Writes review result to `.kugutsu/sprints/{sprintId}/tasks/{taskId}/review.json`
- * - Updates task status to `reviewed` in tasks.json (only if approved)
+ * - Updates task status in Sprint Backlog (only if approved)
  */
 
 import type { ParallelDevStateType, ParallelDevStateUpdate } from '../state.js';
 import type { Task, Review } from '../types.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 import { FileReader } from '../../utils/FileReader.js';
+import { DataPersistence } from '../../utils/DataPersistence.js';
 import { AIFileWriter } from '../../utils/AIFileWriter.js';
 import { TaskStateMachine } from '../../utils/TaskStateMachine.js';
 import type { TaskArtifact, Review as ReviewArtifact, ReviewComment } from '../../types/artifacts.js';
@@ -35,28 +36,29 @@ import { MessageHandler } from '../../utils/MessageHandler.js';
  * This node is designed to be called via Send API with `currentTaskId` in state.
  * The taskId is retrieved from `state.currentTaskId` for parallel execution.
  *
- * **Backward Compatibility:**
- * For backward compatibility with tests, taskId can also be passed as a second parameter.
+ * **LangGraph Node Function Signature:**
+ * LangGraph nodes receive only `(state)` as parameter. The second parameter
+ * passed by LangGraph is the config object, not a custom parameter.
  */
 export async function reviewNode(
-  state: ParallelDevStateType,
-  taskIdParam?: string
+  state: ParallelDevStateType
 ): Promise<ParallelDevStateUpdate> {
   const { config, tasks, tasksPath, activeSprint, globalTasks, currentTaskId } = state;
   const maxTurns = config.maxTurns || 50;
   const startTime = Date.now();
 
-  // Retrieve task ID from parameter (backward compatibility) or state (Send API pattern)
-  const taskId = taskIdParam || currentTaskId;
+  // Retrieve task ID from state (Send API pattern)
+  // LangGraph Send API sets currentTaskId in state when calling this node
+  const taskId = currentTaskId;
   if (!taskId) {
-    console.error('❌ taskId is not provided (neither as parameter nor in state.currentTaskId)');
+    console.error('❌ taskId is not provided in state.currentTaskId');
     return {
       logs: [
         {
           timestamp: new Date(),
           level: 'error',
           source: 'ReviewNode',
-          message: 'taskId is not provided (neither as parameter nor in state.currentTaskId)',
+          message: 'taskId is not provided in state.currentTaskId',
         },
       ],
     };
@@ -80,12 +82,19 @@ export async function reviewNode(
 
   const sprintId = activeSprint.id;
 
-  // Read tasks from file
-  const fileReader = new FileReader(config.baseRepoPath);
+  // Read task from Sprint Backlog
+  const persistence = new DataPersistence(config.baseRepoPath);
 
-  let taskArtifacts: TaskArtifact[];
+  let taskArtifact: any;
   try {
-    taskArtifacts = await fileReader.readJSON<TaskArtifact[]>(tasksPath || '.kugutsu/tasks.json');
+    const backlog = await persistence.loadSprintBacklog(sprintId);
+    if (!backlog || !backlog.tasks) {
+      throw new Error(`Sprint Backlog not found: ${sprintId}`);
+    }
+    taskArtifact = backlog.tasks.find((t: any) => t.id === taskId);
+    if (!taskArtifact) {
+      throw new Error(`Task ${taskId} not found in Sprint Backlog`);
+    }
   } catch (error) {
     return {
       logs: [
@@ -93,24 +102,7 @@ export async function reviewNode(
           timestamp: new Date(),
           level: 'error',
           source: 'ReviewNode',
-          message: `tasks.json の読み込みに失敗: ${error instanceof Error ? error.message : String(error)}`,
-          taskId,
-        },
-      ],
-    };
-  }
-
-  // Find the task
-  const taskArtifact = taskArtifacts.find((t) => t.id === taskId);
-
-  if (!taskArtifact) {
-    return {
-      logs: [
-        {
-          timestamp: new Date(),
-          level: 'error',
-          source: 'ReviewNode',
-          message: `タスク ${taskId} が見つかりません`,
+          message: `Sprint Backlog の読み込みに失敗: ${error instanceof Error ? error.message : String(error)}`,
           taskId,
         },
       ],
@@ -198,6 +190,7 @@ ${state.designDocs.uiuxPath ? `### UI/UX設計
       : '';
 
     // Read instruction.md for additional context
+    const fileReader = new FileReader(config.baseRepoPath);
     const instructionPath = `.kugutsu/sprints/${sprintId}/tasks/${taskId}/instruction.md`;
     let instructionContent = '';
     try {
@@ -429,20 +422,18 @@ REVIEW_STATUS: APPROVED または CHANGES_REQUESTED
     await AIFileWriter.writeFile(provider, reviewPath, reviewArtifact, config.baseRepoPath);
     console.log(`📝 レビュー結果を保存しました: ${reviewPath}`);
 
-    // Update task status in tasks.json (only if approved) using AI
+    // Update task status in Sprint Backlog
     if (finalStatus === 'approved') {
-      const updates = {
-        status: 'reviewed',
-        updatedAt: new Date().toISOString(),
-      };
-      await AIFileWriter.updateTaskInTasksJson(
-        provider,
-        tasksPath || '.kugutsu/tasks.json',
-        taskId,
-        updates,
-        config.baseRepoPath
-      );
-      console.log(`✅ タスクステータス(ファイル)を更新しました: reviewed`);
+      await persistence.updateSprintBacklogTask(sprintId, taskId, {
+        status: 'completed', // reviewedではなくcompletedに変更（TaskStateMachineに合わせる）
+      });
+      console.log(`✅ Sprint Backlogのタスクステータスを更新しました: completed`);
+    } else {
+      // changes_requestedの場合はin_progressに戻す
+      await persistence.updateSprintBacklogTask(sprintId, taskId, {
+        status: 'in_progress',
+      });
+      console.log(`⚠️ Sprint Backlogのタスクステータスを更新しました: in_progress (修正要求)`);
     }
 
     // Create State Review object

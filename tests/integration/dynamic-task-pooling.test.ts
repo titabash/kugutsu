@@ -143,6 +143,21 @@ describe('Dynamic Task Pooling Integration', () => {
     ];
 
     initialState.tasks = tasks;
+    initialState.activeSprint = {
+      id: 'sprint-pooling-001',
+      name: 'Pooling Sprint',
+      goal: 'Test pooling',
+      taskIds: tasks.map(t => t.id),
+      startedAt: new Date(),
+      status: 'active',
+      deployable: false,
+      metadata: {
+        estimatedHours: 8,
+        blockers: [],
+        completedTasksCount: 0,
+        failedTasksCount: 0,
+      },
+    };
 
     // Step 1: Initial dispatch (should dispatch T1-T5, 5 available slots)
     let state = initialState;
@@ -274,6 +289,21 @@ describe('Dynamic Task Pooling Integration', () => {
     ];
 
     initialState.tasks = tasks;
+    initialState.activeSprint = {
+      id: 'sprint-pooling-002',
+      name: 'Pooling Sprint 2',
+      goal: 'Test pooling dependencies',
+      taskIds: tasks.map(t => t.id),
+      startedAt: new Date(),
+      status: 'active',
+      deployable: false,
+      metadata: {
+        estimatedHours: 8,
+        blockers: [],
+        completedTasksCount: 0,
+        failedTasksCount: 0,
+      },
+    };
 
     // Step 1: Initial dispatch (T1-T5)
     let state = initialState;
@@ -346,6 +376,21 @@ describe('Dynamic Task Pooling Integration', () => {
     ];
 
     initialState.tasks = tasks;
+    initialState.activeSprint = {
+      id: 'sprint-pooling-003',
+      name: 'Pooling Sprint 3',
+      goal: 'Test no slots',
+      taskIds: tasks.map(t => t.id),
+      startedAt: new Date(),
+      status: 'active',
+      deployable: false,
+      metadata: {
+        estimatedHours: 8,
+        blockers: [],
+        completedTasksCount: 0,
+        failedTasksCount: 0,
+      },
+    };
 
     // Step 1: Initial dispatch (T1-T2)
     let state = initialState;

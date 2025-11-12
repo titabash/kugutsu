@@ -1,4 +1,4 @@
-# AIスクラム開発ワークフロー仕様書
+# AI スクラム開発ワークフロー仕様書
 
 **バージョン**: 1.0
 **最終更新**: 2025-01-09
@@ -20,9 +20,9 @@
 
 ## 1. システム概要
 
-### 1.1 統一Scrumワークフロー
+### 1.1 統一 Scrum ワークフロー
 
-本システムは**統一Scrumワークフロー**（Unified Scrum Workflow）を採用しています。以前は複雑度に応じて3つの独立したワークフローが存在していましたが、現在は単一の統合ワークフローに一本化されています。
+本システムは**統一 Scrum ワークフロー**（Unified Scrum Workflow）を採用しています。以前は複雑度に応じて 3 つの独立したワークフローが存在していましたが、現在は単一の統合ワークフローに一本化されています。
 
 - ~~`createParallelDevGraph`~~ (廃止)
 - ~~`createSprintDrivenGraph`~~ (廃止)
@@ -31,36 +31,38 @@
 
 ### 1.2 設計思想
 
-#### AI-First原則
+#### AI-First 原則
 
-すべての動的な意思決定とファイル操作はAIによって実行されます。ハードコードされたロジックは最小限に抑え、AIの柔軟性を最大限に活用します。
+すべての動的な意思決定とファイル操作は AI によって実行されます。ハードコードされたロジックは最小限に抑え、AI の柔軟性を最大限に活用します。
 
 **禁止事項**:
+
 - ビジネスロジックのハードコード
-- 固定的なif/else分岐による技術スタック判定
-- 手動ファイル操作（fs.writeFileなど）
+- 固定的な if/else 分岐による技術スタック判定
+- 手動ファイル操作（fs.writeFile など）
 
 **推奨事項**:
-- Claude Code SDK経由でのファイル操作
-- AIによる動的な判断と実行
-- DataPersistenceユーティリティの活用
 
-#### Scrum準拠
+- Claude Code SDK 経由でのファイル操作
+- AI による動的な判断と実行
+- DataPersistence ユーティリティの活用
 
-Scrumフレームワークの標準プラクティスに準拠します：
+#### Scrum 準拠
+
+Scrum フレームワークの標準プラクティスに準拠します：
 
 - **Product Backlog**: プロジェクト全体の未実施タスク
 - **Sprint Backlog**: 現在のスプリントで実施するタスク
-- **スプリント単位の開発**: 8-16時間単位のイテレーション
+- **スプリント単位の開発**: 8-16 時間単位のイテレーション
 - **レビューとレトロスペクティブ**: スプリント完了時の振り返り
 
 #### 並列実行の標準化
 
-タスクの並列実行はシステムの標準機能であり、「モード」ではありません。複数のAIエンジニアが同時に異なるタスクに取り組み、真の並列処理を実現します。
+タスクの並列実行はシステムの標準機能であり、「モード」ではありません。複数の AI エンジニアが同時に異なるタスクに取り組み、真の並列処理を実現します。
 
 ### 1.3 ワークフロー統合の経緯
 
-統合前の3つのワークフローは以下の問題を抱えていました：
+統合前の 3 つのワークフローは以下の問題を抱えていました：
 
 - コードの重複
 - 保守性の低下
@@ -105,14 +107,14 @@ Scrumフレームワークの標準プラクティスに準拠します：
 
 ### 2.2 ディレクトリ設計原則
 
-#### 原則1: Sprint配下の統一管理
+#### 原則 1: Sprint 配下の統一管理
 
 **全てのタスクは必ず`.kugutsu/sprints/sprint-{N}/`配下で管理されます。**
 
 - ❌ `.kugutsu/tasks/` は使用しない
 - ✅ `.kugutsu/sprints/sprint-1/tasks/` を使用
 
-#### 原則2: 単一責任の原則
+#### 原則 2: 単一責任の原則
 
 各ディレクトリは明確な責務を持ちます：
 
@@ -120,7 +122,7 @@ Scrumフレームワークの標準プラクティスに準拠します：
 - `product-backlog/`: 未割り当てタスクの保管
 - `sprints/sprint-{N}/`: スプリント単位の作業データ
 
-#### 原則3: 世代管理
+#### 原則 3: 世代管理
 
 スプリントごとにディレクトリを分離し、履歴を保持します：
 
@@ -137,7 +139,7 @@ sprints/
 
 ### 3.1 Option A: タスク移動方式（採用）
 
-**Scrum標準に最も準拠した方式**
+**Scrum 標準に最も準拠した方式**
 
 #### 3.1.1 タスクのライフサイクル
 
@@ -148,26 +150,30 @@ sprints/
 #### 3.1.2 タスク移動フロー
 
 1. **タスク生成** (TaskBreakdownNode)
+
    - 全タスクを`product-backlog/backlog.json`に追加
    - 状態: `pending`
 
 2. **スプリント計画** (SprintPlanningNode)
-   - Product Backlogから優先度順にタスクを選択
-   - 選択したタスクを**Product Backlogから削除**
+
+   - Product Backlog から優先度順にタスクを選択
+   - 選択したタスクを**Product Backlog から削除**
    - Sprint Backlog (`sprints/sprint-{N}/sprint-backlog.json`) に**移動**
 
 3. **タスク実行** (EngineerNode)
-   - Sprint Backlogからタスクを読み取り
-   - 実装後、Sprint Backlog内のタスク状態を更新
+
+   - Sprint Backlog からタスクを読み取り
+   - 実装後、Sprint Backlog 内のタスク状態を更新
    - 状態: `in_progress` → `in_review` → `completed`
 
 4. **スプリント完了** (SprintReviewNode)
-   - 未完了タスクを**Sprint BacklogからProduct Backlogへ移動**
-   - 完了タスクはSprint Backlog内に保持（履歴）
+   - 未完了タスクを**Sprint Backlog から Product Backlog へ移動**
+   - 完了タスクは Sprint Backlog 内に保持（履歴）
 
 #### 3.1.3 データ構造
 
 **Product Backlog** (`.kugutsu/product-backlog/backlog.json`):
+
 ```json
 {
   "tasks": [
@@ -191,6 +197,7 @@ sprints/
 ```
 
 **Sprint Backlog** (`.kugutsu/sprints/sprint-1/sprint-backlog.json`):
+
 ```json
 {
   "sprintNumber": 1,
@@ -219,9 +226,9 @@ pending → ready → in_progress → in_review → completed
                                           ↘ failed
 ```
 
-- **pending**: Product Backlogに存在、未割り当て
-- **ready**: Sprint Backlogに移動済み、実行待機中
-- **in_progress**: AI Engineerが実装中
+- **pending**: Product Backlog に存在、未割り当て
+- **ready**: Sprint Backlog に移動済み、実行待機中
+- **in_progress**: AI Engineer が実装中
 - **in_review**: 実装完了、レビュー待ち
 - **completed**: レビュー承認、マージ完了
 - **failed**: 実装失敗またはレビュー却下
@@ -232,37 +239,40 @@ pending → ready → in_progress → in_review → completed
 
 ### 4.1 ノード一覧と責務
 
-| ノード | 責務 | 生成ファイル | DataPersistence使用 |
-|--------|------|-------------|-------------------|
-| **AnalyzeComplexityNode** | 複雑度判定 | - | - |
-| **CheckModeNode** | 継続モード検出 | `repository/architecture/tech-stack.json` | ✅ |
-| **DirectorNode** | ストーリーマッピング作成 | `story-mapping.json` | ✅ |
-| **ReviewStoryMappingNode** | ストーリーマッピングレビュー | - | ✅ (修正予定) |
-| **TechLeadDesignNode** | 設計書生成 | `repository/architecture/{db,api,uiux}.json` | ✅ |
-| **ReviewDesignNode** | 設計書レビュー | - | ✅ |
-| **TaskBreakdownNode** | タスク分解 | `product-backlog/backlog.json`, `sprints/sprint-{N}/tasks/{taskId}/instruction.md` | ✅ |
-| **ProductOwnerNode** | 要件分析（Low複雑度） | `requirements.json` | 部分的 |
-| **SprintPlanningNode** | スプリント計画 | `sprints/sprint-{N}/sprint-plan.json`, `sprint-backlog.json` | ⚠️ (修正予定) |
-| **EngineerDispatchNode** | タスク割り当て | - | ✅ |
-| **EngineerNode** | タスク実装 | `sprints/sprint-{N}/tasks/{taskId}/implementation.md` | ✅ |
-| **ReviewNode** | コードレビュー | `sprints/sprint-{N}/tasks/{taskId}/review.json` | ✅ |
-| **MergeCoordinatorNode** | マージ調整 | - | - |
-| **ConflictResolverNode** | コンフリクト解決 | - | - |
-| **SprintReviewNode** | スプリントレビュー | - | ✅ |
+| ノード                     | 責務                         | 生成ファイル                                                                       | DataPersistence 使用 |
+| -------------------------- | ---------------------------- | ---------------------------------------------------------------------------------- | -------------------- |
+| **AnalyzeComplexityNode**  | 複雑度判定                   | -                                                                                  | -                    |
+| **CheckModeNode**          | 継続モード検出               | `repository/architecture/tech-stack.json`                                          | ✅                   |
+| **DirectorNode**           | ストーリーマッピング作成     | `story-mapping.json`                                                               | ✅                   |
+| **ReviewStoryMappingNode** | ストーリーマッピングレビュー | -                                                                                  | ✅ (修正予定)        |
+| **TechLeadDesignNode**     | 設計書生成                   | `repository/architecture/{db,api,uiux}.json`                                       | ✅                   |
+| **ReviewDesignNode**       | 設計書レビュー               | -                                                                                  | ✅                   |
+| **TaskBreakdownNode**      | タスク分解                   | `product-backlog/backlog.json`, `sprints/sprint-{N}/tasks/{taskId}/instruction.md` | ✅                   |
+| **ProductOwnerNode**       | 要件分析（Low 複雑度）       | `requirements.json`                                                                | 部分的               |
+| **SprintPlanningNode**     | スプリント計画               | `sprints/sprint-{N}/sprint-plan.json`, `sprint-backlog.json`                       | ⚠️ (修正予定)        |
+| **EngineerDispatchNode**   | タスク割り当て               | -                                                                                  | ✅                   |
+| **EngineerNode**           | タスク実装                   | `sprints/sprint-{N}/tasks/{taskId}/implementation.md`                              | ✅                   |
+| **ReviewNode**             | コードレビュー               | `sprints/sprint-{N}/tasks/{taskId}/review.json`                                    | ✅                   |
+| **MergeCoordinatorNode**   | マージ調整                   | -                                                                                  | -                    |
+| **ConflictResolverNode**   | コンフリクト解決             | -                                                                                  | -                    |
+| **SprintReviewNode**       | スプリントレビュー           | -                                                                                  | ✅                   |
 
 ### 4.2 重要ノードの詳細仕様
 
 #### 4.2.1 AnalyzeComplexityNode
 
-**目的**: ユーザーリクエストの複雑度をAI判定し、適切なフローに分岐
+**目的**: ユーザーリクエストの複雑度を AI 判定し、適切なフローに分岐
 
 **入力**:
+
 - `state.userRequest`: ユーザーからの開発要求
 
 **出力**:
+
 - `state.metadata.requiresDetailedDesign`: `true` (High) / `false` (Low)
 
 **分岐**:
+
 - **High**: `director_ai` → ストーリーマッピング作成フロー
 - **Low**: `product_owner` → 直接タスク分解フロー
 
@@ -270,66 +280,79 @@ pending → ready → in_progress → in_review → completed
 
 **目的**: 設計書から実装可能なタスクに分解
 
-**High複雑度時の入力**:
-- `state.storyMapping`: ストーリーマッピング
-- `state.designDocs.databasePath`: DB設計書パス
-- `state.designDocs.apiPath`: API仕様書パス
-- `state.designDocs.uiuxPath`: UI/UX設計書パス
+**High 複雑度時の入力**:
 
-**Low複雑度時の入力**:
+- `state.storyMapping`: ストーリーマッピング
+- `state.designDocs.databasePath`: DB 設計書パス
+- `state.designDocs.apiPath`: API 仕様書パス
+- `state.designDocs.uiuxPath`: UI/UX 設計書パス
+
+**Low 複雑度時の入力**:
+
 - `state.requirementsPath`: 要件定義パス
 
 **出力**:
+
 - `product-backlog/backlog.json`: 全タスク
 - `sprints/sprint-1/tasks/{taskId}/instruction.md`: 各タスクの実装指示
 
-**重要**: instruction.mdの生成パスは必ず`sprints/sprint-{N}/tasks/{taskId}/instruction.md`とし、ProductOwnerNodeとの衝突を回避します。
+**重要**: instruction.md の生成パスは必ず`sprints/sprint-{N}/tasks/{taskId}/instruction.md`とし、ProductOwnerNode との衝突を回避します。
 
 #### 4.2.3 SprintPlanningNode
 
-**目的**: Product BacklogからタスクをSprint Backlogへ移動
+**目的**: Product Backlog からタスクを Sprint Backlog へ移動
 
 **タスク選択基準**:
+
 - 優先度（priority）
 - 依存関係（dependencies）
-- ポイント見積もり（estimatedPoints）の合計が8-16時間相当
+- ポイント見積もり（estimatedPoints）の合計が 8-16 時間相当
 
-**ファイル操作** (DataPersistence使用に修正予定):
-1. Product Backlogから選択タスクを削除
-2. Sprint Backlogへ追加
-3. Sprint Planを生成
+**ファイル操作** (DataPersistence 使用に修正予定):
+
+1. Product Backlog から選択タスクを削除
+2. Sprint Backlog へ追加
+3. Sprint Plan を生成
 
 #### 4.2.4 EngineerNode
 
 **目的**: タスクを並列実装
 
 **実装時の参照資料**:
+
 - `state.storyMapping`: 全体文脈の理解
-- `state.designDocs`: DB/API/UI設計書
+- `state.designDocs`: DB/API/UI 設計書
 - `state.sprintPlanPath`: スプリント計画
 - `sprints/sprint-{N}/tasks/{taskId}/instruction.md`: タスク実装指示
 
 **プロンプト構成**:
+
 ```markdown
 # Task Implementation
 
 ## タスク情報
+
 - ID: {taskId}
 - タイトル: {title}
 
 ## 📖 参照：ストーリーマッピング
+
 {storyMapping}
 
 ## 📐 参照：設計書
-### データベース設計
-ファイルパス: {databasePath}
-**Readツールで読み込んで参照してください**
 
-### API仕様
+### データベース設計
+
+ファイルパス: {databasePath}
+**Read ツールで読み込んで参照してください**
+
+### API 仕様
+
 ファイルパス: {apiPath}
-**Readツールで読み込んで参照してください**
+**Read ツールで読み込んで参照してください**
 
 ## 📝 実装指示
+
 {instruction.md の内容}
 ```
 
@@ -338,12 +361,14 @@ pending → ready → in_progress → in_review → completed
 **目的**: 実装コードをレビュー
 
 **レビュー観点**:
+
 1. **設計書との整合性** ⭐ 最優先
+
    - ストーリーマッピングで定義されたユーザー価値を提供しているか
-   - DB設計に準拠しているか
-   - API仕様に準拠しているか
-   - UI/UX設計に準拠しているか
-   - instruction.mdに従っているか
+   - DB 設計に準拠しているか
+   - API 仕様に準拠しているか
+   - UI/UX 設計に準拠しているか
+   - instruction.md に従っているか
 
 2. コード品質
 3. テストカバレッジ
@@ -352,6 +377,7 @@ pending → ready → in_progress → in_review → completed
 6. ドキュメント
 
 **出力**:
+
 - `sprints/sprint-{N}/tasks/{taskId}/review.json`: レビュー結果
 
 ---
@@ -453,7 +479,7 @@ Product Backlog
 SprintPlanning  END
 ```
 
-### 5.2 High複雑度フロー詳細
+### 5.2 High 複雑度フロー詳細
 
 ```
 AnalyzeComplexity (High判定)
@@ -479,40 +505,41 @@ TaskBreakdownNode
 CheckMode → SprintPlanning → ...
 ```
 
-### 5.3 Low複雑度フロー詳細
+### 5.3 Low 複雑度フロー詳細
 
 ```
 AnalyzeComplexity (Low判定)
     ↓
 ProductOwnerNode
     → 生成: requirements.json
-    → 生成: tasks.json (一時的、後でSprint Backlogに統合)
-    → 生成: tasks/{taskId}/instruction.md (後でsprints配下に移行予定)
+    → 生成: product-backlog/backlog.json (Product Backlog)
     ↓
 CheckMode → SprintPlanning → ...
 ```
 
-**注意**: ProductOwnerNodeは現在、Low複雑度時の簡易フローで使用されますが、instruction.md生成パスがTaskBreakdownNodeと衝突する問題があります（修正予定）。
+**統一化完了**: Low 複雑度時も High 複雑度時と同様に Product Backlog を作成し、SprintPlanningNode が Product Backlog からタスクを読み込んで Sprint Backlog に移動します。
 
 ---
 
 ## 6. ファイル操作ガイドライン
 
-### 6.1 AI-First原則の徹底
+### 6.1 AI-First 原則の徹底
 
-**すべてのファイル操作はAI経由で実行**
+**すべてのファイル操作は AI 経由で実行**
 
 ❌ **禁止**:
+
 ```typescript
 // 直接fs操作
-import fs from 'fs/promises';
+import fs from "fs/promises";
 await fs.writeFile(path, content);
 ```
 
 ✅ **推奨**:
+
 ```typescript
 // DataPersistence経由
-import { DataPersistence } from '../utils/DataPersistence.js';
+import { DataPersistence } from "../utils/DataPersistence.js";
 const persistence = new DataPersistence(baseRepoPath);
 await persistence.saveStoryMapping(projectId, storyMapping);
 ```
@@ -522,14 +549,14 @@ await persistence.saveStoryMapping(projectId, storyMapping);
 ```typescript
 // Claude Code SDK経由
 const result = await provider.execute(prompt, {
-  allowedTools: ['Write'],
-  permissionMode: 'acceptEdits',
+  allowedTools: ["Write"],
+  permissionMode: "acceptEdits",
 });
 ```
 
-### 6.2 DataPersistence必須化
+### 6.2 DataPersistence 必須化
 
-以下のノードは**必ずDataPersistenceを使用**:
+以下のノードは**必ず DataPersistence を使用**:
 
 - ✅ CheckModeNode
 - ✅ DirectorNode
@@ -538,19 +565,20 @@ const result = await provider.execute(prompt, {
 - ⚠️ SprintPlanningNode (修正予定)
 - ⚠️ ReviewStoryMappingNode (修正予定)
 
-### 6.3 instruction.md生成ルール
+### 6.3 instruction.md 生成ルール
 
 **衝突回避のための統一ルール**:
 
-| ノード | 生成パス | 用途 |
-|--------|---------|------|
-| TaskBreakdownNode | `sprints/sprint-{N}/tasks/{taskId}/instruction.md` | High複雑度時のタスク指示 |
-| ProductOwnerNode | ~~`tasks/{taskId}/instruction.md`~~ | ❌ 廃止予定 |
+| ノード            | 生成パス                                           | 用途                      |
+| ----------------- | -------------------------------------------------- | ------------------------- |
+| TaskBreakdownNode | `sprints/sprint-{N}/tasks/{taskId}/instruction.md` | High 複雑度時のタスク指示 |
+| ProductOwnerNode  | ~~`tasks/{taskId}/instruction.md`~~                | ❌ 廃止予定               |
 
 **修正方針**:
-1. ProductOwnerNodeはinstruction.md生成を停止
-2. TaskBreakdownNodeに統一
-3. Low複雑度時もTaskBreakdownNodeを経由
+
+1. ProductOwnerNode は instruction.md 生成を停止
+2. TaskBreakdownNode に統一
+3. Low 複雑度時も TaskBreakdownNode を経由
 
 ### 6.4 ファイルパス命名規則
 
@@ -558,17 +586,17 @@ const result = await provider.execute(prompt, {
 
 ```typescript
 // ✅ 正しい
-techStackPath: '.kugutsu/repository/architecture/tech-stack.json'
+techStackPath: ".kugutsu/repository/architecture/tech-stack.json";
 
 // ❌ 誤り
-techStackPath: 'repository/architecture/tech-stack.json'
+techStackPath: "repository/architecture/tech-stack.json";
 ```
 
 ---
 
 ## 7. 状態管理
 
-### 7.1 LangGraph State構造
+### 7.1 LangGraph State 構造
 
 ```typescript
 interface ParallelDevState {
@@ -578,8 +606,8 @@ interface ParallelDevState {
   config: Config;
 
   // タスク管理
-  tasks: Task[];              // State内のタスク（実行時の状態管理用）
-  globalTasks: GlobalTask[];  // グローバルタスクキュー
+  tasks: Task[]; // State内のタスク（実行時の状態管理用）
+  globalTasks: GlobalTask[]; // グローバルタスクキュー
   completedTasks: Task[];
   failedTasks: Task[];
 
@@ -591,7 +619,7 @@ interface ParallelDevState {
   // 設計書パス
   techStackPath?: string;
   requirementsPath?: string;
-  tasksPath?: string;         // 廃止予定
+  tasksPath?: string; // 廃止予定
   storyMapping?: StoryMapping;
   designDocs?: {
     databasePath?: string;
@@ -609,7 +637,7 @@ interface ParallelDevState {
 
   // メタデータ
   metadata: {
-    requiresDetailedDesign?: boolean;  // 複雑度判定結果
+    requiresDetailedDesign?: boolean; // 複雑度判定結果
     hasErrors?: boolean;
     errors?: string[];
   };
@@ -622,16 +650,16 @@ interface ParallelDevState {
 }
 ```
 
-### 7.2 Stateの更新パターン
+### 7.2 State の更新パターン
 
-**Reducer方式**（LangGraphの標準）:
+**Reducer 方式**（LangGraph の標準）:
 
 ```typescript
 // ノードから返却
 return {
-  tasks: [updatedTask],      // 既存タスクに追加
-  logs: [newLog],            // 既存ログに追加
-  techStackPath: 'path',     // 上書き
+  tasks: [updatedTask], // 既存タスクに追加
+  logs: [newLog], // 既存ログに追加
+  techStackPath: "path", // 上書き
 };
 
 // LangGraphが自動マージ
@@ -676,6 +704,7 @@ return {
 ### 8.3 イベント駆動フロー
 
 主要イベント:
+
 - `DEVELOPMENT_COMPLETED`: タスク実装完了
 - `REVIEW_COMPLETED`: レビュー完了
 - `MERGE_READY`: マージ準備完了
@@ -689,12 +718,12 @@ return {
 
 ### 9.1 参照ドキュメント
 
-| ドキュメント | 内容 | 関係 |
-|-------------|------|------|
-| **本仕様書** | AIスクラム開発ワークフロー公式仕様 | 最上位 |
-| [parallel-development-workflow.md](./parallel-development-workflow.md) | パイプライン詳細、イベント駆動アーキテクチャ | 詳細参照 |
-| [kugutsu-file-management.md](./kugutsu-file-management.md) | ファイル操作詳細、DataPersistence使用方法 | 詳細参照 |
-| [AI_PARALLEL_DEVELOPMENT_DESIGN.md](./AI_PARALLEL_DEVELOPMENT_DESIGN.md) | システム設計書（一部古い情報あり） | 参考 |
+| ドキュメント                                                             | 内容                                         | 関係     |
+| ------------------------------------------------------------------------ | -------------------------------------------- | -------- |
+| **本仕様書**                                                             | AI スクラム開発ワークフロー公式仕様          | 最上位   |
+| [parallel-development-workflow.md](./parallel-development-workflow.md)   | パイプライン詳細、イベント駆動アーキテクチャ | 詳細参照 |
+| [kugutsu-file-management.md](./kugutsu-file-management.md)               | ファイル操作詳細、DataPersistence 使用方法   | 詳細参照 |
+| [AI_PARALLEL_DEVELOPMENT_DESIGN.md](./AI_PARALLEL_DEVELOPMENT_DESIGN.md) | システム設計書（一部古い情報あり）           | 参考     |
 
 ### 9.2 ドキュメント階層
 
@@ -709,9 +738,9 @@ AI_SCRUM_WORKFLOW_SPECIFICATION.md (本書)
 
 ## 10. 変更履歴
 
-| バージョン | 日付 | 変更内容 |
-|-----------|------|---------|
-| 1.0 | 2025-01-09 | 初版作成 |
+| バージョン | 日付       | 変更内容 |
+| ---------- | ---------- | -------- |
+| 1.0        | 2025-01-09 | 初版作成 |
 
 ---
 
@@ -719,10 +748,10 @@ AI_SCRUM_WORKFLOW_SPECIFICATION.md (本書)
 
 ### 11.1 修正予定事項
 
-1. **SprintPlanningNode**: DataPersistence使用への移行
-2. **ReviewStoryMappingNode**: DataPersistence使用への移行
-3. **ProductOwnerNode**: instruction.md生成の廃止
-4. **tasks.json**: sprint-backlog.jsonへの完全移行
+1. **SprintPlanningNode**: DataPersistence 使用への移行
+2. **ReviewStoryMappingNode**: DataPersistence 使用への移行
+3. **ProductOwnerNode**: instruction.md 生成の廃止
+4. **tasks.json**: sprint-backlog.json への完全移行
 5. **テスト更新**: 上記変更に伴うテスト修正
 
 ### 11.2 追加予定機能

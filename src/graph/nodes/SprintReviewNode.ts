@@ -15,6 +15,7 @@ import type { Sprint } from '../types.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 import { DataPersistence } from '../../utils/DataPersistence.js';
 import { MessageHandler } from '../../utils/MessageHandler.js';
+import { JSONExtractor } from '../../utils/JSONExtractor.js';
 
 /**
  * Sprint Review Node
@@ -55,17 +56,30 @@ export async function sprintReviewNode(
   const persistence = new DataPersistence(config.baseRepoPath);
   await persistence.initialize();
 
-  // スプリントに含まれるタスクの完了状況を確認
-  const sprintTasks = globalTasks.filter((task) =>
-    activeSprint.taskIds.includes(task.id)
-  );
+  // スプリントに含まれるタスクの完了状況を確認（Sprint Backlogから読み込む）
+  let sprintBacklog: any;
+  try {
+    sprintBacklog = await persistence.loadSprintBacklog(activeSprint.id);
+    if (!sprintBacklog || !sprintBacklog.tasks) {
+      console.warn('⚠️ Sprint Backlogが見つかりません。state.globalTasksを使用します。');
+      sprintBacklog = null;
+    }
+  } catch (error) {
+    console.warn('⚠️ Sprint Backlogの読み込みに失敗。state.globalTasksを使用します。', error);
+    sprintBacklog = null;
+  }
+
+  // Sprint Backlogから読み込むか、fallbackでglobalTasksを使用
+  const sprintTasks = sprintBacklog?.tasks
+    ? sprintBacklog.tasks.filter((task: any) => activeSprint.taskIds.includes(task.id))
+    : globalTasks.filter((task) => activeSprint.taskIds.includes(task.id));
 
   const completedTasks = sprintTasks.filter(
-    (task) => task.status === 'completed'
+    (task: any) => task.status === 'completed'
   );
-  const failedTasks = sprintTasks.filter((task) => task.status === 'failed');
+  const failedTasks = sprintTasks.filter((task: any) => task.status === 'failed');
   const incompleteTasks = sprintTasks.filter(
-    (task) =>
+    (task: any) =>
       task.status !== 'completed' &&
       task.status !== 'failed'
   );
@@ -164,15 +178,15 @@ JSON形式で以下を出力してください：
     handler.complete(true, 'デプロイ可能性チェックが完了しました');
 
     // JSONを抽出してパース
-    const jsonMatch = aiResponseText.match(/```json\n([\s\S]*?)\n```/);
+    const extractionResult = JSONExtractor.extractFromCodeBlock<{ deployable: boolean; e2eTestable: boolean; reasoning: string; blockers?: string[] }>(aiResponseText);
     let deployable = true;
     let e2eTestable = true;
     let reasoning = '';
     let blockers: string[] = [];
 
-    if (jsonMatch) {
+    if (extractionResult.success) {
       try {
-        const result = JSON.parse(jsonMatch[1]);
+        const result = extractionResult.data!;
         deployable = result.deployable;
         e2eTestable = result.e2eTestable;
         reasoning = result.reasoning;
@@ -191,7 +205,7 @@ JSON形式で以下を出力してください：
       }
     } else {
       console.warn(
-        '⚠️ AI応答からJSONを抽出できませんでした。デフォルトでデプロイ可能とします。'
+        `⚠️ AI応答からJSONを抽出できませんでした: ${extractionResult.error}。デフォルトでデプロイ可能とします。`
       );
       deployable = true;
       e2eTestable = true;
@@ -214,17 +228,71 @@ JSON形式で以下を出力してください：
     await persistence.addToSprintHistory(completedSprint);
     console.log(`📚 スプリント履歴に記録: ${completedSprint.id}`);
 
+    // 未完了タスクをProduct Backlogに戻す（タスク移動）
+    if (incompleteTasks.length > 0) {
+      try {
+        const productBacklog = await persistence.loadProductBacklog();
+        const currentBacklogTasks = productBacklog?.tasks || [];
+
+        // 未完了タスクをProduct Backlog形式に変換
+        const tasksToReturn = incompleteTasks.map((task: any) => ({
+          id: task.id,
+          type: task.type || 'feature',
+          title: task.title,
+          description: task.description,
+          priority: task.priority || 50,
+          estimatedPoints: task.estimatedPoints || 8,
+          dependencies: task.dependencies || [],
+          status: 'pending',
+          createdAt: task.createdAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }));
+
+        // 既存のタスクとマージ（重複は更新）
+        const taskMap = new Map(currentBacklogTasks.map((t: any) => [t.id, t]));
+        tasksToReturn.forEach((task) => {
+          taskMap.set(task.id, task);
+        });
+
+        const updatedBacklog = {
+          tasks: Array.from(taskMap.values()),
+          metadata: {
+            totalTasks: taskMap.size,
+            lastUpdated: new Date().toISOString(),
+          },
+        };
+
+        await persistence.saveProductBacklog(updatedBacklog);
+        console.log(`✅ ${incompleteTasks.length}件の未完了タスクをProduct Backlogに戻しました`);
+      } catch (error) {
+        console.warn('⚠️ Product Backlogへの戻しに失敗しましたが、処理を続行します:', error);
+      }
+    }
+
     // アクティブスプリントをクリア
     await persistence.saveActiveSprint(null);
     console.log('🗑️ アクティブスプリントをクリアしました');
 
-    // 未割り当てタスクが残っているか確認
-    const remainingUnassignedTasks = globalTasks.filter(
-      (task) =>
-        !task.sprint &&
-        task.status !== 'completed' &&
-        task.status !== 'failed'
-    );
+    // 未割り当てタスクが残っているか確認（Product Backlogから）
+    let remainingUnassignedTasks: any[] = [];
+    try {
+      const productBacklog = await persistence.loadProductBacklog();
+      if (productBacklog && productBacklog.tasks) {
+        remainingUnassignedTasks = productBacklog.tasks.filter(
+          (task: any) =>
+            task.status !== 'completed' &&
+            task.status !== 'failed'
+        );
+      }
+    } catch (error) {
+      console.warn('⚠️ Product Backlogの読み込みに失敗。state.globalTasksを使用します。', error);
+      remainingUnassignedTasks = globalTasks.filter(
+        (task) =>
+          !task.sprint &&
+          task.status !== 'completed' &&
+          task.status !== 'failed'
+      );
+    }
 
     console.log(
       `📊 残りの未割り当てタスク: ${remainingUnassignedTasks.length}件`
@@ -352,6 +420,16 @@ export function sprintReviewRouter(state: ParallelDevStateType): string {
     state.activeSprint!.taskIds.includes(task.id)
   );
 
+  // Check for tasks in different states
+  const pendingTasks = sprintTasks.filter(
+    (task) => task.status === 'pending'
+  );
+  const inReviewTasks = sprintTasks.filter(
+    (task) => task.status === 'in_review'
+  );
+  const inProgressTasks = sprintTasks.filter(
+    (task) => task.status === 'in_progress'
+  );
   const incompleteTasks = sprintTasks.filter(
     (task) =>
       task.status !== 'completed' &&
@@ -359,16 +437,34 @@ export function sprintReviewRouter(state: ParallelDevStateType): string {
   );
 
   console.log(`[SprintReviewRouter] スプリントタスク: ${sprintTasks.length}件`);
-  console.log(`[SprintReviewRouter] 未完了: ${incompleteTasks.length}件`);
+  console.log(`[SprintReviewRouter] pending: ${pendingTasks.length}件, in_progress: ${inProgressTasks.length}件, in_review: ${inReviewTasks.length}件`);
 
-  // スプリント内に未完了タスクがある場合、スプリント継続
-  if (incompleteTasks.length > 0) {
-    console.log('➡️ ルーティング: engineer_dispatch (スプリント継続)');
+  // Priority routing:
+  // 1. If there are in_review tasks, route to review_dispatch
+  if (inReviewTasks.length > 0) {
+    console.log('➡️ ルーティング: review_dispatch (レビュー待ちタスクあり)');
+    return 'review_dispatch';
+  }
+
+  // 2. If there are pending tasks, route to engineer_dispatch
+  if (pendingTasks.length > 0) {
+    console.log('➡️ ルーティング: engineer_dispatch (pendingタスクあり)');
     return 'engineer_dispatch';
   }
 
-  // スプリント内の全タスク完了 → SprintReviewNode が状態を更新する
-  // 次の呼び出しで activeSprint がクリアされるため、ここでは sprint_planning にルーティング
-  console.log('➡️ ルーティング: sprint_planning (スプリント完了、次スプリント検討)');
-  return 'sprint_planning';
+  // 3. If there are in_progress tasks, wait (they're being worked on)
+  if (inProgressTasks.length > 0) {
+    console.log('➡️ ルーティング: engineer_dispatch (in_progressタスク処理中)');
+    return 'engineer_dispatch'; // This will be a no-op but maintains flow
+  }
+
+  // 4. All tasks completed
+  if (incompleteTasks.length === 0) {
+    console.log('➡️ ルーティング: sprint_planning (スプリント完了、次スプリント検討)');
+    return 'sprint_planning';
+  }
+
+  // Fallback (should not reach here)
+  console.log('➡️ ルーティング: engineer_dispatch (スプリント継続)');
+  return 'engineer_dispatch';
 }

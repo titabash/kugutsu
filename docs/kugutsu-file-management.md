@@ -64,12 +64,15 @@ Scrum標準に準拠した管理方式を採用：
 
 以下のパスは旧仕様で使用されていましたが、現在は廃止されています：
 
+- ❌ `.kugutsu/tasks.json` → ✅ `.kugutsu/sprints/sprint-{N}/sprint-backlog.json` (Sprint Backlog)
 - ❌ `.kugutsu/tasks/tasks.json` → ✅ `.kugutsu/sprints/sprint-{N}/sprint-backlog.json`
 - ❌ `.kugutsu/tasks/global-queue.json` → ✅ `.kugutsu/product-backlog/backlog.json`
 - ❌ `.kugutsu/tasks/{taskId}/` → ✅ `.kugutsu/sprints/sprint-{N}/tasks/{taskId}/`
 - ❌ `.kugutsu/sprints/active-sprint.json` → ✅ `.kugutsu/sprints/sprint-{N}/sprint-plan.json`
 - ❌ `.kugutsu/projects/{projectId}/` → ✅ `.kugutsu/repository/`
 - ❌ `.kugutsu/tech-stack.json` (ProductOwnerNode生成) → ✅ `.kugutsu/repository/architecture/tech-stack.json` (CheckModeNode生成)
+
+**重要**: `.kugutsu/tasks.json`は完全に廃止されました。すべてのノードはSprint Backlog (`sprints/{sprintId}/sprint-backlog.json`) またはProduct Backlog (`product-backlog/backlog.json`) を使用します。
 
 ## ファイル一覧と詳細
 

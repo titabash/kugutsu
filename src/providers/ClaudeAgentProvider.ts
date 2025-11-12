@@ -250,6 +250,7 @@ export class ClaudeAgentProvider implements IAIProvider {
             cost: sdkMessage.total_cost_usd,
             permissionDenials: sdkMessage.permission_denials.length,
             success: isSuccess,
+            subtype: sdkMessage.subtype, // Include subtype for MessageHandler error detection
             result: isSuccess && 'result' in sdkMessage ? sdkMessage.result : undefined,
             errors: !isSuccess && 'errors' in sdkMessage ? sdkMessage.errors : undefined,
           },

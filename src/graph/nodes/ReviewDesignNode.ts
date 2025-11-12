@@ -13,6 +13,7 @@ import type { ParallelDevStateType, ParallelDevStateUpdate } from '../state.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 import { DataPersistence } from '../../utils/DataPersistence.js';
 import { MessageHandler } from '../../utils/MessageHandler.js';
+import { JSONExtractor } from '../../utils/JSONExtractor.js';
 
 /**
  * 設計書レビュー結果
@@ -482,41 +483,26 @@ function extractReviewerResult(
   reviewer: 'DirectorAI' | 'ProductOwnerAI' | 'TechLeadAI',
   response: string
 ): ReviewerResult {
-  // JSONコードブロックを抽出
-  const jsonMatch = response.match(/```json\s*([\s\S]*?)\s*```/);
+  // JSONを抽出
+  const extractionResult = JSONExtractor.extractFromCodeBlock<{ approved: boolean; issues: ReviewIssue[]; comments: string[] }>(response);
 
-  let parsedResult: any;
-
-  if (jsonMatch) {
-    try {
-      parsedResult = JSON.parse(jsonMatch[1]);
-    } catch (error) {
-      console.error(`❌ ${reviewer} レビュー結果のパースエラー:`, error);
-      parsedResult = {
-        approved: false,
-        issues: [
-          {
-            severity: 'critical',
-            category: 'parse_error',
-            message: `${reviewer}のレスポンスパースに失敗`,
-          },
-        ],
-        comments: [],
-      };
-    }
-  } else {
-    parsedResult = {
+  if (!extractionResult.success) {
+    console.error(`❌ ${reviewer} レビュー結果の抽出エラー:`, extractionResult.error);
+    return {
+      reviewer,
       approved: false,
       issues: [
         {
           severity: 'critical',
           category: 'format_error',
-          message: `${reviewer}のレスポンスが不正な形式`,
+          message: `${reviewer}のレスポンス抽出に失敗: ${extractionResult.error}`,
         },
       ],
       comments: [],
     };
   }
+
+  const parsedResult = extractionResult.data!;
 
   return {
     reviewer,

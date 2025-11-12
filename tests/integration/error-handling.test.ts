@@ -207,7 +207,7 @@ describe('Error Handling Integration', () => {
       errorMessage: 'Implementation failed',
     });
 
-    const engineerResult = await engineerNode(state, taskId);
+    const engineerResult = await engineerNode({ ...state, currentTaskId: taskId });
     state = mergeState(state, engineerResult);
 
     // Verify task is marked as failed
@@ -427,7 +427,7 @@ describe('Error Handling Integration', () => {
       errorMessage: 'Review failed',
     });
 
-    const result = await reviewNode(state, 'task-review-001');
+    const result = await reviewNode({ ...state, currentTaskId: 'task-review-001' });
 
     // Verify error is logged
     expect(result.logs).toBeDefined();
@@ -537,7 +537,7 @@ describe('Error Handling Integration', () => {
       ],
     });
 
-    const eng1Result = await engineerNode(state, task1Id);
+    const eng1Result = await engineerNode({ ...state, currentTaskId: task1Id });
     state = mergeState(state, eng1Result);
 
     // Task 2 fails
@@ -547,7 +547,7 @@ describe('Error Handling Integration', () => {
       errorMessage: 'Task 2 failed',
     });
 
-    const eng2Result = await engineerNode(state, task2Id);
+    const eng2Result = await engineerNode({ ...state, currentTaskId: task2Id });
     state = mergeState(state, eng2Result);
 
     // Verify: Task 1 is completed, Task 2 is failed

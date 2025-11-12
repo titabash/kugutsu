@@ -18,6 +18,7 @@ import { randomUUID } from 'crypto';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { MessageHandler } from '../../utils/MessageHandler.js';
+import { JSONExtractor } from '../../utils/JSONExtractor.js';
 
 /**
  * Sprint Planning Node
@@ -111,8 +112,46 @@ export async function sprintPlanningNode(
     };
   }
 
+  // Load Product Backlog to get unassigned tasks
+  // This ensures consistency with the file-based approach
+  let productBacklogTasks: any[] = [];
+  try {
+    const backlogData = await persistence.loadProductBacklog();
+    if (backlogData && backlogData.tasks) {
+      productBacklogTasks = backlogData.tasks.filter(
+        (task: any) => task.status !== 'completed' && task.status !== 'failed'
+      );
+      console.log(`📊 Product Backlogから ${productBacklogTasks.length}件のタスクを読み込みました`);
+    }
+  } catch (error) {
+    console.warn('⚠️ Product Backlogの読み込みに失敗、state.globalTasksを使用します:', error);
+  }
+
+  // Use Product Backlog tasks if available, otherwise fallback to globalTasks
+  const sourceTasks: GlobalTask[] = productBacklogTasks.length > 0
+    ? productBacklogTasks.map((task: any) => {
+        // Map 'bug' to 'bugfix' to match GlobalTask type
+        const taskType = task.type === 'bug' ? 'bugfix' : (task.type || 'feature');
+        return {
+          id: task.id,
+          type: taskType as 'feature' | 'bugfix' | 'refactor' | 'test' | 'docs' | 'conflict-resolution',
+          title: task.title,
+          description: task.description,
+          priority: task.priority || 50,
+          dependencies: task.dependencies || [],
+          status: (task.status || 'pending') as 'pending' | 'in_progress' | 'completed' | 'failed',
+          projectId: currentProjectId || '',
+          requestTimestamp: task.createdAt ? new Date(task.createdAt) : new Date(),
+          dynamicPriority: (task.priority || 50) * 10,
+          createdAt: task.createdAt ? new Date(task.createdAt) : new Date(),
+          updatedAt: task.updatedAt ? new Date(task.updatedAt) : new Date(),
+          sprint: undefined, // Product Backlog tasks are unassigned
+        };
+      })
+    : globalTasks;
+
   // 未割り当てタスクを取得（スプリントが未設定、かつ未完了）
-  const unassignedTasks = globalTasks.filter(
+  const unassignedTasks = sourceTasks.filter(
     (task) =>
       !task.sprint &&
       task.status !== 'completed' &&
@@ -143,10 +182,15 @@ export async function sprintPlanningNode(
   const provider = AIProviderFactory.create(providerConfig);
 
   // スプリント計画プロンプト
+  const productBacklogPath = '.kugutsu/product-backlog/backlog.json';
   const sprintPlanningPrompt = `
 # Sprint Planning
 
 タスクをスプリントに分割してください。
+
+## タスクソース
+**Readツールで${productBacklogPath}を読み込んで参照してください**
+Product Backlogから未割り当てタスクを取得し、スプリント計画を作成します。
 
 ## 制約条件
 - 各スプリントは8-16時間の作業量
@@ -226,18 +270,10 @@ export async function sprintPlanningNode(
 \`\`\`
 
 ## 未割り当てタスク
-${JSON.stringify(
-  unassignedTasks.map((t) => ({
-    id: t.id,
-    title: t.title,
-    description: t.description,
-    priority: t.priority,
-    dependencies: t.dependencies,
-    dynamicPriority: t.dynamicPriority,
-  })),
-  null,
-  2
-)}
+Product Backlogファイル（${productBacklogPath}）から未割り当てタスクを読み込んでください。
+上記のReadツールで読み込んだProduct Backlogのtasks配列から、statusが'pending'でsprintが未設定のタスクを選択してください。
+
+参考: 現在の未割り当てタスク数は ${unassignedTasks.length}件です。
 
 ## 出力形式
 JSON形式で以下の構造で出力してください：
@@ -312,22 +348,22 @@ JSON形式で以下の構造で出力してください：
   console.log('✅ スプリント計画生成完了');
 
   // JSONを抽出してパース
-  const jsonMatch = sprintPlanResult.match(/```json\n([\s\S]*?)\n```/);
-  if (!jsonMatch) {
-    console.error('❌ スプリント計画のJSON抽出に失敗しました');
+  const extractionResult = JSONExtractor.extractFromCodeBlock<{ sprints: any[] }>(sprintPlanResult);
+  if (!extractionResult.success) {
+    console.error('❌ スプリント計画のJSON抽出に失敗しました:', extractionResult.error);
     return {
       logs: [
         {
           timestamp: new Date(),
           level: 'error',
           source: 'sprint_planning',
-          message: 'スプリント計画の生成に失敗',
+          message: `スプリント計画の生成に失敗: ${extractionResult.error}`,
         },
       ],
     };
   }
 
-  const sprintPlan = JSON.parse(jsonMatch[1]);
+  const sprintPlan = extractionResult.data!;
   const firstSprint = sprintPlan.sprints[0];
 
   // スプリントオブジェクトを作成
@@ -353,7 +389,7 @@ JSON形式で以下の構造で出力してください：
   console.log(`📦 タスク数: ${newSprint.taskIds.length}件`);
 
   // タスクにスプリントIDを割り当て
-  const updatedGlobalTasks = globalTasks.map((task) => {
+  const updatedGlobalTasks = sourceTasks.map((task) => {
     if (newSprint.taskIds.includes(task.id)) {
       return {
         ...task,
@@ -362,6 +398,30 @@ JSON形式で以下の構造で出力してください：
     }
     return task;
   });
+
+  // Product Backlogから選択されたタスクを削除（タスク移動）
+  try {
+    const currentBacklog = await persistence.loadProductBacklog();
+    if (currentBacklog && currentBacklog.tasks) {
+      // スプリントに割り当てられたタスクをProduct Backlogから削除
+      const remainingTasks = currentBacklog.tasks.filter(
+        (task: any) => !newSprint.taskIds.includes(task.id)
+      );
+
+      const updatedBacklog = {
+        tasks: remainingTasks,
+        metadata: {
+          totalTasks: remainingTasks.length,
+          lastUpdated: new Date().toISOString(),
+        },
+      };
+
+      await persistence.saveProductBacklog(updatedBacklog);
+      console.log(`✅ Product Backlogから ${newSprint.taskIds.length}件のタスクを削除しました（Sprint Backlogへ移動）`);
+    }
+  } catch (error) {
+    console.warn('⚠️ Product Backlogの更新に失敗:', error);
+  }
 
   // スプリント状態は 'planning' のまま（instruction.md未生成）
   // InstructionGenerator が完了後に 'active' に変更

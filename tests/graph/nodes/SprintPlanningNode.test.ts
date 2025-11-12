@@ -54,9 +54,11 @@ describe('SprintPlanningNode', () => {
     mockPersistence = {
       initialize: jest.fn<any>().mockResolvedValue(undefined),
       loadActiveSprint: jest.fn<any>().mockResolvedValue(null),
+      loadProductBacklog: jest.fn<any>().mockResolvedValue(null), // Product Backlog not loaded by default
       saveActiveSprint: jest.fn<any>().mockResolvedValue(undefined),
       saveGlobalQueue: jest.fn<any>().mockResolvedValue(undefined),
       saveSprintBacklog: jest.fn<any>().mockResolvedValue(undefined),
+      saveProductBacklog: jest.fn<any>().mockResolvedValue(undefined),
     };
   });
 
@@ -125,9 +127,44 @@ describe('SprintPlanningNode', () => {
         worktreeBasePath: '/test/worktrees',
       });
 
+      // Mock Product Backlog with tasks
+      mockPersistence.loadProductBacklog = jest.fn<any>().mockResolvedValue({
+        tasks: [
+          {
+            id: 'task-1',
+            type: 'feature',
+            title: 'Implement auth backend',
+            description: 'Backend authentication',
+            priority: 90,
+            estimatedPoints: 8,
+            dependencies: [],
+            status: 'pending',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+          {
+            id: 'task-2',
+            type: 'feature',
+            title: 'Implement auth frontend',
+            description: 'Frontend authentication',
+            priority: 85,
+            estimatedPoints: 8,
+            dependencies: ['task-1'],
+            status: 'pending',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+        ],
+        metadata: {
+          totalTasks: 2,
+          lastUpdated: new Date().toISOString(),
+        },
+      });
+
       const stateWithTasks = {
         ...initialState,
         globalTasks: [task1, task2],
+        currentProjectId: 'project-1',
       };
 
       // Execute node
@@ -149,8 +186,12 @@ describe('SprintPlanningNode', () => {
       expect(assignedTask2?.sprint).toBe(result.activeSprint!.id);
 
       // Verify persistence calls
+      expect(mockPersistence.loadProductBacklog).toHaveBeenCalled();
       expect(mockPersistence.saveActiveSprint).toHaveBeenCalled();
       expect(mockPersistence.saveGlobalQueue).toHaveBeenCalled();
+      expect(mockPersistence.saveSprintBacklog).toHaveBeenCalled();
+      // Verify Product Backlog was updated (tasks removed)
+      expect(mockPersistence.saveProductBacklog).toHaveBeenCalled();
     });
 
     // Note: This test is skipped because the implementation uses fs.readFile directly

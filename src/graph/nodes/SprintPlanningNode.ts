@@ -56,20 +56,23 @@ export async function sprintPlanningNode(
   const persistence = new DataPersistence(config.baseRepoPath);
 
   // ✅ 修正: state.activeSprint を優先的に使用
-  // state.activeSprint が null の場合、ファイルも確実にクリアする
+  // state.activeSprint が null の場合、ファイルも確実にクリアして、ファイルから読み込まない
+  let existingActiveSprint: Sprint | null = null;
+
   if (activeSprint === null) {
+    // state.activeSprint が明示的に null の場合、ファイルもクリアして終了
     try {
       await persistence.saveActiveSprint(null);
       console.log('🗑️ state.activeSprint が null のため、ファイルもクリアしました');
     } catch (error) {
       console.warn('⚠️ アクティブスプリントファイルのクリアに失敗しましたが、処理を続行します:', error);
     }
-  }
-
-  // アクティブなスプリントを確認（state を優先、なければファイルから）
-  let existingActiveSprint: Sprint | null = activeSprint || null;
-
-  if (!existingActiveSprint) {
+    existingActiveSprint = null;
+  } else if (activeSprint) {
+    // state.activeSprint が存在する場合、それを使用
+    existingActiveSprint = activeSprint;
+  } else {
+    // state.activeSprint が undefined の場合のみ、ファイルから読み込む
     try {
       const activeSprintContent = await fs.readFile(activeSprintPath, 'utf-8');
       const parsed = JSON.parse(activeSprintContent);
@@ -79,6 +82,19 @@ export async function sprintPlanningNode(
       // ファイルが存在しない場合はnull
       existingActiveSprint = null;
     }
+  }
+
+  // ✅ completed 状態のスプリントは無視して、新しいスプリントを作成
+  if (existingActiveSprint && existingActiveSprint.status === 'completed') {
+    console.log(`⚠️ 既存スプリントは完了済み: ${existingActiveSprint.name}。新しいスプリントを作成します。`);
+    // ファイルもクリアして、新しいスプリント作成を許可
+    try {
+      await persistence.saveActiveSprint(null);
+      console.log('🗑️ 完了済みスプリントをクリアしました');
+    } catch (error) {
+      console.warn('⚠️ 完了済みスプリントのクリアに失敗しましたが、処理を続行します:', error);
+    }
+    existingActiveSprint = null;
   }
 
   if (existingActiveSprint &&
@@ -487,11 +503,21 @@ JSON形式で以下の構造で出力してください：
  *
  * 'planning' 状態: instruction_generator_dispatch（instruction.md未生成）
  * 'active' 状態: sprint_review（instruction.md生成済み、継続）
+ * null/completed + 未割り当てタスクあり: instruction_generator_dispatch（新規スプリント作成）
  * その他: END
  */
 export function sprintPlanningRouter(state: ParallelDevStateType): string {
-  if (!state.activeSprint) {
-    console.log('➡️ ルーティング: END (スプリント計画なし)');
+  // activeSprint が null または completed の場合、新しいスプリント作成を許可
+  if (!state.activeSprint || state.activeSprint.status === 'completed') {
+    // 未割り当てタスクがある場合、新しいスプリントを作成
+    const unassignedTasks = state.globalTasks.filter(
+      (task) => !task.sprint && task.status !== 'completed' && task.status !== 'failed'
+    );
+    if (unassignedTasks.length > 0) {
+      console.log(`➡️ ルーティング: instruction_generator_dispatch (新規スプリント作成、未割り当てタスク: ${unassignedTasks.length}件)`);
+      return 'instruction_generator_dispatch';
+    }
+    console.log('➡️ ルーティング: END (スプリント計画なし、未割り当てタスクなし)');
     return 'END';
   }
 
@@ -508,6 +534,6 @@ export function sprintPlanningRouter(state: ParallelDevStateType): string {
     return 'sprint_review';
   }
 
-  console.log('➡️ ルーティング: END (スプリント完了または不明な状態)');
+  console.log('➡️ ルーティング: END (スプリント不明な状態)');
   return 'END';
 }

@@ -434,15 +434,24 @@ export async function mergeCoordinatorNode(
       }
     }
 
-    return {
-      tasks: updatedStateTasks.length > 0 ? updatedStateTasks : undefined,
-      globalTasks: updatedGlobalTasks.length > 0 ? updatedGlobalTasks : undefined,
+    // Build return object - only include fields that have updates
+    const stateUpdate: ParallelDevStateUpdate = {
       mergeQueue: updatedMergeTasks,
       logs,
       metadata: {
         phase: 'merge',
       },
     };
+
+    // Only include tasks/globalTasks if there are updates
+    if (updatedStateTasks.length > 0) {
+      stateUpdate.tasks = updatedStateTasks;
+    }
+    if (updatedGlobalTasks.length > 0) {
+      stateUpdate.globalTasks = updatedGlobalTasks;
+    }
+
+    return stateUpdate;
   } catch (error) {
     console.error('❌ Merge Coordinator Node エラー:', error);
 

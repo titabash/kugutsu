@@ -269,12 +269,16 @@ JSON形式で以下を出力してください：
       }
     }
 
-    // アクティブスプリントをクリア
+    // アクティブスプリントをクリア（stateとファイルの同期を確実にする）
+    let activeSprintCleared = false;
     try {
-    await persistence.saveActiveSprint(null);
-    console.log('🗑️ アクティブスプリントをクリアしました');
+      await persistence.saveActiveSprint(null);
+      activeSprintCleared = true;
+      console.log('🗑️ アクティブスプリントをクリアしました（ファイルとstate同期）');
     } catch (error) {
-      console.warn('⚠️ アクティブスプリントのクリアに失敗しましたが、処理を続行します:', error);
+      console.error('❌ アクティブスプリントのクリアに失敗:', error);
+      // エラーが発生してもstateはnullを返す（次のノードでファイルから読み込まないように修正済み）
+      activeSprintCleared = false;
     }
 
     // 未割り当てタスクが残っているか確認（Product Backlogから）
@@ -302,23 +306,28 @@ JSON形式で以下を出力してください：
       `📊 残りの未割り当てタスク: ${remainingUnassignedTasks.length}件`
     );
 
+    // stateとファイルの同期を確実にするため、activeSprint: nullを返す
+    // ファイルのクリアに失敗した場合でも、stateはnullを返す（SprintPlanningNodeがファイルから読み込まないように修正済み）
     if (remainingUnassignedTasks.length > 0) {
       console.log('🔄 次のスプリント計画が必要です');
       return {
-        activeSprint: null,
+        activeSprint: null, // stateを確実にnullに設定
         sprints: [...(state.sprints || []), completedSprint],
         logs: [
           {
             timestamp: new Date(),
-            level: 'info',
+            level: activeSprintCleared ? 'info' : 'warn',
             source: 'sprint_review',
-            message: `スプリント完了: ${completedSprint.name}。次スプリント計画へ`,
+            message: activeSprintCleared
+              ? `スプリント完了: ${completedSprint.name}。次スプリント計画へ`
+              : `スプリント完了: ${completedSprint.name}。次スプリント計画へ（ファイルクリア失敗、stateはnull）`,
             data: {
               sprintId: completedSprint.id,
               completedTasks: completedTasks.length,
               failedTasks: failedTasks.length,
               deployable: completedSprint.deployable,
               remainingTasks: remainingUnassignedTasks.length,
+              activeSprintCleared,
             },
           },
         ],
@@ -326,7 +335,7 @@ JSON形式で以下を出力してください：
     } else {
       console.log('🎉 すべてのタスクが完了しました！');
       return {
-        activeSprint: null,
+        activeSprint: null, // stateを確実にnullに設定
         sprints: [...(state.sprints || []), completedSprint],
         metadata: {
           ...state.metadata,
@@ -335,13 +344,16 @@ JSON形式で以下を出力してください：
         logs: [
           {
             timestamp: new Date(),
-            level: 'info',
+            level: activeSprintCleared ? 'info' : 'warn',
             source: 'sprint_review',
-            message: `全タスク完了: プロジェクト終了`,
+            message: activeSprintCleared
+              ? `全タスク完了: プロジェクト終了`
+              : `全タスク完了: プロジェクト終了（ファイルクリア失敗、stateはnull）`,
             data: {
               sprintId: completedSprint.id,
               completedTasks: completedTasks.length,
               deployable: completedSprint.deployable,
+              activeSprintCleared,
             },
           },
         ],

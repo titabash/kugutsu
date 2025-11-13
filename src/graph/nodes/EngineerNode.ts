@@ -486,6 +486,18 @@ export async function engineerNode(
 
   console.log(`📖 instruction.md を読み込みました`);
 
+  // Read review.json if exists (修正実装の場合)
+  const reviewPath = `.kugutsu/sprints/${sprintId}/tasks/${taskId}/review.json`;
+  let reviewArtifact: any | null = null;
+  try {
+    const reviewContent = await fileReader.readFile(reviewPath);
+    reviewArtifact = JSON.parse(reviewContent);
+    console.log(`📖 review.json を読み込みました (修正実装)`);
+  } catch (error) {
+    // review.jsonがない場合は初回実装
+    console.log(`📝 review.json が見つかりません (初回実装)`);
+  }
+
   try {
     // Create AI provider
     const providerConfig = AIProviderFactory.buildProviderConfig({
@@ -545,8 +557,55 @@ ${state.designDocs.uiuxPath ? `### UI/UX設計
 `
       : '';
 
+    // レビューコメント取得ロジック
+    const taskReviews = state.reviews
+      .filter(r => r.taskId === taskId)
+      .sort((a, b) => {
+        const timeA = a.timestamp instanceof Date ? a.timestamp.getTime() : new Date(a.timestamp).getTime();
+        const timeB = b.timestamp instanceof Date ? b.timestamp.getTime() : new Date(b.timestamp).getTime();
+        return timeB - timeA;
+      });
+
+    const latestReview = taskReviews.length > 0 ? taskReviews[0] : null;
+
+    // レビューフィードバックセクション
+    const reviewFeedbackSection = latestReview && latestReview.status === 'changes_requested'
+      ? `
+## 🔍 前回のレビュー結果 - 修正が必要です
+
+**レビュアー**: ${latestReview.reviewer}
+**レビュー日時**: ${latestReview.timestamp instanceof Date ? latestReview.timestamp.toISOString() : latestReview.timestamp}
+
+### 指摘事項:
+${latestReview.comments.map((comment, idx) => `${idx + 1}. ${comment}`).join('\n')}
+
+${latestReview.issues && latestReview.issues.length > 0 ? `
+### 検出された問題:
+${latestReview.issues.map((issue, idx) =>
+  `${idx + 1}. [${issue.severity}] ${issue.description}${issue.file ? ` (${issue.file}${issue.line ? ':' + issue.line : ''})` : ''}`
+).join('\n')}
+` : ''}
+
+${reviewArtifact && reviewArtifact.comments ? `
+### 詳細なレビューコメント (review.jsonから):
+${reviewArtifact.comments.map((comment: any, idx: number) =>
+  `${idx + 1}. [${comment.severity || 'info'}] ${comment.message}${comment.file ? ` (${comment.file})` : ''}`
+).join('\n')}
+` : ''}
+
+${reviewArtifact && reviewArtifact.suggestions && reviewArtifact.suggestions.length > 0 ? `
+### 改善提案:
+${reviewArtifact.suggestions.map((suggestion: string, idx: number) => `${idx + 1}. ${suggestion}`).join('\n')}
+` : ''}
+
+**重要**: 上記の指摘事項を必ず修正してください。これは再実装です。前回のレビューで指摘された問題を解決することが最優先です。
+`
+      : '';
+
     const implementationPrompt = `
-# Task Implementation
+# Task Implementation${latestReview && latestReview.status === 'changes_requested' ? ' - 修正実装' : ''}
+
+${reviewFeedbackSection}
 
 以下のタスクを実装してください。
 

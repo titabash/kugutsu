@@ -1,4 +1,5 @@
 import type { IAIProvider } from '../providers/IAIProvider.js';
+import { MessageHandler } from './MessageHandler.js';
 
 /**
  * AIFileWriter
@@ -45,14 +46,28 @@ ${jsonContent}
 - 他のファイルには一切触れないでください
 `;
 
+    const handler = new MessageHandler({
+      maxTurns,
+      nodeName: `AIFileWriter - ${filePath}`,
+    });
+
     for await (const message of provider.execute(prompt, {
       maxTurns,
       cwd,
       allowedTools: ['Write'],
       permissionMode: 'acceptEdits',
+      includePartialMessages: true,
     })) {
-      // AIがファイルを書き込むのを待つ
+      await handler.handleMessage(message);
     }
+
+    // エラーチェック
+    if (handler.getHasError()) {
+      const details = handler.getErrorDetails();
+      throw new Error(`ファイル書き込みに失敗: ${filePath} - ${details?.message || 'Unknown error'}`);
+    }
+
+    handler.complete(true, `ファイル書き込み完了: ${filePath}`);
   }
 
 }

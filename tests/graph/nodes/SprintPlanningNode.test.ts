@@ -320,7 +320,23 @@ describe('SprintPlanningNode', () => {
       expect(route).toBe('sprint_review');
     });
 
-    test('should route to END when no active sprint', () => {
+    test('should route to instruction_generator_dispatch when no active sprint but unassigned tasks exist', () => {
+      const unassignedTask = {
+        id: 'task-1',
+        type: 'feature' as const,
+        projectId: 'project-1',
+        title: 'Unassigned Task',
+        description: 'Description',
+        priority: 80,
+        dynamicPriority: 80,
+        dependencies: [],
+        status: 'pending' as const,
+        sprint: undefined,
+        requestTimestamp: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
       const state = createInitialState('Request', {
         maxEngineers: 3,
         maxTurns: 30,
@@ -332,9 +348,117 @@ describe('SprintPlanningNode', () => {
       const stateWithoutSprint = {
         ...state,
         activeSprint: null,
+        globalTasks: [unassignedTask],
       };
 
       const route = sprintPlanningRouter(stateWithoutSprint);
+      expect(route).toBe('instruction_generator_dispatch');
+    });
+
+    test('should route to END when no active sprint and no unassigned tasks', () => {
+      const state = createInitialState('Request', {
+        maxEngineers: 3,
+        maxTurns: 30,
+        baseBranch: 'main',
+        baseRepoPath: '/test/repo',
+        worktreeBasePath: '/test/worktrees',
+      });
+
+      const stateWithoutSprint = {
+        ...state,
+        activeSprint: null,
+        globalTasks: [],
+      };
+
+      const route = sprintPlanningRouter(stateWithoutSprint);
+      expect(route).toBe('END');
+    });
+
+    test('should route to instruction_generator_dispatch when active sprint is completed and unassigned tasks exist', () => {
+      const completedSprint = {
+        id: 'sprint-1',
+        name: 'Sprint 1',
+        goal: 'Goal',
+        taskIds: ['task-1'],
+        status: 'completed' as const,
+        deployable: true,
+        startedAt: new Date(),
+        completedAt: new Date(),
+        metadata: {
+          estimatedHours: 10,
+          blockers: [],
+          completedTasksCount: 1,
+          failedTasksCount: 0,
+        },
+      };
+
+      const unassignedTask = {
+        id: 'task-2',
+        type: 'feature' as const,
+        projectId: 'project-1',
+        title: 'Unassigned Task',
+        description: 'Description',
+        priority: 80,
+        dynamicPriority: 80,
+        dependencies: [],
+        status: 'pending' as const,
+        sprint: undefined,
+        requestTimestamp: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      const state = createInitialState('Request', {
+        maxEngineers: 3,
+        maxTurns: 30,
+        baseBranch: 'main',
+        baseRepoPath: '/test/repo',
+        worktreeBasePath: '/test/worktrees',
+      });
+
+      const stateWithCompletedSprint = {
+        ...state,
+        activeSprint: completedSprint,
+        globalTasks: [unassignedTask],
+      };
+
+      const route = sprintPlanningRouter(stateWithCompletedSprint);
+      expect(route).toBe('instruction_generator_dispatch');
+    });
+
+    test('should route to END when active sprint is completed and no unassigned tasks', () => {
+      const completedSprint = {
+        id: 'sprint-1',
+        name: 'Sprint 1',
+        goal: 'Goal',
+        taskIds: ['task-1'],
+        status: 'completed' as const,
+        deployable: true,
+        startedAt: new Date(),
+        completedAt: new Date(),
+        metadata: {
+          estimatedHours: 10,
+          blockers: [],
+          completedTasksCount: 1,
+          failedTasksCount: 0,
+        },
+      };
+
+      const state = createInitialState('Request', {
+        maxEngineers: 3,
+        maxTurns: 30,
+        baseBranch: 'main',
+        baseRepoPath: '/test/repo',
+        worktreeBasePath: '/test/worktrees',
+      });
+
+      const stateWithCompletedSprint = {
+        ...state,
+        activeSprint: completedSprint,
+        globalTasks: [],
+      };
+
+      const route = sprintPlanningRouter(stateWithCompletedSprint);
       expect(route).toBe('END');
     });
   });
@@ -448,6 +572,106 @@ describe('SprintPlanningNode', () => {
       expect(result.activeSprint!.name).toBe('Sprint from State');
       // Should not clear file when state has active sprint
       expect(mockPersistence.saveActiveSprint).not.toHaveBeenCalledWith(null);
+    });
+
+    test('should ignore completed sprint and clear file', async () => {
+      const completedSprint = {
+        id: 'sprint-completed',
+        name: 'Completed Sprint',
+        goal: 'Goal',
+        taskIds: ['task-1'],
+        status: 'completed' as const,
+        deployable: true,
+        startedAt: new Date(),
+        completedAt: new Date(),
+        metadata: {
+          estimatedHours: 8,
+          blockers: [],
+          completedTasksCount: 1,
+          failedTasksCount: 0,
+        },
+      };
+
+      const unassignedTask = {
+        id: 'task-2',
+        type: 'feature' as const,
+        projectId: 'project-1',
+        title: 'Unassigned Task',
+        description: 'Description',
+        priority: 80,
+        dynamicPriority: 80,
+        dependencies: [],
+        status: 'pending' as const,
+        sprint: undefined,
+        requestTimestamp: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      const initialState = createInitialState('Request', {
+        maxEngineers: 3,
+        maxTurns: 30,
+        baseBranch: 'main',
+        baseRepoPath: '/test/repo',
+        worktreeBasePath: '/test/worktrees',
+      });
+
+      const stateWithCompletedSprint = {
+        ...initialState,
+        activeSprint: completedSprint,
+        globalTasks: [unassignedTask],
+      };
+
+      // Mock Product Backlog
+      mockPersistence.loadProductBacklog = jest.fn<any>().mockResolvedValue({
+        tasks: [
+          {
+            id: 'task-2',
+            type: 'feature',
+            title: 'Unassigned Task',
+            description: 'Description',
+            priority: 80,
+            estimatedPoints: 8,
+            dependencies: [],
+            status: 'pending',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+        ],
+        metadata: {
+          totalTasks: 1,
+          lastUpdated: new Date().toISOString(),
+        },
+      });
+
+      // Mock AI response for new sprint creation
+      const sprintPlanResponse = {
+        sprints: [
+          {
+            name: 'Sprint 2: New Feature',
+            goal: 'New goal',
+            taskIds: ['task-2'],
+            estimatedHours: 8,
+            deployable: true,
+          },
+        ],
+      };
+
+      const jsonResponse = '```json\n' + JSON.stringify(sprintPlanResponse, null, 2) + '\n```';
+      mockProvider.setDefaultResponse({
+        messages: [
+          createMockMessage.assistant(jsonResponse),
+          createMockMessage.result(true),
+        ],
+      });
+
+      const result = await sprintPlanningNode(stateWithCompletedSprint);
+
+      // Should clear completed sprint and create new sprint
+      expect(mockPersistence.saveActiveSprint).toHaveBeenCalledWith(null);
+      expect(result.activeSprint).toBeDefined();
+      expect(result.activeSprint!.id).not.toBe('sprint-completed');
+      expect(result.activeSprint!.name).toBe('Sprint 2: New Feature');
     });
   });
 });

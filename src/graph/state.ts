@@ -181,6 +181,8 @@ export const ParallelDevState = Annotation.Root({
    */
   tasks: Annotation<Task[]>({
     reducer: (state: Task[], update: Task[]) => {
+      if (!update || !Array.isArray(update)) return state || [];
+      if (!state || !Array.isArray(state)) return update || [];
       const taskMap = new Map(state.map((t) => [t.id, t]));
       update.forEach((t) => taskMap.set(t.id, t));
       return Array.from(taskMap.values());
@@ -195,6 +197,8 @@ export const ParallelDevState = Annotation.Root({
    */
   completedTasks: Annotation<Task[]>({
     reducer: (state: Task[], update: Task[]) => {
+      if (!update || !Array.isArray(update)) return state || [];
+      if (!state || !Array.isArray(state)) return update || [];
       // Prevent duplicates
       const existingIds = new Set(state.map((t) => t.id));
       const newTasks = update.filter((t) => !existingIds.has(t.id));
@@ -210,6 +214,8 @@ export const ParallelDevState = Annotation.Root({
    */
   failedTasks: Annotation<Task[]>({
     reducer: (state: Task[], update: Task[]) => {
+      if (!update || !Array.isArray(update)) return state || [];
+      if (!state || !Array.isArray(state)) return update || [];
       // Prevent duplicates
       const existingIds = new Set(state.map((t) => t.id));
       const newTasks = update.filter((t) => !existingIds.has(t.id));
@@ -225,6 +231,8 @@ export const ParallelDevState = Annotation.Root({
    */
   reviews: Annotation<Review[]>({
     reducer: (state: Review[], update: Review[]) => {
+      if (!update || !Array.isArray(update)) return state || [];
+      if (!state || !Array.isArray(state)) return update || [];
       return state.concat(update);
     },
     default: () => [],
@@ -237,6 +245,8 @@ export const ParallelDevState = Annotation.Root({
    */
   mergeQueue: Annotation<MergeTask[]>({
     reducer: (state: MergeTask[], update: MergeTask[]) => {
+      if (!update || !Array.isArray(update)) return state || [];
+      if (!state || !Array.isArray(state)) return update || [];
       const mergeMap = new Map(state.map((m) => [m.taskId, m]));
       update.forEach((m) => mergeMap.set(m.taskId, m));
       return Array.from(mergeMap.values());
@@ -254,6 +264,8 @@ export const ParallelDevState = Annotation.Root({
       state: Map<string, WorktreeInfo>,
       update: Map<string, WorktreeInfo>
     ) => {
+      if (!update || !(update instanceof Map)) return state || new Map<string, WorktreeInfo>();
+      if (!state || !(state instanceof Map)) return update || new Map<string, WorktreeInfo>();
       return new Map([...state, ...update]);
     },
     default: () => new Map<string, WorktreeInfo>(),
@@ -266,6 +278,8 @@ export const ParallelDevState = Annotation.Root({
    */
   logs: Annotation<LogEntry[]>({
     reducer: (state: LogEntry[], update: LogEntry[]) => {
+      if (!update || !Array.isArray(update)) return state || [];
+      if (!state || !Array.isArray(state)) return update || [];
       const combined = state.concat(update);
       // Keep only the most recent 1000 logs
       return combined.slice(-1000);
@@ -359,6 +373,8 @@ export const ParallelDevState = Annotation.Root({
    */
   globalTasks: Annotation<GlobalTask[]>({
     reducer: (state: GlobalTask[], update: GlobalTask[]) => {
+      if (!update || !Array.isArray(update)) return state || [];
+      if (!state || !Array.isArray(state)) return update || [];
       const taskMap = new Map(state.map((t) => [t.id, t]));
       update.forEach((t) => taskMap.set(t.id, t));
       return Array.from(taskMap.values());
@@ -389,6 +405,8 @@ export const ParallelDevState = Annotation.Root({
       state: Map<string, ProjectMetadata>,
       update: Map<string, ProjectMetadata>
     ) => {
+      if (!update || !(update instanceof Map)) return state || new Map<string, ProjectMetadata>();
+      if (!state || !(state instanceof Map)) return update || new Map<string, ProjectMetadata>();
       return new Map([...state, ...update]);
     },
     default: () => new Map<string, ProjectMetadata>(),
@@ -401,6 +419,8 @@ export const ParallelDevState = Annotation.Root({
    */
   sprints: Annotation<Sprint[]>({
     reducer: (state: Sprint[], update: Sprint[]) => {
+      if (!update || !Array.isArray(update)) return state || [];
+      if (!state || !Array.isArray(state)) return update || [];
       const sprintMap = new Map(state.map((s) => [s.id, s]));
       update.forEach((s) => sprintMap.set(s.id, s));
       return Array.from(sprintMap.values());
@@ -427,6 +447,8 @@ export const ParallelDevState = Annotation.Root({
    */
   completedSprintIds: Annotation<string[]>({
     reducer: (state: string[], update: string[]) => {
+      if (!update || !Array.isArray(update)) return state || [];
+      if (!state || !Array.isArray(state)) return update || [];
       return state.concat(update);
     },
     default: () => [],
@@ -596,6 +618,8 @@ export const ParallelDevState = Annotation.Root({
    */
   feedbackHistory: Annotation<FeedbackRequest[]>({
     reducer: (state: FeedbackRequest[], update: FeedbackRequest[]) => {
+      if (!update || !Array.isArray(update)) return state || [];
+      if (!state || !Array.isArray(state)) return update || [];
       const combined = state.concat(update);
       // Keep only the most recent 100 feedback requests
       return combined.slice(-100);
@@ -653,6 +677,8 @@ export const ParallelDevState = Annotation.Root({
    */
   taskSplitSuggestions: Annotation<TaskSplitSuggestion[]>({
     reducer: (state: TaskSplitSuggestion[], update: TaskSplitSuggestion[]) => {
+      if (!update || !Array.isArray(update)) return state || [];
+      if (!state || !Array.isArray(state)) return update || [];
       return state.concat(update);
     },
     default: () => [],
@@ -668,6 +694,8 @@ export const ParallelDevState = Annotation.Root({
    */
   taskMergeSuggestions: Annotation<TaskMergeSuggestion[]>({
     reducer: (state: TaskMergeSuggestion[], update: TaskMergeSuggestion[]) => {
+      if (!update || !Array.isArray(update)) return state || [];
+      if (!state || !Array.isArray(state)) return update || [];
       return state.concat(update);
     },
     default: () => [],

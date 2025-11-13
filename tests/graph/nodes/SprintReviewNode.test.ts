@@ -153,6 +153,85 @@ describe('SprintReviewNode', () => {
       // Verify persistence calls
       expect(mockPersistence.addToSprintHistory).toHaveBeenCalled();
       expect(mockPersistence.saveActiveSprint).toHaveBeenCalledWith(null);
+
+      // Verify state and file synchronization
+      // activeSprint should be null in state update to prevent infinite loop
+      expect(result.activeSprint).toBeNull();
+    });
+
+    test('should clear activeSprint file even if save fails', async () => {
+      const activeSprint = {
+        id: 'sprint-1',
+        name: 'Sprint 1: Authentication',
+        goal: 'Implement authentication',
+        taskIds: ['task-1'],
+        status: 'active' as const,
+        deployable: true,
+        startedAt: new Date(),
+        metadata: {
+          estimatedHours: 12,
+          blockers: [],
+          completedTasksCount: 0,
+          failedTasksCount: 0,
+        },
+      };
+
+      const completedTask = {
+        id: 'task-1',
+        type: 'feature' as const,
+        projectId: 'project-1',
+        title: 'Backend auth',
+        description: 'Backend',
+        priority: 90,
+        dynamicPriority: 90,
+        dependencies: [],
+        status: 'completed' as const,
+        sprint: 'sprint-1',
+        requestTimestamp: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      // Mock AI response for deployability check
+      const deployabilityResponse = {
+        deployable: true,
+        e2eTestable: true,
+        reasoning: 'Complete',
+        blockers: [],
+      };
+
+      const jsonResponse = '```json\n' + JSON.stringify(deployabilityResponse, null, 2) + '\n```';
+
+      mockProvider.setDefaultResponse({
+        messages: [
+          createMockMessage.assistant(jsonResponse),
+          createMockMessage.result(true),
+        ],
+      });
+
+      // Simulate file save failure
+      mockPersistence.saveActiveSprint = jest.fn<any>().mockRejectedValue(new Error('File save failed'));
+
+      const initialState = createInitialState('Request', {
+        maxEngineers: 3,
+        maxTurns: 30,
+        baseBranch: 'main',
+        baseRepoPath: '/test/repo',
+        worktreeBasePath: '/test/worktrees',
+      });
+
+      const stateWithSprint = {
+        ...initialState,
+        activeSprint,
+        globalTasks: [completedTask],
+      };
+
+      const result = await sprintReviewNode(stateWithSprint);
+
+      // Should still return activeSprint: null even if file save fails
+      // This prevents infinite loop (SprintPlanningNode will not read from file when state.activeSprint is null)
+      expect(result.activeSprint).toBeNull();
+      expect(mockPersistence.saveActiveSprint).toHaveBeenCalledWith(null);
     });
 
     test('should continue sprint when tasks are incomplete', async () => {

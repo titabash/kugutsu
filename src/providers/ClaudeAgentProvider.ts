@@ -117,6 +117,26 @@ export class ClaudeAgentProvider implements IAIProvider {
         // Convert SDK message to AI message
         const aiMessage = this.convertMessage(message);
         yield aiMessage;
+
+        // For assistant messages, check for tool_result blocks with errors
+        // and emit them as separate system messages for better error visibility
+        if (message.type === 'assistant' && message.message?.content) {
+          const toolResultErrors = this.extractToolResultErrors(message.message.content);
+          for (const errorInfo of toolResultErrors) {
+            yield {
+              type: 'system',
+              content: {
+                commandExecution: {
+                  command: errorInfo.toolName,
+                  output: errorInfo.errorMessage,
+                  exitCode: 1, // Assume non-zero exit code for errors
+                  status: 'failed',
+                },
+              },
+              timestamp: new Date(),
+            };
+          }
+        }
       }
     } catch (error) {
       // Check if this is an authentication error
@@ -305,6 +325,43 @@ export class ClaudeAgentProvider implements IAIProvider {
           content: sdkMessage,
         };
     }
+  }
+
+  /**
+   * Extract tool result errors from assistant message content blocks
+   * Returns array of error information for failed tool executions
+   */
+  private extractToolResultErrors(contentBlocks: any[]): Array<{ toolName: string; errorMessage: string }> {
+    const errors: Array<{ toolName: string; errorMessage: string }> = [];
+
+    for (const block of contentBlocks) {
+      // Check if this is a tool_result block with an error
+      if (block.type === 'tool_result' && block.is_error === true) {
+        // Extract error message from content
+        let errorMessage = '';
+        if (typeof block.content === 'string') {
+          errorMessage = block.content;
+        } else if (Array.isArray(block.content)) {
+          // Content is an array of content blocks
+          errorMessage = block.content
+            .filter((c: any) => c.type === 'text')
+            .map((c: any) => c.text)
+            .join('\n');
+        }
+
+        // Try to determine tool name from tool_use_id or use generic name
+        const toolName = block.tool_use_id ? `Tool ${block.tool_use_id}` : 'Unknown Tool';
+
+        if (errorMessage) {
+          errors.push({
+            toolName,
+            errorMessage,
+          });
+        }
+      }
+    }
+
+    return errors;
   }
 
   /**

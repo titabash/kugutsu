@@ -283,16 +283,24 @@ export class MessageHandler {
 
     // コマンド実行（OpenAI Codex）
     if (content?.commandExecution) {
-      const { command, output, status } = content.commandExecution;
+      const { command, output, exitCode, status } = content.commandExecution;
       console.log(`⚙️  コマンド実行: ${command}`);
       if (status && status !== 'in_progress') {
         console.log(`   ステータス: ${status}`);
       }
-      if (this.options.verbose && output) {
-        const preview = output.length > 200
-          ? output.substring(0, 200) + '...'
+
+      // 非ゼロの終了コードを表示（診断情報として重要）
+      if (exitCode !== undefined && exitCode !== 0) {
+        console.log(`   終了コード: ${exitCode}`);
+      }
+
+      // failedステータスの時は常にoutput（stderr含む）を表示
+      // verboseモードの時も表示
+      if (output && (status === 'failed' || this.options.verbose)) {
+        const preview = output.length > 500
+          ? output.substring(0, 500) + '...'
           : output;
-        console.log(`   出力: ${preview}`);
+        console.log(`   出力:\n${preview}`);
       }
       return;
     }

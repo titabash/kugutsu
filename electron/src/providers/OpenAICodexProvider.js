@@ -271,7 +271,9 @@ export class OpenAICodexProvider {
                     type: 'result',
                     content: {
                         success: false,
+                        subtype: 'error', // Include subtype for MessageHandler error detection
                         error: item.message,
+                        errors: [item.message], // Also include in errors array for consistency
                     },
                     uuid: item.id,
                 };

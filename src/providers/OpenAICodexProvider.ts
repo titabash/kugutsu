@@ -288,13 +288,22 @@ export class OpenAICodexProvider implements IAIProvider {
         };
 
       case 'command_execution':
+        // Debug: Log when command fails with no output
+        if (item.status === 'failed' && !item.aggregated_output) {
+          console.error(`⚠️  [OpenAICodexProvider] Command failed with no output:`);
+          console.error(`   Command: ${item.command}`);
+          console.error(`   Exit Code: ${item.exit_code}`);
+          console.error(`   Aggregated Output: ${JSON.stringify(item.aggregated_output)}`);
+          console.error(`   Full Item:`, JSON.stringify(item, null, 2));
+        }
+
         return {
           ...baseMessage,
           type: 'system',
           content: {
             commandExecution: {
               command: item.command,
-              output: item.aggregated_output,
+              output: item.aggregated_output || '[No output captured]',
               exitCode: item.exit_code,
               status: item.status,
             },
@@ -362,7 +371,9 @@ export class OpenAICodexProvider implements IAIProvider {
           type: 'result',
           content: {
             success: false,
+            subtype: 'error', // Include subtype for MessageHandler error detection
             error: item.message,
+            errors: [item.message], // Also include in errors array for consistency
           },
           uuid: item.id,
         };

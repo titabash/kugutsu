@@ -802,7 +802,34 @@ ${instruction.split('\n').slice(0, 5).join('\n')}
       // AI実行失敗 - エラーを分類して適切に処理
       const classifiedError = ErrorClassifier.classify(executionResult.error!);
 
-      console.error(`❌ タスク ${taskId} の実装に失敗 (${executionResult.attempts}回試行): ${executionResult.error?.message}`);
+      console.error(`\n${'='.repeat(60)}`);
+      console.error(`❌ タスク ${taskId} の実装に失敗 (${executionResult.attempts}回試行)`);
+      console.error(`${'='.repeat(60)}`);
+
+      // エラー詳細を表示
+      const error = executionResult.error;
+      if (error) {
+        console.error(`\n🔴 エラーメッセージ:`);
+        console.error(`   ${error.message}`);
+
+        // スタックトレースがあれば表示
+        if (error.stack) {
+          console.error(`\n📚 スタックトレース:`);
+          console.error(error.stack);
+        }
+
+        // エラーオブジェクトに追加情報があれば表示
+        const errorKeys = Object.keys(error).filter(k => k !== 'message' && k !== 'stack' && k !== 'name');
+        if (errorKeys.length > 0) {
+          console.error(`\n📋 追加情報:`);
+          errorKeys.forEach(key => {
+            console.error(`   ${key}: ${JSON.stringify((error as any)[key])}`);
+          });
+        }
+      }
+
+      console.error(`\n🏷️  エラー分類: ${classifiedError.severity} - ${classifiedError.message}`);
+      console.error(`${'='.repeat(60)}\n`);
 
       // タスクをfailedに遷移
       const task = tasks.find((t) => t.id === taskId);

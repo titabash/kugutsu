@@ -161,6 +161,11 @@ export class MessageHandler {
             ? allErrors.join('; ')
             : `エラーが発生しました (subtype: ${message.content.subtype || 'unknown'})`;
 
+          // エラー詳細をログ出力（デバッグ用）
+          if (allErrors.length === 0 && !message.content.subtype) {
+            console.warn(`⚠️  エラー詳細が不明です。message.content:`, JSON.stringify(message.content, null, 2));
+          }
+
           // Check if error message contains permanent error patterns
           const errorMessageLower = errorMessage.toLowerCase();
           const isPermanentError = (
@@ -351,12 +356,34 @@ export class MessageHandler {
       }
     } else {
       console.log(`❌ ${this.options.nodeName} 失敗`);
-      // Claude Agent SDK の errors フィールド（配列）から表示
-      const errors = message.content?.errors || [];
+
+      // エラー情報を詳細に表示
+      const content = message.content || {};
+
+      // 1. errors配列（複数エラー）
+      const errors = content.errors || [];
       if (errors.length > 0) {
         console.error(`   エラー: ${errors.join('; ')}`);
-      } else if (message.content?.subtype) {
-        console.error(`   エラーサブタイプ: ${message.content.subtype}`);
+      }
+
+      // 2. error文字列（単一エラー）
+      if (content.error && errors.length === 0) {
+        console.error(`   エラー: ${content.error}`);
+      }
+
+      // 3. subtype（エラー種別）
+      if (content.subtype) {
+        console.error(`   エラー種別: ${content.subtype}`);
+      }
+
+      // 4. エラー詳細がない場合、content全体を表示
+      if (errors.length === 0 && !content.error && !content.subtype) {
+        console.error(`   詳細情報:`, JSON.stringify(content, null, 2));
+      }
+
+      // 5. 追加情報（あれば）
+      if (content.message) {
+        console.error(`   メッセージ: ${content.message}`);
       }
     }
 

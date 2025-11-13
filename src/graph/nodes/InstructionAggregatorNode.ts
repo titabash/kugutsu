@@ -144,9 +144,27 @@ export function instructionAggregatorRouter(
     console.log(
       `🚀 engineer_dispatch に送信 (開発準備完了: ${tasksReadyForDevelopment.length}件)`
     );
+
+    // GlobalTaskからTask型に変換（EngineerDispatchNodeが期待する形式）
+    const developmentTasks = tasksReadyForDevelopment.map(gt => ({
+      id: gt.id,
+      type: gt.type,
+      title: gt.title,
+      description: gt.description,
+      priority: gt.priority >= 70 ? 'high' as const :
+                gt.priority >= 40 ? 'medium' as const :
+                'low' as const,
+      status: gt.status,
+      dependencies: gt.dependencies,
+      branchName: gt.branchName,
+      worktreePath: gt.worktreePath,
+      createdAt: gt.createdAt || new Date(),
+      updatedAt: gt.updatedAt || new Date(),
+    }));
+
     sends.push(new Send('engineer_dispatch', {
       config: state.config,
-      tasks: state.tasks,
+      tasks: developmentTasks,  // ← GlobalTaskから変換したTask配列
       tasksPath: state.tasksPath,
       globalTasks: state.globalTasks,
       activeSprint: state.activeSprint,

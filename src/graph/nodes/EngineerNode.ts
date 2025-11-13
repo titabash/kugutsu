@@ -21,6 +21,8 @@ import { RetryManager } from '../../utils/RetryManager.js';
 import { ErrorClassifier } from '../../utils/ErrorClassifier.js';
 import { PrerequisiteChecker } from '../../utils/PrerequisiteChecker.js';
 import { MessageHandler } from '../../utils/MessageHandler.js';
+import { GitWorktreeManager } from '../../managers/GitWorktreeManager.js';
+import { execSync } from 'child_process';
 
 /**
  * Engineer Node
@@ -639,26 +641,21 @@ ${storyMappingSection}${designDocsSection}${sprintPlanSection}
 - テストを実行して失敗を確認してください
 - その後、テストをパスする実装を行ってください
 
-### 2. コミット
-- 適切な単位でgit commitを作成してください
-- コミットメッセージは明確で説明的に
-
-### 3. コード品質
+### 2. コード品質
 - 既存のコードスタイルに従ってください
 - エラーハンドリングを適切に実装してください
 - 必要に応じてドキュメントを追加してください
 
-### 4. 依存関係
+### 3. 依存関係
 ${dependenciesSection}
 
 ## 完了条件
 - すべてのテストが通過する
 - コードレビュー可能な状態
-- 適切なコミットが作成されている
 
 ## 重要な注意
-- **git add と git commit は実行してください**
-- ただし、**git push は実行しないでください**（レビュー後にマージします）
+- **git操作（add/commit/push）は実行しないでください**
+- コミットはシステムが自動的に作成します
 `;
 
     // Execute implementation with retry mechanism
@@ -731,6 +728,75 @@ ${dependenciesSection}
         retryableErrors: ['ETIMEDOUT', 'ECONNRESET', 'rate_limit', 'Rate limit', 'timeout', 'network'],
       }
     );
+
+    // AI実行が成功した場合、変更をコミット
+    if (executionResult.success) {
+      try {
+        console.log(`\n${'='.repeat(60)}`);
+        console.log(`📝 変更をコミット中...`);
+        console.log(`${'='.repeat(60)}\n`);
+
+        // GitWorktreeManagerを初期化
+        const gitManager = new GitWorktreeManager(
+          config.baseRepoPath,
+          config.worktreeBasePath,
+          config.baseBranch
+        );
+
+        // Worktree内で変更されたファイルを検出
+        const worktreePath = taskArtifact.worktreePath;
+
+        try {
+          // git statusで変更を確認
+          const statusOutput = execSync('git status --porcelain', {
+            cwd: worktreePath,
+            encoding: 'utf-8',
+            stdio: 'pipe'
+          });
+
+          if (statusOutput.trim()) {
+            console.log(`📋 変更検出:\n${statusOutput}`);
+
+            // 全ての変更をステージング（worktree内から実行）
+            execSync('git add -A', {
+              cwd: worktreePath,
+              stdio: 'pipe'
+            });
+
+            // コミットメッセージを生成
+            const commitMessage = `feat(${taskId}): ${instruction.split('\n')[0].substring(0, 72)}
+
+タスクID: ${taskId}
+スプリント: ${sprintId}
+
+実装内容:
+${instruction.split('\n').slice(0, 5).join('\n')}
+
+[Automated commit by Kugutsu AI Engineer]`;
+
+            // コミットを作成（worktree内から実行）
+            execSync(`git commit -m "${commitMessage.replace(/"/g, '\\"')}"`, {
+              cwd: worktreePath,
+              stdio: 'pipe'
+            });
+
+            console.log(`✅ コミット作成完了`);
+            console.log(`   📦 タスク: ${taskId}`);
+            console.log(`   📝 メッセージ: ${commitMessage.split('\n')[0]}`);
+          } else {
+            console.log(`ℹ️  変更なし - コミットをスキップ`);
+          }
+        } catch (gitError) {
+          console.warn(`⚠️  Git操作に失敗しましたが、処理を継続します: ${gitError}`);
+          // Git操作の失敗はタスク失敗とはしない（実装自体は成功している）
+        }
+
+        console.log(`\n${'='.repeat(60)}\n`);
+      } catch (commitError) {
+        console.error(`❌ コミット作成エラー: ${commitError}`);
+        // コミット作成エラーもタスク失敗とはしない（レビュー時に対応可能）
+      }
+    }
 
     if (!executionResult.success) {
       // AI実行失敗 - エラーを分類して適切に処理

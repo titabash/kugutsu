@@ -158,8 +158,14 @@ ${context}
 1. タスクの目的・背景
 2. 実装すべき機能の詳細
 3. 技術的制約・要件
-4. 受入基準（Definition of Done）
-5. 参考資料・関連ファイル
+4. 環境セットアップ手順
+   - このタスクは隔離されたGit Worktree環境で実行されます
+   - エンジニアが実装を開始する前に行うべき環境初期化手順を明記してください
+   - 例: 依存関係のインストール（npm install, pip install, go mod download等）、設定ファイルのコピー、ビルドの実行等
+   - プロジェクトの種類（Node.js, Python, Go, Rust等）に応じた適切な初期化手順を判断して記載してください
+   - package.json, requirements.txt, go.mod, Cargo.toml等の存在を確認し、必要なコマンドを提示してください
+5. 受入基準（Definition of Done）
+6. 参考資料・関連ファイル
 
 出力形式: Markdown
   `.trim();

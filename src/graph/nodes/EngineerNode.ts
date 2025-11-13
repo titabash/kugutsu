@@ -629,6 +629,29 @@ ${reviewFeedbackSection}
 ## 作業ディレクトリ
 ${taskArtifact.worktreePath}
 
+## 🚀 環境セットアップ（最優先実行）
+
+**重要**: あなたはGit Worktree環境で作業しています。実装を開始する前に、必ず以下を実行してください:
+
+1. **プロジェクトの種類を確認**
+   - Readツールで\`package.json\`, \`requirements.txt\`, \`go.mod\`, \`Cargo.toml\`等の存在を確認
+   - プロジェクトのビルドシステムを特定
+
+2. **依存関係のインストール**
+   - Node.jsプロジェクト: \`npm install\` または \`yarn install\`
+   - Pythonプロジェクト: \`pip install -r requirements.txt\`
+   - Goプロジェクト: \`go mod download\`
+   - Rustプロジェクト: \`cargo build\`
+   - その他のプロジェクトも、適切な依存関係インストールコマンドを実行
+
+3. **必要に応じてビルドやコード生成を実行**
+   - TypeScriptのビルド、プロトコルバッファのコード生成等
+
+4. **環境が正しくセットアップされたことを確認**
+   - 必要に応じてテストコマンドやビルドコマンドを実行して動作確認
+
+これらの手順を完了してから、タスクの実装に進んでください。
+
 ## タスクの詳細指示
 
 ${instruction}
@@ -676,6 +699,14 @@ ${dependenciesSection}
         for await (const message of provider.execute(implementationPrompt, {
           maxTurns: state.config.maxTurns,
           cwd: taskArtifact.worktreePath,
+          systemPrompt: `You are an AI engineer working in an isolated Git worktree environment.
+
+CRITICAL FIRST STEPS:
+1. Before starting any implementation, ALWAYS check for dependency files (package.json, requirements.txt, go.mod, Cargo.toml, etc.)
+2. If dependency files exist, INSTALL dependencies first using appropriate commands (npm install, pip install, go mod download, cargo build, etc.)
+3. Ensure the development environment is properly set up before writing code
+
+This is a MANDATORY step. Failure to set up the environment will cause implementation failures.`,
           permissionMode: 'acceptEdits',
           allowedTools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
           resume: taskArtifact.sessionId,

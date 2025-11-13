@@ -387,10 +387,15 @@ export const ParallelDevState = Annotation.Root({
    *
    * Single task passed via LangGraph Send API for parallel processing.
    * Used by InstructionGeneratorNode to process individual tasks.
+   *
+   * NOTE: This field is explicitly reset to null after task processing.
+   * Reducer MUST support explicit null assignment.
    */
   taskToProcess: Annotation<GlobalTask | null>({
-    reducer: (state: GlobalTask | null, update: GlobalTask | null) => {
-      return update ?? state;
+    reducer: (state: GlobalTask | null, update: GlobalTask | null | undefined) => {
+      // updateがundefinedの場合のみstateを保持、nullは明示的に設定
+      if (update === undefined) return state;
+      return update;
     },
     default: () => null,
   }),
@@ -434,8 +439,10 @@ export const ParallelDevState = Annotation.Root({
    * Reducer: Replace (default)
    */
   activeSprint: Annotation<Sprint | null>({
-    reducer: (state: Sprint | null, update: Sprint | null) => {
-      return update ?? state;
+    reducer: (state: Sprint | null, update: Sprint | null | undefined) => {
+      // updateがundefinedの場合のみstateを保持、nullは明示的に設定
+      if (update === undefined) return state;
+      return update;
     },
     default: () => null,
   }),
@@ -602,11 +609,16 @@ export const ParallelDevState = Annotation.Root({
    * 現在アクティブなフィードバックリクエスト
    * Conditional edgeがこれを見てルーティングを決定
    *
+   * NOTE: This field is explicitly reset to null after feedback processing.
+   * Reducer MUST support explicit null assignment.
+   *
    * Reducer: Replace (default)
    */
   feedbackRequest: Annotation<FeedbackRequest | null>({
-    reducer: (state: FeedbackRequest | null, update: FeedbackRequest | null) => {
-      return update ?? state;
+    reducer: (state: FeedbackRequest | null, update: FeedbackRequest | null | undefined) => {
+      // updateがundefinedの場合のみstateを保持、nullは明示的に設定
+      if (update === undefined) return state;
+      return update;
     },
     default: () => null,
   }),
@@ -658,11 +670,16 @@ export const ParallelDevState = Annotation.Root({
    * This field is used when a node is executed in parallel via Send API.
    * Each parallel node instance receives a specific task ID to process.
    *
+   * NOTE: This field is explicitly reset to null after task completion.
+   * Reducer MUST support explicit null assignment.
+   *
    * Reducer: Replace (default)
    */
   currentTaskId: Annotation<string | null>({
-    reducer: (state: string | null, update: string | null) => {
-      return update ?? state;
+    reducer: (state: string | null, update: string | null | undefined) => {
+      // updateがundefinedの場合のみstateを保持、nullは明示的に設定
+      if (update === undefined) return state;
+      return update;
     },
     default: () => null,
   }),

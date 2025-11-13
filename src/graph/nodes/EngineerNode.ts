@@ -558,7 +558,7 @@ ${state.designDocs.uiuxPath ? `### UI/UX設計
       : '';
 
     // レビューコメント取得ロジック
-    const taskReviews = state.reviews
+    const taskReviews = (state.reviews || [])
       .filter(r => r.taskId === taskId)
       .sort((a, b) => {
         const timeA = a.timestamp instanceof Date ? a.timestamp.getTime() : new Date(a.timestamp).getTime();

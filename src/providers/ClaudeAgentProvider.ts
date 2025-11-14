@@ -141,20 +141,40 @@ export class ClaudeAgentProvider implements IAIProvider {
     } catch (error) {
       // Check if this is an authentication error
       const errorMessage = error instanceof Error ? error.message : String(error);
-      const isAuthError = errorMessage.toLowerCase().includes('auth') ||
-                         errorMessage.toLowerCase().includes('api key');
+      const errorMessageLower = errorMessage.toLowerCase();
+      const isAuthError = errorMessageLower.includes('auth') ||
+                         errorMessageLower.includes('api key');
 
       // Log authentication warning if API key is not provided and error is auth-related
       if (isAuthError && !this.apiKey) {
         console.error('⚠️  Authentication failed - No API key provided. Please set ANTHROPIC_API_KEY environment variable or ensure you are logged in to Claude Code.');
       }
 
+      // Check if error message contains usage limit patterns
+      const isUsageLimitError = (
+        errorMessageLower.includes('weekly limit') ||
+        errorMessageLower.includes('monthly limit') ||
+        errorMessageLower.includes('usage limit') ||
+        errorMessageLower.includes('usage_limit') ||
+        errorMessageLower.includes('upgrade to pro') ||
+        errorMessageLower.includes('quota') ||
+        errorMessageLower.includes('limit reached') ||
+        errorMessageLower.includes('subscription') ||
+        errorMessageLower.includes('billing') ||
+        errorMessageLower.includes('rate limit') ||
+        errorMessageLower.includes('rate_limit') ||
+        errorMessageLower.includes('hit your usage limit') ||
+        errorMessageLower.includes('purchase more credits')
+      );
+
       // Yield error message
       yield {
         type: 'result',
         content: {
           success: false,
+          subtype: isUsageLimitError ? 'rate_limit' : undefined,
           error: errorMessage,
+          errors: [errorMessage],
         },
         timestamp: new Date(),
       };

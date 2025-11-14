@@ -307,4 +307,67 @@ describe('ClaudeAgentProvider', () => {
     expect(messages[0].content.success).toBe(false);
     expect(messages[0].content.error).toBe('API connection failed');
   });
+
+  test('should classify usage limit error as rate_limit in catch block', async () => {
+    // Mock query to throw usage limit error
+    mockQuery.mockImplementation(() => {
+      throw new Error("You've hit your usage limit. Upgrade to Pro (https://openai.com/chatgpt/pricing), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Nov 18th, 2025 1:54 PM.");
+    });
+
+    const messages: any[] = [];
+    for await (const message of provider.execute('Test')) {
+      messages.push(message);
+    }
+
+    expect(messages.length).toBe(1);
+    expect(messages[0].type).toBe('result');
+    expect(messages[0].content.success).toBe(false);
+    expect(messages[0].content.subtype).toBe('rate_limit');
+    expect(messages[0].content.error).toContain('usage limit');
+    expect(messages[0].content.errors).toEqual([expect.stringContaining('usage limit')]);
+  });
+
+  test('should classify various usage limit patterns as rate_limit in catch block', async () => {
+    const usageLimitMessages = [
+      "You've hit your usage limit",
+      'Upgrade to Pro',
+      'purchase more credits',
+      'weekly limit reached',
+      'monthly limit exceeded',
+      'quota exceeded',
+      'subscription required',
+    ];
+
+    for (const errorMsg of usageLimitMessages) {
+      mockQuery.mockImplementation(() => {
+        throw new Error(errorMsg);
+      });
+
+      const messages: any[] = [];
+      for await (const message of provider.execute('Test')) {
+        messages.push(message);
+      }
+
+      expect(messages[0].content.subtype).toBe('rate_limit');
+      expect(messages[0].content.error).toBe(errorMsg);
+    }
+  });
+
+  test('should not classify non-usage-limit errors as rate_limit in catch block', async () => {
+    // Mock query to throw non-usage-limit error
+    mockQuery.mockImplementation(() => {
+      throw new Error('API connection failed');
+    });
+
+    const messages: any[] = [];
+    for await (const message of provider.execute('Test')) {
+      messages.push(message);
+    }
+
+    expect(messages.length).toBe(1);
+    expect(messages[0].type).toBe('result');
+    expect(messages[0].content.success).toBe(false);
+    expect(messages[0].content.subtype).toBeUndefined(); // Should not be rate_limit
+    expect(messages[0].content.error).toBe('API connection failed');
+  });
 });

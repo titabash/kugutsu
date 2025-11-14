@@ -201,6 +201,142 @@ describe('MessageHandler', () => {
       expect(handler.getHasError()).toBe(false);
       expect(handler.getErrorDetails()).toBeUndefined();
     });
+
+    it('should classify usage limit error as rate_limit even with turn_failed subtype', async () => {
+      const handler = new MessageHandler({
+        maxTurns: 10,
+        nodeName: 'TestNode',
+        taskId: 'test-usage-limit-001',
+      });
+
+      const errorMessage: AIMessage = {
+        type: 'result',
+        content: {
+          success: false,
+          subtype: 'turn_failed',
+          errors: ["You've hit your usage limit. Upgrade to Pro (https://openai.com/chatgpt/pricing), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Nov 18th, 2025 1:54 PM."],
+        },
+      };
+
+      await handler.handleMessage(errorMessage);
+
+      expect(handler.getHasError()).toBe(true);
+
+      const details = handler.getErrorDetails();
+      expect(details).toBeDefined();
+      expect(details?.subtype).toBe('rate_limit');
+      expect(details?.message).toContain('usage limit');
+    });
+
+    it('should classify usage limit error as rate_limit even with exception subtype', async () => {
+      const handler = new MessageHandler({
+        maxTurns: 10,
+        nodeName: 'TestNode',
+        taskId: 'test-usage-limit-002',
+      });
+
+      const errorMessage: AIMessage = {
+        type: 'result',
+        content: {
+          success: false,
+          subtype: 'exception',
+          error: "You've hit your usage limit. Upgrade to Pro",
+        },
+      };
+
+      await handler.handleMessage(errorMessage);
+
+      expect(handler.getHasError()).toBe(true);
+
+      const details = handler.getErrorDetails();
+      expect(details).toBeDefined();
+      expect(details?.subtype).toBe('rate_limit');
+      expect(details?.message).toContain('usage limit');
+    });
+
+    it('should classify various usage limit patterns as rate_limit', async () => {
+      const usageLimitMessages = [
+        "You've hit your usage limit",
+        'Upgrade to Pro',
+        'purchase more credits',
+        'weekly limit reached',
+        'monthly limit exceeded',
+        'quota exceeded',
+        'subscription required',
+      ];
+
+      for (const errorMsg of usageLimitMessages) {
+        const handler = new MessageHandler({
+          maxTurns: 10,
+          nodeName: 'TestNode',
+          taskId: `test-usage-limit-${errorMsg.substring(0, 10)}`,
+        });
+
+        const errorMessage: AIMessage = {
+          type: 'result',
+          content: {
+            success: false,
+            subtype: 'turn_failed',
+            errors: [errorMsg],
+          },
+        };
+
+        await handler.handleMessage(errorMessage);
+
+        expect(handler.getHasError()).toBe(true);
+
+        const details = handler.getErrorDetails();
+        expect(details?.subtype).toBe('rate_limit');
+      }
+    });
+
+    it('should detect usage limit error in assistant message', async () => {
+      const handler = new MessageHandler({
+        maxTurns: 10,
+        nodeName: 'TestNode',
+        taskId: 'test-usage-limit-assistant',
+      });
+
+      const assistantMessage: AIMessage = {
+        type: 'assistant',
+        content: "You've hit your usage limit. Upgrade to Pro to continue.",
+        timestamp: new Date(),
+      };
+
+      await handler.handleMessage(assistantMessage);
+
+      expect(handler.getHasError()).toBe(true);
+
+      const details = handler.getErrorDetails();
+      expect(details).toBeDefined();
+      expect(details?.subtype).toBe('rate_limit');
+      expect(details?.message).toContain('usage limit');
+    });
+
+    it('should not classify non-usage-limit errors as rate_limit', async () => {
+      const handler = new MessageHandler({
+        maxTurns: 10,
+        nodeName: 'TestNode',
+        taskId: 'test-non-usage-limit',
+      });
+
+      const errorMessage: AIMessage = {
+        type: 'result',
+        content: {
+          success: false,
+          subtype: 'turn_failed',
+          errors: ['File not found: test.txt'],
+        },
+      };
+
+      await handler.handleMessage(errorMessage);
+
+      expect(handler.getHasError()).toBe(true);
+
+      const details = handler.getErrorDetails();
+      expect(details).toBeDefined();
+      expect(details?.subtype).toBe('turn_failed'); // Should remain turn_failed, not rate_limit
+    });
   });
 
   describe('Complete method', () => {

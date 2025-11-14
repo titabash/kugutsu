@@ -121,10 +121,15 @@ export class MessageHandler {
           if (
             contentLower.includes('weekly limit') ||
             contentLower.includes('monthly limit') ||
+            contentLower.includes('usage limit') ||
+            contentLower.includes('usage_limit') ||
+            contentLower.includes('upgrade to pro') ||
             contentLower.includes('quota') ||
             contentLower.includes('limit reached') ||
             contentLower.includes('subscription') ||
-            contentLower.includes('billing')
+            contentLower.includes('billing') ||
+            contentLower.includes('hit your usage limit') ||
+            contentLower.includes('purchase more credits')
           ) {
             this.hasError = true;
             this.errorDetails = {
@@ -167,20 +172,33 @@ export class MessageHandler {
           }
 
           // Check if error message contains permanent error patterns
+          // This check should take priority over subtype (turn_failed, exception, etc.)
           const errorMessageLower = errorMessage.toLowerCase();
           const isPermanentError = (
             errorMessageLower.includes('weekly limit') ||
             errorMessageLower.includes('monthly limit') ||
+            errorMessageLower.includes('usage limit') ||
+            errorMessageLower.includes('usage_limit') ||
+            errorMessageLower.includes('upgrade to pro') ||
+            errorMessageLower.includes('upgrade to pro') ||
             errorMessageLower.includes('quota') ||
             errorMessageLower.includes('limit reached') ||
             errorMessageLower.includes('subscription') ||
             errorMessageLower.includes('billing') ||
             errorMessageLower.includes('rate limit') ||
-            errorMessageLower.includes('rate_limit')
+            errorMessageLower.includes('rate_limit') ||
+            errorMessageLower.includes('hit your usage limit') ||
+            errorMessageLower.includes('purchase more credits')
           );
 
+          // If error message contains usage limit patterns, always classify as rate_limit
+          // This overrides subtype like turn_failed or exception
+          const finalSubtype = isPermanentError
+            ? 'rate_limit'
+            : (message.content.subtype || 'unknown');
+
           this.errorDetails = {
-            subtype: isPermanentError ? 'rate_limit' : (message.content.subtype || 'unknown'),
+            subtype: finalSubtype,
             message: errorMessage,
             errors: allErrors,
           };

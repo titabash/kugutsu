@@ -150,11 +150,30 @@ export class OpenAICodexProvider implements IAIProvider {
     } catch (error) {
       // Yield error message
       const errorMessage = error instanceof Error ? error.message : String(error);
+
+      // Check if error message contains usage limit patterns
+      const errorMessageLower = errorMessage.toLowerCase();
+      const isUsageLimitError = (
+        errorMessageLower.includes('weekly limit') ||
+        errorMessageLower.includes('monthly limit') ||
+        errorMessageLower.includes('usage limit') ||
+        errorMessageLower.includes('usage_limit') ||
+        errorMessageLower.includes('upgrade to pro') ||
+        errorMessageLower.includes('quota') ||
+        errorMessageLower.includes('limit reached') ||
+        errorMessageLower.includes('subscription') ||
+        errorMessageLower.includes('billing') ||
+        errorMessageLower.includes('rate limit') ||
+        errorMessageLower.includes('rate_limit') ||
+        errorMessageLower.includes('hit your usage limit') ||
+        errorMessageLower.includes('purchase more credits')
+      );
+
       yield {
         type: 'result',
         content: {
           success: false,
-          subtype: 'exception', // Include subtype for MessageHandler error detection
+          subtype: isUsageLimitError ? 'rate_limit' : 'exception',
           error: errorMessage,
           errors: [errorMessage], // Also include in errors array for consistency
         },
@@ -215,17 +234,37 @@ export class OpenAICodexProvider implements IAIProvider {
           session_id: this.currentSession || undefined,
         };
 
-      case 'turn.failed':
+      case 'turn.failed': {
+        // Check if error message contains usage limit patterns
+        const errorMessage = event.error.message || '';
+        const errorMessageLower = errorMessage.toLowerCase();
+        const isUsageLimitError = (
+          errorMessageLower.includes('weekly limit') ||
+          errorMessageLower.includes('monthly limit') ||
+          errorMessageLower.includes('usage limit') ||
+          errorMessageLower.includes('usage_limit') ||
+          errorMessageLower.includes('upgrade to pro') ||
+          errorMessageLower.includes('quota') ||
+          errorMessageLower.includes('limit reached') ||
+          errorMessageLower.includes('subscription') ||
+          errorMessageLower.includes('billing') ||
+          errorMessageLower.includes('rate limit') ||
+          errorMessageLower.includes('rate_limit') ||
+          errorMessageLower.includes('hit your usage limit') ||
+          errorMessageLower.includes('purchase more credits')
+        );
+
         return {
           ...baseMessage,
           type: 'result',
           content: {
             success: false,
-            subtype: 'turn_failed', // Include subtype for MessageHandler error detection
-            errors: [event.error.message],
+            subtype: isUsageLimitError ? 'rate_limit' : 'turn_failed',
+            errors: [errorMessage],
           },
           session_id: this.currentSession || undefined,
         };
+      }
 
       case 'item.started':
         if (!includePartialMessages) return null;

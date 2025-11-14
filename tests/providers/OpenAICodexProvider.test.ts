@@ -230,6 +230,114 @@ describe('OpenAICodexProvider', () => {
     expect(messages[0].content.errors).toEqual(['Codex execution failed']);
   });
 
+  test('should classify usage limit error as rate_limit in turn.failed event', async () => {
+    const mockEvents = {
+      async *[Symbol.asyncIterator]() {
+        yield {
+          type: 'turn.failed',
+          error: {
+            message: "You've hit your usage limit. Upgrade to Pro (https://openai.com/chatgpt/pricing), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Nov 18th, 2025 1:54 PM.",
+          },
+        };
+      },
+    };
+
+    mockStartThread.mockReturnValue({
+      runStreamed: jest.fn<any>().mockResolvedValue({ events: mockEvents }),
+      id: 'thread-usage-limit',
+    });
+
+    const messages: any[] = [];
+    for await (const message of provider.execute('Test')) {
+      messages.push(message);
+    }
+
+    expect(messages[0].type).toBe('result');
+    expect(messages[0].content.success).toBe(false);
+    expect(messages[0].content.subtype).toBe('rate_limit');
+    expect(messages[0].content.errors[0]).toContain('usage limit');
+  });
+
+  test('should classify various usage limit patterns as rate_limit in turn.failed', async () => {
+    const usageLimitMessages = [
+      "You've hit your usage limit",
+      'Upgrade to Pro',
+      'purchase more credits',
+      'weekly limit reached',
+      'monthly limit exceeded',
+    ];
+
+    for (const errorMsg of usageLimitMessages) {
+      const mockEvents = {
+        async *[Symbol.asyncIterator]() {
+          yield {
+            type: 'turn.failed',
+            error: {
+              message: errorMsg,
+            },
+          };
+        },
+      };
+
+      mockStartThread.mockReturnValue({
+        runStreamed: jest.fn<any>().mockResolvedValue({ events: mockEvents }),
+        id: `thread-${errorMsg.substring(0, 10)}`,
+      });
+
+      const messages: any[] = [];
+      for await (const message of provider.execute('Test')) {
+        messages.push(message);
+      }
+
+      expect(messages[0].content.subtype).toBe('rate_limit');
+    }
+  });
+
+  test('should classify usage limit error as rate_limit in catch block', async () => {
+    // Mock startThread to throw usage limit error
+    mockStartThread.mockImplementation(() => {
+      throw new Error("You've hit your usage limit. Upgrade to Pro");
+    });
+
+    const messages: any[] = [];
+    for await (const message of provider.execute('Test')) {
+      messages.push(message);
+    }
+
+    expect(messages.length).toBe(1);
+    expect(messages[0].type).toBe('result');
+    expect(messages[0].content.success).toBe(false);
+    expect(messages[0].content.subtype).toBe('rate_limit');
+    expect(messages[0].content.error).toContain('usage limit');
+  });
+
+  test('should not classify non-usage-limit errors as rate_limit in turn.failed', async () => {
+    const mockEvents = {
+      async *[Symbol.asyncIterator]() {
+        yield {
+          type: 'turn.failed',
+          error: {
+            message: 'File not found: test.txt',
+          },
+        };
+      },
+    };
+
+    mockStartThread.mockReturnValue({
+      runStreamed: jest.fn<any>().mockResolvedValue({ events: mockEvents }),
+      id: 'thread-normal-error',
+    });
+
+    const messages: any[] = [];
+    for await (const message of provider.execute('Test')) {
+      messages.push(message);
+    }
+
+    expect(messages[0].type).toBe('result');
+    expect(messages[0].content.success).toBe(false);
+    expect(messages[0].content.subtype).toBe('turn_failed'); // Should remain turn_failed, not rate_limit
+  });
+
   test('should handle stream events as partial messages', async () => {
     const mockEvents = {
       async *[Symbol.asyncIterator]() {

@@ -85,6 +85,7 @@ export function createUnifiedScrumWorkflowGraph() {
     })
     .addNode('instruction_aggregator', instructionAggregatorNode, {
       ends: ['instruction_generator_dispatch', 'instruction_aggregator', 'engineer_dispatch', 'sprint_review'],
+      defer: true,  // 全並列instruction_generatorノード完了まで待機
     })
     .addNode('engineer_dispatch', engineerDispatchNode)
 
@@ -118,7 +119,7 @@ export function createUnifiedScrumWorkflowGraph() {
           },
         ],
       };
-    })
+    }, { defer: true })  // 全並列engineerノード完了まで待機
 
     // ================================================
     // Review Dispatch: Manage review task distribution (respects maxEngineers)
@@ -155,7 +156,7 @@ export function createUnifiedScrumWorkflowGraph() {
           },
         ],
       };
-    })
+    }, { defer: true })  // 全並列reviewノード完了まで待機
 
     // ================================================
     // Merge and Conflict Resolution

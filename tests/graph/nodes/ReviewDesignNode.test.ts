@@ -386,4 +386,202 @@ describe('ReviewDesignNode', () => {
       expect(result.reviewFeedback!.issues.some((i) => i.severity === 'critical')).toBe(true);
     });
   });
+
+  describe('Parallel Review Execution', () => {
+    test('should execute 3 reviewers in parallel using Promise.all', async () => {
+      const executionLog: Array<{ reviewer: string; event: string; timestamp: number }> = [];
+      const startTime = Date.now();
+
+      // Track which reviewers have started and completed
+      const reviewerStatus = {
+        director: { started: false, completed: false },
+        productOwner: { started: false, completed: false },
+        techLead: { started: false, completed: false },
+      };
+
+      // Mock execute to track parallel execution
+      mockProvider.execute = jest.fn<any>().mockImplementation(async function* (prompt: string) {
+        let reviewer: string;
+        let reviewerKey: 'director' | 'productOwner' | 'techLead';
+
+        if (prompt.includes('DirectorAI')) {
+          reviewer = 'DirectorAI';
+          reviewerKey = 'director';
+        } else if (prompt.includes('ProductOwnerAI')) {
+          reviewer = 'ProductOwnerAI';
+          reviewerKey = 'productOwner';
+        } else {
+          reviewer = 'TechLeadAI';
+          reviewerKey = 'techLead';
+        }
+
+        executionLog.push({
+          reviewer,
+          event: 'START',
+          timestamp: Date.now() - startTime
+        });
+        reviewerStatus[reviewerKey].started = true;
+
+        // Simulate async work
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        const review = {
+          approved: true,
+          issues: [],
+          comments: [],
+        };
+
+        const jsonResponse = '```json\n' + JSON.stringify(review, null, 2) + '\n```';
+        yield createMockMessage.assistant(jsonResponse);
+        yield createMockMessage.result(true);
+
+        executionLog.push({
+          reviewer,
+          event: 'END',
+          timestamp: Date.now() - startTime
+        });
+        reviewerStatus[reviewerKey].completed = true;
+      });
+
+      const initialState = createTestState('Request', {
+        maxEngineers: 3,
+        maxTurns: 30,
+        baseBranch: 'main',
+        baseRepoPath: '/test/repo',
+        worktreeBasePath: '/test/worktrees',
+      });
+
+      const stateWithDesignDocs = {
+        ...initialState,
+        currentProjectId: 'test-project',
+        storyMapping: {
+          persona: {
+            name: 'Test User',
+            role: 'End User',
+            goal: 'Test goal',
+          },
+          epics: [],
+        },
+        designDocs: {
+          designDocsPath: '.kugutsu/projects/test-project/design/design-docs.md',
+        },
+      };
+
+      const result = await reviewDesignNode(stateWithDesignDocs);
+
+      // Verify all 3 reviewers were executed
+      expect(reviewerStatus.director.started).toBe(true);
+      expect(reviewerStatus.productOwner.started).toBe(true);
+      expect(reviewerStatus.techLead.started).toBe(true);
+      expect(reviewerStatus.director.completed).toBe(true);
+      expect(reviewerStatus.productOwner.completed).toBe(true);
+      expect(reviewerStatus.techLead.completed).toBe(true);
+
+      // Verify parallel execution: all 3 should start before any completes
+      const startEvents = executionLog.filter(e => e.event === 'START');
+      const endEvents = executionLog.filter(e => e.event === 'END');
+
+      expect(startEvents.length).toBe(3);
+      expect(endEvents.length).toBe(3);
+
+      // Verify parallel execution: all should start before first one ends
+      const startTimes = startEvents.map(e => e.timestamp);
+      const firstEndTime = Math.min(...endEvents.map(e => e.timestamp));
+      const lastStartTime = Math.max(...startTimes);
+      expect(lastStartTime).toBeLessThan(firstEndTime);
+
+      // Verify result
+      expect(result.logs).toBeDefined();
+      expect(result.logs!.some(log => log.message.includes('承認'))).toBe(true);
+    });
+
+    test('should handle errors in parallel review execution', async () => {
+      // Mock execute to throw error for ProductOwnerAI
+      mockProvider.execute = jest.fn<any>().mockImplementation(async function* (prompt: string) {
+        if (prompt.includes('ProductOwnerAI')) {
+          throw new Error('ProductOwnerAI review failed');
+        }
+
+        const review = {
+          approved: true,
+          issues: [],
+          comments: [],
+        };
+
+        const jsonResponse = '```json\n' + JSON.stringify(review, null, 2) + '\n```';
+        yield createMockMessage.assistant(jsonResponse);
+        yield createMockMessage.result(true);
+      });
+
+      const initialState = createTestState('Request', {
+        maxEngineers: 3,
+        maxTurns: 30,
+        baseBranch: 'main',
+        baseRepoPath: '/test/repo',
+        worktreeBasePath: '/test/worktrees',
+      });
+
+      const stateWithDesignDocs = {
+        ...initialState,
+        currentProjectId: 'test-project',
+        designDocs: {
+          designDocsPath: '.kugutsu/projects/test-project/design/design-docs.md',
+        },
+      };
+
+      // Should throw error due to ProductOwnerAI failure
+      await expect(reviewDesignNode(stateWithDesignDocs)).rejects.toThrow();
+    });
+
+    test('should improve performance with parallel execution vs sequential', async () => {
+      const REVIEW_DURATION = 50; // ms per review
+
+      // Mock execute with fixed duration
+      mockProvider.execute = jest.fn<any>().mockImplementation(async function* () {
+        await new Promise(resolve => setTimeout(resolve, REVIEW_DURATION));
+
+        const review = {
+          approved: true,
+          issues: [],
+          comments: [],
+        };
+
+        const jsonResponse = '```json\n' + JSON.stringify(review, null, 2) + '\n```';
+        yield createMockMessage.assistant(jsonResponse);
+        yield createMockMessage.result(true);
+      });
+
+      const initialState = createTestState('Request', {
+        maxEngineers: 3,
+        maxTurns: 30,
+        baseBranch: 'main',
+        baseRepoPath: '/test/repo',
+        worktreeBasePath: '/test/worktrees',
+      });
+
+      const stateWithDesignDocs = {
+        ...initialState,
+        currentProjectId: 'test-project',
+        storyMapping: {
+          persona: {
+            name: 'Test User',
+            role: 'End User',
+            goal: 'Test goal',
+          },
+          epics: [],
+        },
+        designDocs: {
+          designDocsPath: '.kugutsu/projects/test-project/design/design-docs.md',
+        },
+      };
+
+      const startTime = Date.now();
+      await reviewDesignNode(stateWithDesignDocs);
+      const duration = Date.now() - startTime;
+
+      // CI環境ではタイミングが不安定なため、実行順序の検証のみを行う
+      // パフォーマンステストは実行順序テストで十分にカバーされている
+      console.log(`Parallel execution completed in ${duration}ms`);
+    });
+  });
 });

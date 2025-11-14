@@ -277,18 +277,38 @@ export class OpenAICodexProvider implements IAIProvider {
       case 'item.completed':
         return this.convertItemToMessage(event.item, 'completed');
 
-      case 'error':
+      case 'error': {
+        // Check if error message contains usage limit patterns
+        const errorMessage = event.message || '';
+        const errorMessageLower = errorMessage.toLowerCase();
+        const isUsageLimitError = (
+          errorMessageLower.includes('weekly limit') ||
+          errorMessageLower.includes('monthly limit') ||
+          errorMessageLower.includes('usage limit') ||
+          errorMessageLower.includes('usage_limit') ||
+          errorMessageLower.includes('upgrade to pro') ||
+          errorMessageLower.includes('quota') ||
+          errorMessageLower.includes('limit reached') ||
+          errorMessageLower.includes('subscription') ||
+          errorMessageLower.includes('billing') ||
+          errorMessageLower.includes('rate limit') ||
+          errorMessageLower.includes('rate_limit') ||
+          errorMessageLower.includes('hit your usage limit') ||
+          errorMessageLower.includes('purchase more credits')
+        );
+
         return {
           ...baseMessage,
           type: 'result',
           content: {
             success: false,
-            subtype: 'error', // Include subtype for MessageHandler error detection
-            error: event.message,
-            errors: [event.message], // Also include in errors array for consistency
+            subtype: isUsageLimitError ? 'rate_limit' : 'error',
+            error: errorMessage,
+            errors: [errorMessage],
           },
           session_id: this.currentSession || undefined,
         };
+      }
 
       default:
         return null;

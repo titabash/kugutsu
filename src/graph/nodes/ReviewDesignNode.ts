@@ -132,51 +132,52 @@ export async function reviewDesignNode(
   // ストーリーマッピングも読み込み（参照用）
   const storyMapping = await persistence.loadStoryMapping(currentProjectId);
 
-  // 3者レビューを並行実行
-  console.log('🤖 AI: DirectorAIレビュー実行中...');
-  const directorReview = await executeReview(
-    provider,
-    'DirectorAI',
-    {
-      designDocsMarkdown,
-      wireframesMarkdown,
-      erDiagramMarkdown,
-      apiSpecMarkdown,
-    },
-    storyMapping,
-    config.baseRepoPath,
-    maxTurns
-  );
+  // 3者レビューを並列実行
+  console.log('🤖 AI: DirectorAI、ProductOwnerAI、TechLeadAIレビューを並列実行中...');
 
-  console.log('🤖 AI: ProductOwnerAIレビュー実行中...');
-  const productOwnerReview = await executeReview(
-    provider,
-    'ProductOwnerAI',
-    {
-      designDocsMarkdown,
-      wireframesMarkdown,
-      erDiagramMarkdown,
-      apiSpecMarkdown,
-    },
-    storyMapping,
-    config.baseRepoPath,
-    maxTurns
-  );
+  const [directorReview, productOwnerReview, techLeadReview] = await Promise.all([
+    executeReview(
+      provider,
+      'DirectorAI',
+      {
+        designDocsMarkdown,
+        wireframesMarkdown,
+        erDiagramMarkdown,
+        apiSpecMarkdown,
+      },
+      storyMapping,
+      config.baseRepoPath,
+      maxTurns
+    ),
+    executeReview(
+      provider,
+      'ProductOwnerAI',
+      {
+        designDocsMarkdown,
+        wireframesMarkdown,
+        erDiagramMarkdown,
+        apiSpecMarkdown,
+      },
+      storyMapping,
+      config.baseRepoPath,
+      maxTurns
+    ),
+    executeReview(
+      provider,
+      'TechLeadAI',
+      {
+        designDocsMarkdown,
+        wireframesMarkdown,
+        erDiagramMarkdown,
+        apiSpecMarkdown,
+      },
+      storyMapping,
+      config.baseRepoPath,
+      maxTurns
+    ),
+  ]);
 
-  console.log('🤖 AI: TechLeadAIレビュー実行中...');
-  const techLeadReview = await executeReview(
-    provider,
-    'TechLeadAI',
-    {
-      designDocsMarkdown,
-      wireframesMarkdown,
-      erDiagramMarkdown,
-      apiSpecMarkdown,
-    },
-    storyMapping,
-    config.baseRepoPath,
-    maxTurns
-  );
+  console.log('✅ 3者レビューの並列実行が完了しました');
 
   // レビュー結果を統合
   const consolidatedResult = consolidateReviews(

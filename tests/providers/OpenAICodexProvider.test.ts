@@ -338,6 +338,92 @@ describe('OpenAICodexProvider', () => {
     expect(messages[0].content.subtype).toBe('turn_failed'); // Should remain turn_failed, not rate_limit
   });
 
+  test('should classify usage limit error as rate_limit in error event', async () => {
+    const mockEvents = {
+      async *[Symbol.asyncIterator]() {
+        yield {
+          type: 'error',
+          message: "You've hit your usage limit. Upgrade to Pro (https://openai.com/chatgpt/pricing), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Nov 15th, 2025 1:23 AM.",
+        };
+      },
+    };
+
+    mockStartThread.mockReturnValue({
+      runStreamed: jest.fn<any>().mockResolvedValue({ events: mockEvents }),
+      id: 'thread-error-usage-limit',
+    });
+
+    const messages: any[] = [];
+    for await (const message of provider.execute('Test')) {
+      messages.push(message);
+    }
+
+    expect(messages[0].type).toBe('result');
+    expect(messages[0].content.success).toBe(false);
+    expect(messages[0].content.subtype).toBe('rate_limit');
+    expect(messages[0].content.error).toContain('usage limit');
+  });
+
+  test('should classify various usage limit patterns as rate_limit in error event', async () => {
+    const usageLimitMessages = [
+      "You've hit your usage limit",
+      'Upgrade to Pro',
+      'purchase more credits',
+      'weekly limit reached',
+      'monthly limit exceeded',
+      'rate limit exceeded',
+      'quota exceeded',
+    ];
+
+    for (const errorMsg of usageLimitMessages) {
+      const mockEvents = {
+        async *[Symbol.asyncIterator]() {
+          yield {
+            type: 'error',
+            message: errorMsg,
+          };
+        },
+      };
+
+      mockStartThread.mockReturnValue({
+        runStreamed: jest.fn<any>().mockResolvedValue({ events: mockEvents }),
+        id: `thread-error-${errorMsg.substring(0, 10)}`,
+      });
+
+      const messages: any[] = [];
+      for await (const message of provider.execute('Test')) {
+        messages.push(message);
+      }
+
+      expect(messages[0].content.subtype).toBe('rate_limit');
+    }
+  });
+
+  test('should not classify non-usage-limit errors as rate_limit in error event', async () => {
+    const mockEvents = {
+      async *[Symbol.asyncIterator]() {
+        yield {
+          type: 'error',
+          message: 'Network connection timeout',
+        };
+      },
+    };
+
+    mockStartThread.mockReturnValue({
+      runStreamed: jest.fn<any>().mockResolvedValue({ events: mockEvents }),
+      id: 'thread-error-normal',
+    });
+
+    const messages: any[] = [];
+    for await (const message of provider.execute('Test')) {
+      messages.push(message);
+    }
+
+    expect(messages[0].type).toBe('result');
+    expect(messages[0].content.success).toBe(false);
+    expect(messages[0].content.subtype).toBe('error'); // Should remain error, not rate_limit
+  });
+
   test('should handle stream events as partial messages', async () => {
     const mockEvents = {
       async *[Symbol.asyncIterator]() {

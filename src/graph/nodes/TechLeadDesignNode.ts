@@ -188,53 +188,57 @@ export async function techLeadDesignNode(
   handler1.complete(true, '全体設計書生成が完了しました');
   console.log('✅ 全体設計書を保存しました');
 
-  console.log('🤖 AI: UI/UX設計を生成中...');
+  console.log('🤖 AI: UI/UX設計とDB設計を並列生成中...');
 
-  // ステップ2: UI/UX設計を生成
+  // ステップ2 & 3: UI/UX設計とDB設計を並列実行
   const uiuxPrompt = buildUIUXDesignPrompt(storyMapping, screensJsonPath, wireframesMdPath);
-
-  const handler2 = new MessageHandler({
-    maxTurns: config.maxTurns || 50,
-    nodeName: 'TechLeadDesign - UI/UX Design',
-  });
-
-  for await (const message of provider.execute(uiuxPrompt, {
-    maxTurns: config.maxTurns || 50,
-    cwd: config.baseRepoPath,
-    allowedTools: ['Write'],
-    permissionMode: 'acceptEdits',
-    includePartialMessages: true,
-  })) {
-    await handler2.handleMessage(message);
-  }
-
-  handler2.complete(true, 'UI/UX設計生成が完了しました');
-
-  console.log('✅ screens.json と wireframes.md を保存しました');
-
-  console.log('🤖 AI: DB設計を生成中...');
-
-  // ステップ3: DB設計を生成
   const dbPrompt = buildDatabaseDesignPrompt(storyMapping, schemaJsonPath, erDiagramMdPath);
 
-  const handler3 = new MessageHandler({
-    maxTurns: config.maxTurns || 50,
-    nodeName: 'TechLeadDesign - Database Design',
-  });
+  await Promise.all([
+    // UI/UX設計生成
+    (async () => {
+      const handler2 = new MessageHandler({
+        maxTurns: config.maxTurns || 50,
+        nodeName: 'TechLeadDesign - UI/UX Design',
+      });
 
-  for await (const message of provider.execute(dbPrompt, {
-    maxTurns: config.maxTurns || 50,
-    cwd: config.baseRepoPath,
-    allowedTools: ['Write'],
-    permissionMode: 'acceptEdits',
-    includePartialMessages: true,
-  })) {
-    await handler3.handleMessage(message);
-  }
+      for await (const message of provider.execute(uiuxPrompt, {
+        maxTurns: config.maxTurns || 50,
+        cwd: config.baseRepoPath,
+        allowedTools: ['Write'],
+        permissionMode: 'acceptEdits',
+        includePartialMessages: true,
+      })) {
+        await handler2.handleMessage(message);
+      }
 
-  handler3.complete(true, 'DB設計生成が完了しました');
+      handler2.complete(true, 'UI/UX設計生成が完了しました');
+      console.log('✅ screens.json と wireframes.md を保存しました');
+    })(),
 
-  console.log('✅ schema.json と er-diagram.md を保存しました');
+    // DB設計生成
+    (async () => {
+      const handler3 = new MessageHandler({
+        maxTurns: config.maxTurns || 50,
+        nodeName: 'TechLeadDesign - Database Design',
+      });
+
+      for await (const message of provider.execute(dbPrompt, {
+        maxTurns: config.maxTurns || 50,
+        cwd: config.baseRepoPath,
+        allowedTools: ['Write'],
+        permissionMode: 'acceptEdits',
+        includePartialMessages: true,
+      })) {
+        await handler3.handleMessage(message);
+      }
+
+      handler3.complete(true, 'DB設計生成が完了しました');
+      console.log('✅ schema.json と er-diagram.md を保存しました');
+    })(),
+  ]);
+
+  console.log('✅ UI/UX設計とDB設計の並列生成が完了しました');
 
   console.log('🤖 AI: API設計を生成中...');
 

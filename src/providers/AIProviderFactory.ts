@@ -8,6 +8,7 @@ import type { IAIProvider, AIProviderConfig } from './IAIProvider.js';
 import { ClaudeAgentProvider } from './ClaudeAgentProvider.js';
 import { MockAIProvider } from './MockAIProvider.js';
 import { OpenAICodexProvider } from './OpenAICodexProvider.js';
+import { FallbackAIProvider } from './FallbackAIProvider.js';
 
 /**
  * Factory class for creating AI provider instances
@@ -16,31 +17,44 @@ export class AIProviderFactory {
   /**
    * Create an AI provider based on configuration
    *
+   * By default, wraps the provider with FallbackAIProvider for automatic
+   * error handling and provider switching (Claude ↔ Codex).
+   *
    * @param config - Provider configuration
-   * @returns IAIProvider instance
+   * @param enableFallback - Enable automatic fallback (default: true)
+   * @returns IAIProvider instance (with fallback if enabled)
    * @throws Error if provider type is not supported
    */
-  static create(config: AIProviderConfig | { provider: 'mock' }): IAIProvider {
+  static create(
+    config: AIProviderConfig | { provider: 'mock' },
+    enableFallback: boolean = true
+  ): IAIProvider {
     const provider = config.provider;
+
+    // Create base provider without fallback
+    let baseProvider: IAIProvider;
 
     switch (provider) {
       case 'mock':
         // Create Mock provider with pre-configured responses for LangGraph workflow testing
-        return AIProviderFactory.createMockProvider();
+        baseProvider = AIProviderFactory.createMockProvider();
+        break;
 
       case 'claude':
-        return new ClaudeAgentProvider({
+        baseProvider = new ClaudeAgentProvider({
           apiKey: (config as AIProviderConfig).claude?.apiKey,
           model: (config as AIProviderConfig).claude?.model,
         });
+        break;
 
       case 'codex': {
         const codexConfig = (config as AIProviderConfig).codex ?? {};
-        return new OpenAICodexProvider({
+        baseProvider = new OpenAICodexProvider({
           apiKey: codexConfig.apiKey,
           model: codexConfig.model,
           baseUrl: codexConfig.baseUrl,
         });
+        break;
       }
 
       default:
@@ -49,6 +63,31 @@ export class AIProviderFactory {
             `Supported providers: claude, codex, mock`
         );
     }
+
+    // For mock provider or if fallback disabled, return base provider directly
+    if (provider === 'mock' || !enableFallback) {
+      return baseProvider;
+    }
+
+    // Get fallback provider configuration
+    const fallbackConfig = AIProviderFactory.getFallbackProviderConfig(
+      config as AIProviderConfig
+    );
+
+    if (!fallbackConfig) {
+      // No fallback available, return base provider
+      return baseProvider;
+    }
+
+    // Create fallback provider (without fallback to prevent infinite recursion)
+    const fallbackProvider = AIProviderFactory.create(fallbackConfig, false);
+
+    // Wrap with FallbackAIProvider
+    return new FallbackAIProvider(
+      baseProvider,
+      fallbackProvider,
+      enableFallback
+    );
   }
 
   /**
@@ -222,5 +261,39 @@ export class AIProviderFactory {
     }
 
     return config;
+  }
+
+  /**
+   * Get fallback provider configuration based on current provider
+   *
+   * Fallback chain:
+   * - Claude → Codex
+   * - Codex → Claude
+   * - Mock → null (no fallback for debug provider)
+   *
+   * @param currentConfig - Current provider configuration
+   * @returns Fallback provider configuration, or null if no fallback available
+   */
+  static getFallbackProviderConfig(
+    currentConfig: AIProviderConfig
+  ): AIProviderConfig | null {
+    const currentProvider = currentConfig.provider;
+
+    // Mock provider has no fallback (debug use only)
+    if (currentProvider === 'mock') {
+      return null;
+    }
+
+    // Claude → Codex
+    if (currentProvider === 'claude') {
+      return AIProviderFactory.buildProviderConfig({ provider: 'codex' });
+    }
+
+    // Codex → Claude
+    if (currentProvider === 'codex') {
+      return AIProviderFactory.buildProviderConfig({ provider: 'claude' });
+    }
+
+    return null;
   }
 }

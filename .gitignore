@@ -101,3 +101,5 @@ test-e2e-realistic/*
 test-workspace/
 test-kugutsu-workspace/
 test-e2e-workspace/
+
+coverage/

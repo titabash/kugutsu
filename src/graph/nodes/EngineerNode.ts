@@ -728,23 +728,21 @@ This is a MANDATORY step. Failure to set up the environment will cause implement
         // ここでエラーを検出して例外をスローすることで、RetryManagerが正しく動作する
         if (handler.getHasError()) {
           const details = handler.getErrorDetails();
-
-          // エラーメッセージの構築（より詳細な情報を含める）
           let errorMsg: string;
           if (details?.message) {
-            // MessageHandler が正しく errors 配列を解析できた場合
-            errorMsg = details.subtype === 'error_max_turns'
-              ? `AI実行がmaxTurns制限に到達しました: ${details.message}`
-              : `AI実行中にエラーが発生しました: ${details.message}`;
+            errorMsg =
+              details.subtype === 'error_max_turns'
+                ? `AI実行がmaxTurns制限に到達しました: ${details.message}`
+                : `AI実行中にエラーが発生しました: ${details.message}`;
           } else if (details?.errors && details.errors.length > 0) {
-            // errors 配列が直接利用可能な場合
             errorMsg = `AI実行中にエラーが発生しました: ${details.errors.join('; ')}`;
           } else {
-            // フォールバック: サブタイプのみ
             errorMsg = `AI実行中にエラーが発生しました (subtype: ${details?.subtype || 'unknown'})`;
-            console.warn(`⚠️  エラー詳細が取得できませんでした。ErrorDetails:`, JSON.stringify(details, null, 2));
+            console.warn(
+              `⚠️  エラー詳細が取得できませんでした。ErrorDetails:`,
+              JSON.stringify(details, null, 2)
+            );
           }
-
           throw new Error(errorMsg);
         }
 
@@ -756,7 +754,8 @@ This is a MANDATORY step. Failure to set up the environment will cause implement
         initialDelayMs: 2000,
         maxDelayMs: 30000,
         backoffMultiplier: 2,
-        retryableErrors: ['ETIMEDOUT', 'ECONNRESET', 'rate_limit', 'Rate limit', 'timeout', 'network'],
+        // Note: ネットワークエラーのみリトライ対象（rate_limit/error_max_turnsはFallbackAIProviderが処理）
+        retryableErrors: ['ETIMEDOUT', 'ECONNRESET', 'timeout', 'network'],
       }
     );
 

@@ -12,7 +12,6 @@
 import type { ParallelDevStateType, ParallelDevStateUpdate } from '../state.js';
 import type { GlobalTask, Sprint } from '../types.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
-import { AIFileWriter } from '../../utils/AIFileWriter.js';
 import { DataPersistence } from '../../utils/DataPersistence.js';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs/promises';
@@ -359,20 +358,21 @@ JSON形式で以下の構造で出力してください：
   // エラーチェック（Claude Agent SDK仕様準拠）
   if (handler1.getHasError()) {
     const details = handler1.getErrorDetails();
-
-    // エラーメッセージの構築
     let errorMsg: string;
     if (details?.message) {
-      errorMsg = details.subtype === 'error_max_turns'
-        ? `AI実行がmaxTurns制限に到達しました: ${details.message}`
-        : `AI実行中にエラーが発生しました: ${details.message}`;
+      errorMsg =
+        details.subtype === 'error_max_turns'
+          ? `AI実行がmaxTurns制限に到達しました: ${details.message}`
+          : `AI実行中にエラーが発生しました: ${details.message}`;
     } else if (details?.errors && details.errors.length > 0) {
       errorMsg = `AI実行中にエラーが発生しました: ${details.errors.join('; ')}`;
     } else {
       errorMsg = `AI実行中にエラーが発生しました (subtype: ${details?.subtype || 'unknown'})`;
-      console.warn(`⚠️  エラー詳細が取得できませんでした。ErrorDetails:`, JSON.stringify(details, null, 2));
+      console.warn(
+        `⚠️  エラー詳細が取得できませんでした。ErrorDetails:`,
+        JSON.stringify(details, null, 2)
+      );
     }
-
     throw new Error(errorMsg);
   }
 

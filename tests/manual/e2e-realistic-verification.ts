@@ -101,7 +101,7 @@ This should be implemented in 2 sprints with proper dependencies.
 
     // プロバイダー設定（環境変数で制御、デフォルトはclaude）
     // ANTHROPIC_API_KEYが設定されていればclaude、なければcodex（Claude Code logged-in session）
-    const provider = process.env.ANTHROPIC_API_KEY ? 'claude' : 'codex';
+    const provider = 'codex';
 
     // 初期状態作成（複数エンジニア）
     const initialState = createInitialState(taskRequest, {
@@ -120,7 +120,7 @@ This should be implemented in 2 sprints with proper dependencies.
     console.log(`  - Max Engineers: 2 (parallel execution)`);
     console.log(`  - Max Turns: 50`);
     console.log(`  - Base Repo: ${testDir}`);
-    console.log(`  - Provider: ${provider} (${provider === 'claude' ? 'API key' : 'logged-in session'})`);
+    console.log(`  - Provider: ${provider}`);
     console.log(`  - Project ID: ${initialState.currentProjectId}`);
     console.log('');
 

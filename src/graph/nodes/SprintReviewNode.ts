@@ -33,6 +33,9 @@ export async function sprintReviewNode(
   const { activeSprint, globalTasks, config } = state;
   const maxTurns = config.maxTurns || 50;
 
+  // Sync failed providers from state
+  AIProviderFactory.syncWithState(state.failedProviders || []);
+
   console.log('🔍 SprintReview: スプリント完了確認中...');
 
   if (!activeSprint) {
@@ -46,6 +49,7 @@ export async function sprintReviewNode(
           message: 'アクティブなスプリントなし',
         },
       ],
+      failedProviders: AIProviderFactory.getFailedProviders(),
     };
   }
 
@@ -175,7 +179,7 @@ JSON形式で以下を出力してください：
       }
     }
 
-    handler.complete(true, 'デプロイ可能性チェックが完了しました');
+    handler.completeWithErrorCheck('デプロイ可能性チェックが完了しました', 'SprintReview');
 
     // JSONを抽出してパース
     const extractionResult = JSONExtractor.extractFromCodeBlock<{ deployable: boolean; e2eTestable: boolean; reasoning: string; blockers?: string[] }>(aiResponseText);
@@ -331,6 +335,7 @@ JSON形式で以下を出力してください：
             },
           },
         ],
+        failedProviders: AIProviderFactory.getFailedProviders(),
       };
     } else {
       console.log('🎉 すべてのタスクが完了しました！');
@@ -357,6 +362,7 @@ JSON形式で以下を出力してください：
             },
           },
         ],
+        failedProviders: AIProviderFactory.getFailedProviders(),
       };
     }
   } else {
@@ -381,6 +387,7 @@ JSON形式で以下を出力してください：
           },
         },
       ],
+      failedProviders: AIProviderFactory.getFailedProviders(),
     };
   }
 }

@@ -137,6 +137,9 @@ export async function reviewNode(
     };
   }
 
+  // Sync failed providers from state
+  AIProviderFactory.syncWithState(state.failedProviders || []);
+
   try {
     // Create AI provider
     const providerConfig = AIProviderFactory.buildProviderConfig({
@@ -482,6 +485,7 @@ REVIEW_STATUS: APPROVED または CHANGES_REQUESTED
       globalTasks: updatedGlobalTasks,
       completedTasks: finalStatus === 'approved' && updatedTask ? [updatedTask] : [],
       reviews: [stateReview],
+      failedProviders: AIProviderFactory.getFailedProviders(),
       logs: [
         {
           timestamp: new Date(),

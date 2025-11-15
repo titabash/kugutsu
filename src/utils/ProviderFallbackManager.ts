@@ -50,6 +50,7 @@ export class ProviderFallbackManager {
    */
   private static readonly DEFAULT_FALLBACK_ERROR_TYPES = [
     'rate_limit',
+    'usage_limit',
     'error_max_turns',
   ];
 
@@ -95,6 +96,38 @@ export class ProviderFallbackManager {
 
     // Check if error type is fallback-eligible
     const errorType = errorDetails.subtype || '';
+
+    // Special case: exception/turn_failed errors that might be provider crashes or usage limits
+    // These should trigger fallback even though they might not be in the default list
+    if (errorType === 'exception' || errorType === 'turn_failed') {
+      const errorMsg = (errorDetails.message || errorDetails.errors?.join(' ') || '').toLowerCase();
+
+      // Check for provider crash indicators
+      const isProviderCrash = (
+        errorMsg.includes('exited with code') ||
+        errorMsg.includes('process terminated') ||
+        errorMsg.includes('connection refused') ||
+        errorMsg.includes('connection reset') ||
+        errorMsg.includes('econnrefused') ||
+        errorMsg.includes('econnreset')
+      );
+
+      // Check for usage limit indicators (in case subtype wasn't set correctly)
+      const isUsageLimit = (
+        errorMsg.includes('usage limit') ||
+        errorMsg.includes('weekly limit') ||
+        errorMsg.includes('monthly limit') ||
+        errorMsg.includes('quota') ||
+        errorMsg.includes('limit reached') ||
+        errorMsg.includes('subscription') ||
+        errorMsg.includes('billing')
+      );
+
+      if (isProviderCrash || isUsageLimit) {
+        return true;
+      }
+    }
+
     return fallbackErrorTypes.includes(errorType);
   }
 

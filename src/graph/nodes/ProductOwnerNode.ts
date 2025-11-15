@@ -49,8 +49,12 @@ export async function productOwnerNode(
           message: 'currentProjectId が設定されていません（check_modeで設定されるべき）',
         },
       ],
+      failedProviders: AIProviderFactory.getFailedProviders(),
     };
   }
+
+  // Sync failed providers from state
+  AIProviderFactory.syncWithState(state.failedProviders || []);
 
   // Create AI provider
   const providerConfig = AIProviderFactory.buildProviderConfig({
@@ -96,6 +100,7 @@ export async function productOwnerNode(
             `ProductOwner retry limit exceeded: ${feedback.reason}`,
           ],
         },
+        failedProviders: AIProviderFactory.getFailedProviders(),
       };
     }
 
@@ -192,6 +197,8 @@ MECE原則（漏れなく、重複なく）に基づいて要求を分析し、�
           nodeName: 'ProductOwner - Requirements Analysis',
         });
 
+        const collectedFailedProviders: string[] = [];
+
         for await (const message of provider.execute(requirementsAnalysisPrompt, {
           maxTurns,
           cwd: config.baseRepoPath,
@@ -200,6 +207,11 @@ MECE原則（漏れなく、重複なく）に基づいて要求を分析し、�
           includePartialMessages: true,
         })) {
           await handler.handleMessage(message);
+
+          // Collect failed providers from result messages
+          if (message.type === 'result' && message.content?.failedProviders) {
+            collectedFailedProviders.push(...message.content.failedProviders);
+          }
         }
 
         // エラーチェック（Claude Agent SDK仕様準拠）
@@ -256,6 +268,7 @@ MECE原則（漏れなく、重複なく）に基づいて要求を分析し、�
           hasErrors: true,
           errors: [requirementsResult.error?.message || 'Unknown error'],
         },
+        failedProviders: AIProviderFactory.getFailedProviders(),
       };
     }
 
@@ -532,6 +545,7 @@ ${userRequest}
           hasErrors: true,
           errors: [taskGenerationResult.error?.message || 'Unknown error'],
         },
+        failedProviders: AIProviderFactory.getFailedProviders(),
       };
     }
 
@@ -649,6 +663,7 @@ ${userRequest}
         phase: 'development',
         totalTasks: tasks.length,
       },
+      failedProviders: AIProviderFactory.getFailedProviders(),
     };
     console.log(`🔍 ProductOwner returning ${result.tasks.length} tasks`);
     console.log(`🔍 ProductOwner returning ${result.globalTasks.length} globalTasks`);
@@ -671,6 +686,7 @@ ${userRequest}
         hasErrors: true,
         errors: [error instanceof Error ? error.message : String(error)],
       },
+      failedProviders: AIProviderFactory.getFailedProviders(),
     };
   }
 }

@@ -35,6 +35,9 @@ export async function sprintPlanningNode(
   const { globalTasks, projects, currentProjectId, config, activeSprint } = state;
   const maxTurns = config.maxTurns || 50;
 
+  // Sync failed providers from state
+  AIProviderFactory.syncWithState(state.failedProviders || []);
+
   console.log('📅 SprintPlanning: スプリント計画を作成しています...');
 
   // Define file paths
@@ -141,6 +144,7 @@ export async function sprintPlanningNode(
           message: `既存のアクティブスプリント: ${existingActiveSprint.name} (${existingActiveSprint.status})`,
         },
       ],
+      failedProviders: AIProviderFactory.getFailedProviders(),
     };
   }
 
@@ -203,6 +207,7 @@ export async function sprintPlanningNode(
           message: 'すべてのタスクがスプリントに割り当て済み',
         },
       ],
+      failedProviders: AIProviderFactory.getFailedProviders(),
     };
   }
 
@@ -393,6 +398,7 @@ JSON形式で以下の構造で出力してください：
           message: `スプリント計画の生成に失敗: ${extractionResult.error}`,
         },
       ],
+      failedProviders: AIProviderFactory.getFailedProviders(),
     };
   }
 
@@ -495,6 +501,7 @@ JSON形式で以下の構造で出力してください：
         },
       },
     ],
+    failedProviders: AIProviderFactory.getFailedProviders(),
   };
 }
 

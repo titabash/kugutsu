@@ -204,6 +204,12 @@ describe('FallbackAIProvider', () => {
 
       const lastResult = resultMessages[resultMessages.length - 1];
       expect(lastResult.content.success).toBe(false);
+
+      // Check that error message includes both provider failures
+      const errorMsg = lastResult.content.error || '';
+      expect(errorMsg).toContain('両方のAIプロバイダーが失敗しました');
+      expect(errorMsg).toContain('Primary rate limit');
+      expect(errorMsg).toContain('Fallback also failed');
     });
   });
 
@@ -389,6 +395,182 @@ describe('FallbackAIProvider', () => {
       );
 
       expect(provider.isReady()).toBe(true);
+    });
+  });
+
+  describe('Automatic failure recording', () => {
+    beforeEach(async () => {
+      // Import AIProviderFactory dynamically to reset state
+      const { AIProviderFactory } = await import('../../src/providers/AIProviderFactory.js');
+      AIProviderFactory.syncWithState([]);
+    });
+
+    it('should record primary provider failure when fallback succeeds', async () => {
+      const { AIProviderFactory } = await import('../../src/providers/AIProviderFactory.js');
+
+      const primaryProvider = new MockAIProvider();
+      primaryProvider.setMockResponse(/test/, {
+        messages: [
+          {
+            type: 'result',
+            content: {
+              success: false,
+              subtype: 'rate_limit',
+              error: 'Rate limit exceeded',
+              errors: ['Rate limit exceeded'],
+            },
+          },
+        ],
+      });
+
+      const fallbackProvider = new MockAIProvider();
+      fallbackProvider.setMockResponse(/test/, {
+        messages: [
+          {
+            type: 'assistant',
+            content: 'Fallback response',
+          },
+          {
+            type: 'result',
+            content: {
+              success: true,
+            },
+          },
+        ],
+      });
+
+      const provider = new FallbackAIProvider(
+        primaryProvider,
+        fallbackProvider
+      );
+
+      const messages: AIMessage[] = [];
+      for await (const message of provider.execute('test prompt')) {
+        messages.push(message);
+      }
+
+      // Check that primary provider was recorded as failed
+      const failedProviders = AIProviderFactory.getFailedProviders();
+      expect(failedProviders).toContain('mock');
+    });
+
+    it('should record both providers when both fail', async () => {
+      const { AIProviderFactory } = await import('../../src/providers/AIProviderFactory.js');
+
+      const primaryProvider = new MockAIProvider();
+      primaryProvider.setMockResponse(/test/, {
+        messages: [
+          {
+            type: 'result',
+            content: {
+              success: false,
+              subtype: 'rate_limit',
+              error: 'Primary rate limit',
+              errors: ['Primary rate limit'],
+            },
+          },
+        ],
+      });
+
+      const fallbackProvider = new MockAIProvider();
+      fallbackProvider.setMockResponse(/test/, {
+        messages: [
+          {
+            type: 'result',
+            content: {
+              success: false,
+              subtype: 'rate_limit',
+              error: 'Fallback rate limit',
+              errors: ['Fallback rate limit'],
+            },
+          },
+        ],
+      });
+
+      const provider = new FallbackAIProvider(
+        primaryProvider,
+        fallbackProvider
+      );
+
+      const messages: AIMessage[] = [];
+      for await (const message of provider.execute('test prompt')) {
+        messages.push(message);
+      }
+
+      // Check that both providers were recorded as failed
+      const failedProviders = AIProviderFactory.getFailedProviders();
+      expect(failedProviders).toContain('mock');
+      expect(failedProviders.length).toBeGreaterThan(0);
+    });
+
+    it('should record primary provider when fallback is disabled', async () => {
+      const { AIProviderFactory } = await import('../../src/providers/AIProviderFactory.js');
+
+      const primaryProvider = new MockAIProvider();
+      primaryProvider.setMockResponse(/test/, {
+        messages: [
+          {
+            type: 'result',
+            content: {
+              success: false,
+              subtype: 'rate_limit',
+              error: 'Rate limit exceeded',
+              errors: ['Rate limit exceeded'],
+            },
+          },
+        ],
+      });
+
+      const fallbackProvider = new MockAIProvider();
+      const provider = new FallbackAIProvider(
+        primaryProvider,
+        fallbackProvider,
+        false // Fallback disabled
+      );
+
+      const messages: AIMessage[] = [];
+      for await (const message of provider.execute('test prompt')) {
+        messages.push(message);
+      }
+
+      // Check that primary provider was recorded as failed
+      const failedProviders = AIProviderFactory.getFailedProviders();
+      expect(failedProviders).toContain('mock');
+    });
+
+    it('should not record failure when primary succeeds', async () => {
+      const { AIProviderFactory } = await import('../../src/providers/AIProviderFactory.js');
+
+      const primaryProvider = new MockAIProvider();
+      primaryProvider.setMockResponse(/test/, {
+        messages: [
+          {
+            type: 'assistant',
+            content: 'Success response',
+          },
+          {
+            type: 'result',
+            content: {
+              success: true,
+            },
+          },
+        ],
+      });
+
+      const fallbackProvider = new MockAIProvider();
+      const provider = new FallbackAIProvider(
+        primaryProvider,
+        fallbackProvider
+      );
+
+      const messages: AIMessage[] = [];
+      for await (const message of provider.execute('test prompt')) {
+        messages.push(message);
+      }
+
+      // Check that no providers were recorded as failed
+      const failedProviders = AIProviderFactory.getFailedProviders();
+      expect(failedProviders).toEqual([]);
     });
   });
 });

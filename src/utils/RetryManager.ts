@@ -70,18 +70,17 @@ const DEFAULT_RETRY_OPTIONS: Required<RetryOptions> = {
   maxDelayMs: 30000, // 30秒
   backoffMultiplier: 2,
   retryableErrors: [
+    // 一時的なネットワークエラーのみリトライ対象
     'ECONNRESET',
     'ETIMEDOUT',
     'ENOTFOUND',
     'ECONNREFUSED',
-    'rate_limit',
-    'Rate limit',
     'timeout',
     'network',
     'temporary',
-    '503',
-    '502',
-    '429',
+    '503',  // Service Unavailable
+    '502',  // Bad Gateway
+    // 注意: rate_limit, usage_limit, 429などの永続的エラーはリトライしない
   ],
 };
 

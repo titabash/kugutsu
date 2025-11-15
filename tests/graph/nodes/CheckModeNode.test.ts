@@ -22,6 +22,16 @@ jest.unstable_mockModule('../../../src/providers/AIProviderFactory.js', () => {
       buildProviderConfig,
       getSupportedProviders: jest.fn(() => ['claude', 'mock']),
       isProviderSupported: jest.fn((provider: string) => ['claude', 'mock'].includes(provider)),
+      syncWithState: jest.fn((stateFailedProviders: string[] = []) => {
+        // Delegate to actual implementation
+        actualAIProviderFactory.syncWithState(stateFailedProviders);
+      }),
+      recordFailure: jest.fn((providerName: string) => {
+        actualAIProviderFactory.recordFailure(providerName);
+      }),
+      getFailedProviders: jest.fn(() => {
+        return actualAIProviderFactory.getFailedProviders();
+      }),
     },
   };
 });

@@ -57,6 +57,9 @@ export async function reviewDesignNode(
   const { config, currentProjectId } = state;
   const maxTurns = config.maxTurns || 50;
 
+  // Sync failed providers from state
+  AIProviderFactory.syncWithState(state.failedProviders || []);
+
   console.log('🔍 DesignReview: 設計書レビュー開始（3者協調）');
 
   if (!currentProjectId) {
@@ -70,6 +73,7 @@ export async function reviewDesignNode(
           message: 'プロジェクトIDなし',
         },
       ],
+      failedProviders: AIProviderFactory.getFailedProviders(),
     };
   }
 
@@ -111,6 +115,7 @@ export async function reviewDesignNode(
           message: '設計書なし',
         },
       ],
+      failedProviders: AIProviderFactory.getFailedProviders(),
     };
   }
 
@@ -227,6 +232,7 @@ export async function reviewDesignNode(
           message: '設計書承認（3者協調レビュー完了）',
         },
       ],
+      failedProviders: AIProviderFactory.getFailedProviders(),
     };
   } else {
     console.log('⚠️ 修正が必要です');
@@ -252,6 +258,7 @@ export async function reviewDesignNode(
           message: `修正必要: Critical ${consolidatedResult.criticalIssues.length}件、Major ${consolidatedResult.majorIssues.length}件`,
         },
       ],
+      failedProviders: AIProviderFactory.getFailedProviders(),
     };
   }
 }
@@ -341,7 +348,7 @@ async function executeReview(
     }
   }
 
-  handler.complete(true, `${reviewer}レビューが完了しました`);
+  handler.completeWithErrorCheck(`${reviewer}レビューが完了しました`, 'ReviewDesign');
 
   // レビュー結果を解析
   return extractReviewerResult(reviewer, aiResponseText);

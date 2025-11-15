@@ -295,6 +295,25 @@ export const ParallelDevState = Annotation.Root({
   config: Annotation<ParallelDevConfig>,
 
   /**
+   * Failed AI providers
+   *
+   * Tracks which providers have failed (e.g., rate_limit, crashes).
+   * Once a provider fails, it should not be retried in subsequent nodes.
+   *
+   * Example: ['codex'] means Codex has failed and should be skipped.
+   *
+   * Reducer: Append (prevents duplicates)
+   */
+  failedProviders: Annotation<string[]>({
+    reducer: (state: string[], update: string[]) => {
+      // Merge arrays and remove duplicates
+      const combined = [...state, ...update];
+      return Array.from(new Set(combined));
+    },
+    default: () => [],
+  }),
+
+  /**
    * Workflow metadata
    */
   metadata: Annotation<{
@@ -766,6 +785,7 @@ export function createInitialState(
       },
     ],
     config,
+    failedProviders: [],
     metadata: {
       startedAt: new Date(),
       phase: 'analysis',

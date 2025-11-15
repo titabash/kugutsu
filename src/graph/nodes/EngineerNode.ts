@@ -500,6 +500,9 @@ export async function engineerNode(
     console.log(`📝 review.json が見つかりません (初回実装)`);
   }
 
+  // Sync failed providers from state
+  AIProviderFactory.syncWithState(state.failedProviders || []);
+
   try {
     // Create AI provider
     const providerConfig = AIProviderFactory.buildProviderConfig({
@@ -747,7 +750,10 @@ This is a MANDATORY step. Failure to set up the environment will cause implement
         }
 
         handler.complete(true, 'タスクの実装が完了しました');
-        return { messages: collectedMessages, sessionId: capturedSessionId };
+        return {
+          messages: collectedMessages,
+          sessionId: capturedSessionId,
+        };
       },
       {
         maxRetries: 3,
@@ -956,6 +962,7 @@ ${instruction.split('\n').slice(0, 5).join('\n')}
       return {
         tasks: [inReviewTask],
         globalTasks: updatedGlobalTasks,
+        failedProviders: AIProviderFactory.getFailedProviders(),
         feedbackRequest: null, // フィードバッククリア（成功）
         logs: [
           {
@@ -979,6 +986,7 @@ ${instruction.split('\n').slice(0, 5).join('\n')}
     }
 
     return {
+      failedProviders: AIProviderFactory.getFailedProviders(),
       feedbackRequest: null, // フィードバッククリア（成功）
       logs: [
         {

@@ -15,6 +15,43 @@ import { FallbackAIProvider } from './FallbackAIProvider.js';
  */
 export class AIProviderFactory {
   /**
+   * Internal state: Set of failed provider names
+   * This is managed internally and synced with LangGraph state
+   */
+  private static failedProviders: Set<string> = new Set();
+
+  /**
+   * Sync failed providers from LangGraph state
+   * Call this at the beginning of each node
+   *
+   * @param stateFailedProviders - Failed providers from state
+   */
+  static syncWithState(stateFailedProviders: string[] = []): void {
+    this.failedProviders = new Set(stateFailedProviders);
+  }
+
+  /**
+   * Record a provider failure
+   * Called automatically by FallbackAIProvider when a provider fails
+   *
+   * @param providerName - Name of the failed provider
+   */
+  static recordFailure(providerName: string): void {
+    this.failedProviders.add(providerName);
+    // Note: Logging is handled by FallbackAIProvider and MessageHandler
+  }
+
+  /**
+   * Get current list of failed providers for syncing back to state
+   * Call this when returning from a node
+   *
+   * @returns Array of failed provider names
+   */
+  static getFailedProviders(): string[] {
+    return Array.from(this.failedProviders);
+  }
+
+  /**
    * Create an AI provider based on configuration
    *
    * By default, wraps the provider with FallbackAIProvider for automatic
@@ -29,7 +66,28 @@ export class AIProviderFactory {
     config: AIProviderConfig | { provider: 'mock' },
     enableFallback: boolean = true
   ): IAIProvider {
-    const provider = config.provider;
+    let provider = config.provider;
+    let switchedProvider = false;
+
+    // Skip failed providers and use fallback instead (using internal state)
+    if (this.failedProviders.has(provider)) {
+      console.log(`⚠️  プロバイダー '${provider}' は以前失敗したため、フォールバックプロバイダーを使用します`);
+      const fallbackConfig = AIProviderFactory.getFallbackProviderConfig(config as AIProviderConfig);
+      if (fallbackConfig && !this.failedProviders.has(fallbackConfig.provider)) {
+        // Use fallback provider instead (without further fallback to prevent double fallback)
+        provider = fallbackConfig.provider;
+        config = fallbackConfig;
+        switchedProvider = true;
+      } else {
+        // No fallback available or fallback also failed - cannot proceed
+        const fallbackName = fallbackConfig?.provider ?? 'なし';
+        throw new Error(
+          `プロバイダー '${provider}' は使用不可です。` +
+          `フォールバックプロバイダー '${fallbackName}' も利用できません。` +
+          `処理を継続できません。`
+        );
+      }
+    }
 
     // Create base provider without fallback
     let baseProvider: IAIProvider;
@@ -64,8 +122,9 @@ export class AIProviderFactory {
         );
     }
 
-    // For mock provider or if fallback disabled, return base provider directly
-    if (provider === 'mock' || !enableFallback) {
+    // For mock provider, fallback disabled, or switched provider, return base provider directly
+    // (switched provider already went through fallback selection, so no double fallback)
+    if (provider === 'mock' || !enableFallback || switchedProvider) {
       return baseProvider;
     }
 
@@ -77,6 +136,16 @@ export class AIProviderFactory {
     if (!fallbackConfig) {
       // No fallback available, return base provider
       return baseProvider;
+    }
+
+    // Skip fallback provider if it has also failed
+    if (this.failedProviders.has(fallbackConfig.provider)) {
+      // Both primary and fallback providers have failed - cannot proceed
+      const originalProvider = (config as AIProviderConfig).provider;
+      throw new Error(
+        `プロバイダー '${originalProvider}' とフォールバックプロバイダー '${fallbackConfig.provider}' の両方が使用不可です。` +
+        `処理を継続できません。別のプロバイダーを設定するか、失敗したプロバイダーの問題を解決してください。`
+      );
     }
 
     // Create fallback provider (without fallback to prevent infinite recursion)

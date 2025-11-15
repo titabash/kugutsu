@@ -33,6 +33,9 @@ export async function conflictResolverNode(
   const { config, activeSprint } = state;
   const maxTurns = config.maxTurns || 50;
 
+  // Sync failed providers from state
+  AIProviderFactory.syncWithState(state.failedProviders || []);
+
   console.log('🔧 Conflict Resolver: コンフリクトを解消しています...');
 
   if (!activeSprint?.id) {
@@ -45,6 +48,7 @@ export async function conflictResolverNode(
           message: 'アクティブなスプリントが設定されていません',
         },
       ],
+      failedProviders: AIProviderFactory.getFailedProviders(),
     };
   }
 
@@ -70,6 +74,7 @@ export async function conflictResolverNode(
           message: `Sprint Backlog の読み込みに失敗: ${error instanceof Error ? error.message : String(error)}`,
         },
       ],
+      failedProviders: AIProviderFactory.getFailedProviders(),
     };
   }
 
@@ -89,6 +94,7 @@ export async function conflictResolverNode(
             message: 'コンフリクトはありません',
           },
         ],
+        failedProviders: AIProviderFactory.getFailedProviders(),
       };
     }
 
@@ -119,6 +125,7 @@ export async function conflictResolverNode(
             message: '解決待ちのコンフリクトはありません',
           },
         ],
+        failedProviders: AIProviderFactory.getFailedProviders(),
       };
     }
 
@@ -246,7 +253,7 @@ ${config.worktreeBasePath}/${task.id}
           await handler.handleMessage(message);
         }
 
-        handler.complete(true, 'コンフリクト解決が完了しました');
+        handler.completeWithErrorCheck('コンフリクト解決が完了しました', 'ConflictResolver');
 
         // Update conflicts.json - mark as resolved using AI
         conflictInfo.resolution = 'resolved';
@@ -324,6 +331,7 @@ ${config.worktreeBasePath}/${task.id}
       metadata: {
         phase: 'merge',
       },
+      failedProviders: AIProviderFactory.getFailedProviders(),
     };
   } catch (error) {
     console.error('❌ Conflict Resolver Node エラー:', error);
@@ -345,6 +353,7 @@ ${config.worktreeBasePath}/${task.id}
           error instanceof Error ? error.message : String(error),
         ],
       },
+      failedProviders: AIProviderFactory.getFailedProviders(),
     };
   }
 }

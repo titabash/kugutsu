@@ -14,7 +14,6 @@ import { DataPersistence } from '../../utils/DataPersistence.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 import { GitWorktreeManager } from '../../managers/GitWorktreeManager.js';
 import { randomUUID } from 'crypto';
-import { MessageHandler } from '../../utils/MessageHandler.js';
 import { JSONExtractor } from '../../utils/JSONExtractor.js';
 
 /**
@@ -32,6 +31,9 @@ export async function checkModeNode(
 ): Promise<ParallelDevStateUpdate> {
   const { userRequest, config } = state;
   const maxTurns = config.maxTurns || 50;
+
+  // Sync failed providers from state
+  AIProviderFactory.syncWithState(state.failedProviders || []);
 
   console.log('🔍 CheckMode: ユーザーリクエストを分析しています...');
   console.log(`📝 リクエスト: ${userRequest}`);
@@ -283,21 +285,18 @@ JSON形式で以下を出力してください：
 \`\`\`
 `;
 
-  const handler = new MessageHandler({
-    maxTurns,
-    nodeName: 'CheckMode - Continuation Detection',
-  });
-
+  // Collect messages and check for errors
+  // Note: FallbackAIProvider already handles logging via its own MessageHandler
   let aiResponseText = '';
+  let hasError = false;
+  let errorDetails: any = null;
+
   for await (const message of provider.execute(continuationDetectionPrompt, {
     maxTurns,
     cwd: config.baseRepoPath,
     allowedTools: [],
     permissionMode: 'acceptEdits',
-    includePartialMessages: true,
   })) {
-    await handler.handleMessage(message);
-
     if (message.type === 'assistant' && message.content) {
       // Handle both string and object content
       if (typeof message.content === 'string') {
@@ -305,10 +304,22 @@ JSON形式で以下を出力してください：
       } else {
         aiResponseText += JSON.stringify(message.content);
       }
+    } else if (message.type === 'result') {
+      // Check for errors in result message (sent by FallbackAIProvider)
+      if (message.content && !message.content.success) {
+        hasError = true;
+        errorDetails = message.content;
+      }
     }
   }
 
-  handler.complete(true, '継続モード判定が完了しました');
+  // エラーチェック（FallbackAIProviderが検出したエラー）
+  if (hasError) {
+    const errorMsg = errorDetails?.error || errorDetails?.errors?.join('; ') || 'Unknown error';
+    console.error(`❌ 継続モード判定でエラーが発生しました: ${errorMsg}`);
+    // エラー時は新規モードとして扱う
+    // (次のセクションで処理される)
+  }
 
   // JSONを抽出してパース
   const extractionResult = JSONExtractor.extractFromCodeBlock<{ isContinuation: boolean; reasoning: string }>(aiResponseText);
@@ -367,6 +378,7 @@ JSON形式で以下を出力してください：
       currentProjectId,
       globalTasks: updatedTasks,
       projects,
+      failedProviders: AIProviderFactory.getFailedProviders(),
       logs: [
         {
           timestamp: new Date(),
@@ -412,6 +424,7 @@ JSON形式で以下を出力してください：
       currentProjectId,
       globalTasks,
       projects: updatedProjects,
+      failedProviders: AIProviderFactory.getFailedProviders(),
       logs: [
         {
           timestamp: new Date(),

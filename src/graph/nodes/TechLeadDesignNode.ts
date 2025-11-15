@@ -34,6 +34,9 @@ export async function techLeadDesignNode(
 ): Promise<ParallelDevStateUpdate> {
   const { config, currentProjectId, storyMappingApproved } = state;
 
+  // Sync failed providers from state
+  AIProviderFactory.syncWithState(state.failedProviders || []);
+
   console.log('🎨 TechLeadDesign: 設計書作成開始');
 
   if (!currentProjectId) {
@@ -47,6 +50,7 @@ export async function techLeadDesignNode(
           message: 'プロジェクトIDなし',
         },
       ],
+      failedProviders: AIProviderFactory.getFailedProviders(),
     };
   }
 
@@ -61,6 +65,7 @@ export async function techLeadDesignNode(
           message: 'ストーリーマッピング未承認',
         },
       ],
+      failedProviders: AIProviderFactory.getFailedProviders(),
     };
   }
 
@@ -91,6 +96,7 @@ export async function techLeadDesignNode(
           message: `ストーリーマッピングなし: ${(error as Error).message}`,
         },
       ],
+      failedProviders: AIProviderFactory.getFailedProviders(),
     };
   }
 
@@ -185,7 +191,7 @@ export async function techLeadDesignNode(
     await handler1.handleMessage(message);
   }
 
-  handler1.complete(true, '全体設計書生成が完了しました');
+  handler1.completeWithErrorCheck('全体設計書生成が完了しました', 'TechLeadDesign');
   console.log('✅ 全体設計書を保存しました');
 
   console.log('🤖 AI: UI/UX設計とDB設計を並列生成中...');
@@ -212,7 +218,7 @@ export async function techLeadDesignNode(
         await handler2.handleMessage(message);
       }
 
-      handler2.complete(true, 'UI/UX設計生成が完了しました');
+      handler2.completeWithErrorCheck('UI/UX設計生成が完了しました', 'TechLeadDesign');
       console.log('✅ screens.json と wireframes.md を保存しました');
     })(),
 
@@ -233,7 +239,7 @@ export async function techLeadDesignNode(
         await handler3.handleMessage(message);
       }
 
-      handler3.complete(true, 'DB設計生成が完了しました');
+      handler3.completeWithErrorCheck('DB設計生成が完了しました', 'TechLeadDesign');
       console.log('✅ schema.json と er-diagram.md を保存しました');
     })(),
   ]);
@@ -269,7 +275,7 @@ export async function techLeadDesignNode(
     await handler4.handleMessage(message);
   }
 
-  handler4.complete(true, 'API設計生成が完了しました');
+  handler4.completeWithErrorCheck('API設計生成が完了しました', 'TechLeadDesign');
 
   console.log('✅ api-spec.json と api-spec.md を保存しました');
 
@@ -302,6 +308,7 @@ export async function techLeadDesignNode(
         message: '設計書作成完了（全体設計、UI/UX、DB、API）',
       },
     ],
+    failedProviders: AIProviderFactory.getFailedProviders(),
   };
 }
 

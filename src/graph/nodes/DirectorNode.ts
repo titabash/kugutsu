@@ -19,6 +19,9 @@ import { MessageHandler } from '../../utils/MessageHandler.js';
  * Phase 1: Analyze user requirements and create story mapping
  */
 export async function directorNode(state: ParallelDevStateType): Promise<ParallelDevStateUpdate> {
+  // Sync failed providers from state
+  AIProviderFactory.syncWithState(state.failedProviders || []);
+
   console.log('📋 DirectorAI: ストーリーマッピング作成開始');
 
   // currentProjectId 必須チェック
@@ -33,6 +36,7 @@ export async function directorNode(state: ParallelDevStateType): Promise<Paralle
           message: 'currentProjectId が設定されていません（check_modeで設定されるべき）',
         },
       ],
+      failedProviders: AIProviderFactory.getFailedProviders(),
     };
   }
 
@@ -214,6 +218,7 @@ ${state.userRequest}
           },
         },
       ],
+      failedProviders: AIProviderFactory.getFailedProviders(),
     } as ParallelDevStateUpdate;
   } catch (error) {
     console.error('❌ DirectorAI: ストーリーマッピング作成エラー:', error);
@@ -228,6 +233,7 @@ ${state.userRequest}
           data: { error: String(error) },
         },
       ],
+      failedProviders: AIProviderFactory.getFailedProviders(),
     } as ParallelDevStateUpdate;
   }
 }

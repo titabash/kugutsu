@@ -92,6 +92,9 @@ export async function taskBreakdownNode(
   const { config, currentProjectId } = state;
   const maxTurns = config.maxTurns || 50;
 
+  // Sync failed providers from state
+  AIProviderFactory.syncWithState(state.failedProviders || []);
+
   console.log('📋 TaskBreakdown: タスク分解開始');
 
   if (!currentProjectId) {
@@ -105,6 +108,7 @@ export async function taskBreakdownNode(
           message: 'プロジェクトIDなし',
         },
       ],
+      failedProviders: AIProviderFactory.getFailedProviders(),
     };
   }
 
@@ -126,6 +130,7 @@ export async function taskBreakdownNode(
           message: 'ストーリーマッピングなし',
         },
       ],
+      failedProviders: AIProviderFactory.getFailedProviders(),
     };
   }
 
@@ -224,6 +229,7 @@ export async function taskBreakdownNode(
           },
         },
       ],
+      failedProviders: AIProviderFactory.getFailedProviders(),
     };
   }
 
@@ -319,6 +325,7 @@ export async function taskBreakdownNode(
         message: `タスク分解完了（${taskList.length}タスク、${dependencyGraph.edges.length}依存関係）`,
       },
     ],
+    failedProviders: AIProviderFactory.getFailedProviders(),
   };
 }
 

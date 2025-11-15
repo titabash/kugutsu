@@ -54,6 +54,9 @@ export async function reviewStoryMappingNode(
   const { config, currentProjectId } = state;
   const maxTurns = config.maxTurns || 50;
 
+  // Sync failed providers from state
+  AIProviderFactory.syncWithState(state.failedProviders || []);
+
   console.log('📖 StoryMappingReview: ストーリーマッピングレビュー開始');
 
   if (!currentProjectId) {
@@ -67,6 +70,7 @@ export async function reviewStoryMappingNode(
           message: 'プロジェクトIDなし',
         },
       ],
+      failedProviders: AIProviderFactory.getFailedProviders(),
     };
   }
 
@@ -96,6 +100,7 @@ export async function reviewStoryMappingNode(
           message: `ストーリーマッピングなし: ${(error as Error).message}`,
         },
       ],
+      failedProviders: AIProviderFactory.getFailedProviders(),
     };
   }
 
@@ -210,6 +215,7 @@ export async function reviewStoryMappingNode(
           message: `ストーリーマッピング承認 (${totalStories}ストーリー)`,
         },
       ],
+      failedProviders: AIProviderFactory.getFailedProviders(),
     };
   } else {
     console.log('⚠️ 修正が必要です');
@@ -232,6 +238,7 @@ export async function reviewStoryMappingNode(
           message: `修正必要: ${reviewResult.issues.length}件の指摘`,
         },
       ],
+      failedProviders: AIProviderFactory.getFailedProviders(),
     };
   }
 }

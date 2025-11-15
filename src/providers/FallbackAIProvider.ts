@@ -19,6 +19,7 @@ import type {
 } from './IAIProvider.js';
 import { MessageHandler } from '../utils/MessageHandler.js';
 import { ProviderFallbackManager } from '../utils/ProviderFallbackManager.js';
+import { AIProviderFactory } from './AIProviderFactory.js';
 
 /**
  * Fallback AI Provider
@@ -55,6 +56,7 @@ export class FallbackAIProvider implements IAIProvider {
     const handler = new MessageHandler({
       maxTurns,
       nodeName: `${this.primaryProvider.getProviderName()} (primary)`,
+      silent: true, // Silent mode: error detection only, no logging
     });
 
     for await (const message of this.primaryProvider.execute(prompt, options)) {
@@ -70,6 +72,14 @@ export class FallbackAIProvider implements IAIProvider {
     // Check for errors
     if (handler.getHasError()) {
       const details = handler.getErrorDetails();
+      const primaryProviderName = this.primaryProvider.getProviderName();
+
+      // Debug: Log fallback decision factors
+      console.log(`[FallbackAIProvider] エラー検出:`);
+      console.log(`  - enableFallback: ${this.enableFallback}`);
+      console.log(`  - fallbackProvider存在: ${!!this.fallbackProvider}`);
+      console.log(`  - errorDetails.subtype: ${details?.subtype}`);
+      console.log(`  - shouldFallback判定: ${ProviderFallbackManager.shouldFallback(details, false)}`);
 
       // Check if fallback is possible
       if (
@@ -77,8 +87,10 @@ export class FallbackAIProvider implements IAIProvider {
         this.fallbackProvider &&
         ProviderFallbackManager.shouldFallback(details, false)
       ) {
-        const primaryProviderName = this.primaryProvider.getProviderName();
         const fallbackProviderName = this.fallbackProvider.getProviderName();
+
+        // Record primary provider failure
+        AIProviderFactory.recordFailure(primaryProviderName);
 
         // Log fallback message
         console.log(
@@ -93,6 +105,7 @@ export class FallbackAIProvider implements IAIProvider {
         const handler2 = new MessageHandler({
           maxTurns,
           nodeName: `${fallbackProviderName} (fallback)`,
+          silent: true, // Silent mode: error detection only, no logging
         });
 
         for await (const message of this.fallbackProvider.execute(prompt, options)) {
@@ -107,17 +120,20 @@ export class FallbackAIProvider implements IAIProvider {
         // Check for errors in fallback execution
         if (handler2.getHasError()) {
           const fallbackDetails = handler2.getErrorDetails();
-          let errorMsg: string;
-          if (fallbackDetails?.message) {
-            errorMsg =
-              fallbackDetails.subtype === 'error_max_turns'
-                ? `AI実行がmaxTurns制限に到達しました: ${fallbackDetails.message}`
-                : `AI実行中にエラーが発生しました: ${fallbackDetails.message}`;
-          } else if (fallbackDetails?.errors && fallbackDetails.errors.length > 0) {
-            errorMsg = `AI実行中にエラーが発生しました: ${fallbackDetails.errors.join('; ')}`;
-          } else {
-            errorMsg = `AI実行中にエラーが発生しました (subtype: ${fallbackDetails?.subtype || 'unknown'})`;
-          }
+
+          // Record fallback provider failure too
+          AIProviderFactory.recordFailure(fallbackProviderName);
+
+          // Both providers failed - construct comprehensive error message
+          const primaryErrorMsg = details?.message || `エラー詳細不明 (subtype: ${details?.subtype || 'unknown'})`;
+          const fallbackErrorMsg = fallbackDetails?.message || `エラー詳細不明 (subtype: ${fallbackDetails?.subtype || 'unknown'})`;
+
+          const errorMsg =
+            `両方のAIプロバイダーが失敗しました。処理を継続できません。\n` +
+            `- プライマリ (${primaryProviderName}): ${primaryErrorMsg}\n` +
+            `- フォールバック (${fallbackProviderName}): ${fallbackErrorMsg}`;
+
+          console.error(`❌ ${errorMsg}`);
 
           // Yield error result to caller
           yield {
@@ -133,11 +149,14 @@ export class FallbackAIProvider implements IAIProvider {
           return;
         }
 
+        // Fallback succeeded
         handler2.complete(true, 'フォールバック実行完了');
         return;
       }
 
-      // Fallback not possible - yield error to caller
+      // Fallback not possible - record failure and yield error to caller
+      AIProviderFactory.recordFailure(primaryProviderName);
+
       let errorMsg: string;
       if (details?.message) {
         errorMsg =

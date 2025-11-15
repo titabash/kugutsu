@@ -22,6 +22,9 @@ import { DataPersistence } from '../../utils/DataPersistence.js';
 export async function instructionGeneratorNode(
   state: ParallelDevStateType
 ): Promise<ParallelDevStateUpdate> {
+  // Sync failed providers from state
+  AIProviderFactory.syncWithState(state.failedProviders || []);
+
   // state.taskToProcess から単一タスクを取得（Send APIで渡される）
   const task = state.taskToProcess;
 
@@ -34,6 +37,7 @@ export async function instructionGeneratorNode(
         source: 'InstructionGenerator',
         message: '処理するタスクが設定されていません',
       }],
+      failedProviders: AIProviderFactory.getFailedProviders(),
     };
   }
 
@@ -67,6 +71,7 @@ export async function instructionGeneratorNode(
         message: `Task ${task.id} のinstruction.md生成完了`,
         data: { taskId: task.id },
       }],
+      failedProviders: AIProviderFactory.getFailedProviders(),
     };
   } catch (error) {
     console.error(`❌ Task ${task.id} のinstruction.md生成失敗:`, error);
@@ -93,6 +98,7 @@ export async function instructionGeneratorNode(
         message: `Task ${task.id} のinstruction.md生成失敗: ${error}`,
         data: { taskId: task.id, error: String(error) },
       }],
+      failedProviders: AIProviderFactory.getFailedProviders(),
     };
   }
 }
@@ -187,6 +193,22 @@ ${context}
   })) {
     // MessageHandlerでメッセージを処理
     await messageHandler.handleMessage(message);
+  }
+
+  // エラーチェック（Claude Agent SDK仕様準拠）
+  if (messageHandler.getHasError()) {
+    const details = messageHandler.getErrorDetails();
+    let errorMsg: string;
+    if (details?.message) {
+      errorMsg = details.subtype === 'error_max_turns'
+        ? `AI実行がmaxTurns制限に到達しました: ${details.message}`
+        : `AI実行中にエラーが発生しました: ${details.message}`;
+    } else if (details?.errors && details.errors.length > 0) {
+      errorMsg = `AI実行中にエラーが発生しました: ${details.errors.join('; ')}`;
+    } else {
+      errorMsg = `AI実行中にエラーが発生しました (subtype: ${details?.subtype || 'unknown'})`;
+    }
+    throw new Error(`インストラクション生成エラー (タスク: ${task.id}): ${errorMsg}`);
   }
 
   // ファイル作成の検証

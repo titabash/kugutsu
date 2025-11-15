@@ -32,6 +32,13 @@ export interface MessageHandlerOptions {
    * false: ドットで進行状況を表示（デフォルト）
    */
   verbose?: boolean;
+
+  /**
+   * サイレントモード
+   * true: ログ出力を一切行わない（エラー検出のみ）
+   * false: 通常のログ出力を行う（デフォルト）
+   */
+  silent?: boolean;
 }
 
 /**
@@ -99,6 +106,8 @@ export class MessageHandler {
    * 開始ログを表示
    */
   private logStart(): void {
+    if (this.options.silent) return;
+
     console.log(`\n${'='.repeat(60)}`);
     console.log(`🚀 ${this.options.nodeName} 開始`);
     if (this.options.taskId) {
@@ -167,7 +176,7 @@ export class MessageHandler {
             : `エラーが発生しました (subtype: ${message.content.subtype || 'unknown'})`;
 
           // エラー詳細をログ出力（デバッグ用）
-          if (allErrors.length === 0 && !message.content.subtype) {
+          if (allErrors.length === 0 && !message.content.subtype && !this.options.silent) {
             console.warn(`⚠️  エラー詳細が不明です。message.content:`, JSON.stringify(message.content, null, 2));
           }
 
@@ -221,6 +230,9 @@ export class MessageHandler {
   private handleAssistant(message: AIMessage): void {
     if (!message.content) return;
 
+    // サイレントモードではログをスキップ
+    if (this.options.silent) return;
+
     // ドット表示中なら改行
     if (this.dotCounter > 0) {
       console.log(''); // 改行
@@ -243,6 +255,9 @@ export class MessageHandler {
    * Partialメッセージ（ストリーミング中）を処理
    */
   private handlePartial(message: AIMessage): void {
+    // サイレントモードではログをスキップ
+    if (this.options.silent) return;
+
     if (!this.options.verbose) {
       // 非詳細モード: ドットで進行表示
       process.stdout.write('.');
@@ -270,6 +285,9 @@ export class MessageHandler {
    */
   private handleSystem(message: AIMessage): void {
     const content = message.content;
+
+    // サイレントモードではログをスキップ
+    if (this.options.silent) return;
 
     // ドット表示中なら改行
     if (this.dotCounter > 0) {
@@ -354,6 +372,9 @@ export class MessageHandler {
     // ターン数をインクリメント（各ターンの終わりでResultメッセージが送信される）
     this.incrementTurnCount();
 
+    // サイレントモードではログをスキップ（ただしエラー検出は継続）
+    if (this.options.silent) return;
+
     // ドット表示中なら改行
     if (this.dotCounter > 0) {
       console.log(''); // 改行
@@ -420,6 +441,7 @@ export class MessageHandler {
    * 進捗状況をログ出力
    */
   public logProgress(current: number, total: number, status: string): void {
+    if (this.options.silent) return;
     console.log(`📊 進捗: [${current}/${total}] ${status}`);
   }
 
@@ -431,6 +453,9 @@ export class MessageHandler {
    *       これにより「❌ 失敗」と「✅ 正常完了」が両方表示される問題を防ぎます。
    */
   public complete(success: boolean, summary?: string): void {
+    // サイレントモードではログをスキップ
+    if (this.options.silent) return;
+
     // エラーが検出されていたらスキップ
     // （handleResult()で既に「❌ ... 失敗」が表示されているため）
     if (this.hasError) {
@@ -465,6 +490,62 @@ export class MessageHandler {
   }
 
   /**
+   * エラーチェックして完了処理を実行
+   *
+   * エラーがある場合は詳細なエラーメッセージを構築して例外をスロー。
+   * エラーがない場合は完了メッセージを表示。
+   *
+   * このメソッドは以下の既存パターンを1行で置き換えます：
+   * ```typescript
+   * if (handler.getHasError()) {
+   *   const details = handler.getErrorDetails();
+   *   // 22行のエラーメッセージ構築
+   *   throw new Error(errorMsg);
+   * }
+   * handler.complete(true, successMessage);
+   * ```
+   *
+   * @param successMessage 成功時のメッセージ
+   * @param nodeName ノード名（エラーメッセージ用、オプション）
+   * @throws {Error} エラーが検出された場合
+   *
+   * @example
+   * ```typescript
+   * handler.completeWithErrorCheck('要求分析が完了しました');
+   * handler.completeWithErrorCheck('タスク生成が完了しました', 'ProductOwner');
+   * ```
+   */
+  public completeWithErrorCheck(successMessage: string, nodeName?: string): void {
+    if (this.hasError) {
+      const details = this.getErrorDetails();
+
+      // エラーメッセージの構築（既存パターンと同じロジック）
+      let errorMsg: string;
+      if (details?.message) {
+        errorMsg =
+          details.subtype === 'error_max_turns'
+            ? `AI実行がmaxTurns制限に到達しました: ${details.message}`
+            : `AI実行中にエラーが発生しました: ${details.message}`;
+      } else if (details?.errors && details.errors.length > 0) {
+        errorMsg = `AI実行中にエラーが発生しました: ${details.errors.join('; ')}`;
+      } else {
+        errorMsg = `AI実行中にエラーが発生しました (subtype: ${details?.subtype || 'unknown'})`;
+        console.warn(
+          `⚠️  エラー詳細が取得できませんでした。ErrorDetails:`,
+          JSON.stringify(details, null, 2)
+        );
+      }
+
+      // ノード名をプレフィックスとして追加（オプション）
+      const prefix = nodeName ? `${nodeName}エラー: ` : '';
+      throw new Error(`${prefix}${errorMsg}`);
+    }
+
+    // エラーがない場合は通常のcomplete処理
+    this.complete(true, successMessage);
+  }
+
+  /**
    * エラーが検出されているかどうかを取得
    *
    * @returns エラーが検出されている場合は true
@@ -486,6 +567,9 @@ export class MessageHandler {
    * エラーログを表示
    */
   public error(errorMessage: string, error?: Error): void {
+    // サイレントモードではログをスキップ
+    if (this.options.silent) return;
+
     // ドット表示中なら改行
     if (this.dotCounter > 0) {
       console.log(''); // 改行

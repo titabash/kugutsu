@@ -372,4 +372,177 @@ describe('MessageHandler', () => {
       );
     });
   });
+
+  describe('completeWithErrorCheck method', () => {
+    it('should call complete() when no error is detected', () => {
+      const handler = new MessageHandler({
+        maxTurns: 10,
+        nodeName: 'TestNode',
+        taskId: 'test-complete-no-error',
+      });
+
+      // No error - should complete successfully
+      handler.completeWithErrorCheck('タスク完了');
+
+      // Verify complete message was logged
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        expect.stringContaining('正常完了')
+      );
+    });
+
+    it('should throw error with error_max_turns message', async () => {
+      const handler = new MessageHandler({
+        maxTurns: 10,
+        nodeName: 'TestNode',
+        taskId: 'test-complete-max-turns',
+      });
+
+      // Simulate error_max_turns
+      const errorMessage: AIMessage = {
+        type: 'result',
+        content: {
+          success: false,
+          subtype: 'error_max_turns',
+          errors: ['Maximum turns reached'],
+          duration: 1000,
+        },
+      };
+
+      await handler.handleMessage(errorMessage);
+
+      // Should throw with appropriate message
+      expect(() => {
+        handler.completeWithErrorCheck('タスク完了', 'TestNode');
+      }).toThrow('TestNodeエラー: AI実行がmaxTurns制限に到達しました: Maximum turns reached');
+    });
+
+    it('should throw error with error_during_execution message', async () => {
+      const handler = new MessageHandler({
+        maxTurns: 10,
+        nodeName: 'TestNode',
+        taskId: 'test-complete-execution-error',
+      });
+
+      // Simulate error_during_execution
+      const errorMessage: AIMessage = {
+        type: 'result',
+        content: {
+          success: false,
+          subtype: 'error_during_execution',
+          errors: ['File not found', 'Permission denied'],
+          duration: 1000,
+        },
+      };
+
+      await handler.handleMessage(errorMessage);
+
+      // Should throw with appropriate message
+      expect(() => {
+        handler.completeWithErrorCheck('タスク完了');
+      }).toThrow('AI実行中にエラーが発生しました: File not found; Permission denied');
+    });
+
+    it('should include nodeName in error message when provided', async () => {
+      const handler = new MessageHandler({
+        maxTurns: 10,
+        nodeName: 'TestNode',
+        taskId: 'test-complete-with-nodename',
+      });
+
+      // Simulate error
+      const errorMessage: AIMessage = {
+        type: 'result',
+        content: {
+          success: false,
+          subtype: 'error_during_execution',
+          errors: ['Test error'],
+          duration: 1000,
+        },
+      };
+
+      await handler.handleMessage(errorMessage);
+
+      // Should throw with nodeName prefix
+      expect(() => {
+        handler.completeWithErrorCheck('タスク完了', 'ProductOwner');
+      }).toThrow('ProductOwnerエラー:');
+    });
+
+    it('should handle error with errors array', async () => {
+      const handler = new MessageHandler({
+        maxTurns: 10,
+        nodeName: 'TestNode',
+        taskId: 'test-complete-errors-array',
+      });
+
+      // Simulate error with multiple errors
+      const errorMessage: AIMessage = {
+        type: 'result',
+        content: {
+          success: false,
+          subtype: 'error_during_execution',
+          errors: ['Error 1', 'Error 2', 'Error 3'],
+          duration: 1000,
+        },
+      };
+
+      await handler.handleMessage(errorMessage);
+
+      // Should throw with joined errors
+      expect(() => {
+        handler.completeWithErrorCheck('タスク完了');
+      }).toThrow('AI実行中にエラーが発生しました: Error 1; Error 2; Error 3');
+    });
+
+    it('should handle error with unknown subtype', async () => {
+      const handler = new MessageHandler({
+        maxTurns: 10,
+        nodeName: 'TestNode',
+        taskId: 'test-complete-unknown-subtype',
+      });
+
+      // Simulate error with unknown subtype (empty errors array triggers fallback message)
+      const errorMessage: AIMessage = {
+        type: 'result',
+        content: {
+          success: false,
+          subtype: 'unknown_error',
+          errors: [],
+          duration: 1000,
+        },
+      };
+
+      await handler.handleMessage(errorMessage);
+
+      // Should throw with error message that includes the subtype
+      expect(() => {
+        handler.completeWithErrorCheck('タスク完了');
+      }).toThrow('エラーが発生しました (subtype: unknown_error)');
+    });
+
+    it('should handle error with missing message and errors', async () => {
+      const handler = new MessageHandler({
+        maxTurns: 10,
+        nodeName: 'TestNode',
+        taskId: 'test-complete-missing-details',
+      });
+
+      // Simulate error with no errors field (message will be auto-generated)
+      const errorMessage: AIMessage = {
+        type: 'result',
+        content: {
+          success: false,
+          subtype: 'error_during_execution',
+          duration: 1000,
+        },
+      };
+
+      await handler.handleMessage(errorMessage);
+
+      // Should throw with auto-generated message
+      expect(() => {
+        handler.completeWithErrorCheck('タスク完了');
+      }).toThrow('エラーが発生しました (subtype: error_during_execution)');
+    });
+  });
 });

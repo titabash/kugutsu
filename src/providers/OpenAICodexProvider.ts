@@ -260,6 +260,7 @@ export class OpenAICodexProvider implements IAIProvider {
           content: {
             success: false,
             subtype: isUsageLimitError ? 'rate_limit' : 'turn_failed',
+            error: errorMessage,
             errors: [errorMessage],
           },
           session_id: this.currentSession || undefined,

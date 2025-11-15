@@ -40,6 +40,34 @@ export interface MockResponse {
 }
 
 /**
+ * Mock scenario for complex test workflows
+ *
+ * Allows setting up sequential responses for multi-turn conversations
+ */
+export interface MockScenario {
+  /**
+   * Scenario name (for identification)
+   */
+  name: string;
+
+  /**
+   * Sequential responses for each turn
+   * Index represents the turn number (0-based)
+   */
+  responses: MockResponse[];
+
+  /**
+   * Default response if turns exceed responses array length
+   */
+  defaultResponse?: MockResponse;
+}
+
+/**
+ * Execution callback type
+ */
+export type ExecutionCallback = (prompt: string, options: ExecuteOptions) => void;
+
+/**
  * Mock AI Provider
  *
  * Used for testing without calling actual AI APIs
@@ -50,6 +78,12 @@ export class MockAIProvider implements IAIProvider {
   private callCount: number = 0;
   private lastPrompt: string = '';
   private lastOptions: ExecuteOptions = {};
+  private scenarios: Map<string, MockScenario> = new Map();
+  private activeScenario: string | null = null;
+  private scenarioTurnCounter: number = 0;
+  private executionCallbacks: ExecutionCallback[] = [];
+  private allPrompts: string[] = [];
+  private allOptions: ExecuteOptions[] = [];
 
   constructor() {}
 
@@ -69,20 +103,124 @@ export class MockAIProvider implements IAIProvider {
   }
 
   /**
+   * Clear all mock responses (useful for test cleanup)
+   */
+  clearMockResponses(): void {
+    this.mockResponses = [];
+    this.defaultResponse = undefined;
+    this.activeScenario = null;
+    this.scenarioTurnCounter = 0;
+  }
+
+  /**
+   * Set up a scenario for sequential responses
+   *
+   * @param scenario - Mock scenario configuration
+   */
+  setupScenario(scenario: MockScenario): void {
+    this.scenarios.set(scenario.name, scenario);
+  }
+
+  /**
+   * Activate a scenario
+   *
+   * @param scenarioName - Name of the scenario to activate
+   */
+  activateScenario(scenarioName: string): void {
+    if (!this.scenarios.has(scenarioName)) {
+      throw new Error(`Scenario '${scenarioName}' not found. Please set it up first.`);
+    }
+    this.activeScenario = scenarioName;
+    this.scenarioTurnCounter = 0;
+  }
+
+  /**
+   * Deactivate the current scenario
+   */
+  deactivateScenario(): void {
+    this.activeScenario = null;
+    this.scenarioTurnCounter = 0;
+  }
+
+  /**
+   * Register an execution callback
+   *
+   * Useful for verifying that prompts are called with expected arguments
+   *
+   * @param callback - Callback function to execute on each call
+   */
+  onExecute(callback: ExecutionCallback): void {
+    this.executionCallbacks.push(callback);
+  }
+
+  /**
+   * Clear all execution callbacks
+   */
+  clearCallbacks(): void {
+    this.executionCallbacks = [];
+  }
+
+  /**
+   * Get all prompts that were executed
+   *
+   * @returns Array of all prompts
+   */
+  getAllPrompts(): string[] {
+    return [...this.allPrompts];
+  }
+
+  /**
+   * Get all options that were used
+   *
+   * @returns Array of all options
+   */
+  getAllOptions(): ExecuteOptions[] {
+    return [...this.allOptions];
+  }
+
+  /**
    * Execute mock prompt
    */
   async *execute(prompt: string, options: ExecuteOptions = {}): AsyncIterable<AIMessage> {
     this.callCount++;
     this.lastPrompt = prompt;
     this.lastOptions = options;
+    this.allPrompts.push(prompt);
+    this.allOptions.push(options);
+
+    // Execute callbacks
+    for (const callback of this.executionCallbacks) {
+      try {
+        callback(prompt, options);
+      } catch (error) {
+        console.error('Error in execution callback:', error);
+      }
+    }
 
     // Find matching response
     let response: MockResponse | undefined;
 
-    for (const { pattern, response: resp } of this.mockResponses) {
-      if (pattern.test(prompt)) {
-        response = resp;
-        break;
+    // Check active scenario first
+    if (this.activeScenario) {
+      const scenario = this.scenarios.get(this.activeScenario);
+      if (scenario) {
+        // Get response for current turn
+        if (this.scenarioTurnCounter < scenario.responses.length) {
+          response = scenario.responses[this.scenarioTurnCounter];
+          this.scenarioTurnCounter++;
+        } else if (scenario.defaultResponse) {
+          response = scenario.defaultResponse;
+        }
+      }
+    }
+
+    // If no scenario response, check pattern-based responses
+    if (!response) {
+      for (const { pattern, response: resp } of this.mockResponses) {
+        if (pattern.test(prompt)) {
+          response = resp;
+          break;
+        }
       }
     }
 
@@ -283,6 +421,12 @@ export class MockAIProvider implements IAIProvider {
     this.callCount = 0;
     this.lastPrompt = '';
     this.lastOptions = {};
+    this.scenarios.clear();
+    this.activeScenario = null;
+    this.scenarioTurnCounter = 0;
+    this.executionCallbacks = [];
+    this.allPrompts = [];
+    this.allOptions = [];
   }
 
   /**
@@ -308,7 +452,7 @@ export class MockAIProvider implements IAIProvider {
     );
 
     this.setMockResponse(
-      /analyze.*complexity|determine.*complexity|Complexity Criteria/i,
+      /expert software architect|complexity|Complexity Criteria/i,
       {
         messages: [
           createMockMessage.assistant(`\`\`\`json\n${jsonResponse}\n\`\`\``),

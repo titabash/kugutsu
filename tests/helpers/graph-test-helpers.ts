@@ -655,3 +655,80 @@ export function createTestGlobalTask(overrides: Partial<GlobalTask> = {}): Globa
     ...overrides,
   };
 }
+
+// ============================================================================
+// Mock Infrastructure for Node Testing
+// ============================================================================
+
+/**
+ * Mock GitWorktreeManager for testing without actual git operations
+ */
+export class MockGitWorktreeManager {
+  private worktrees: Map<string, { path: string; branchName: string }> = new Map();
+
+  async createWorktree(taskId: string, branchName: string): Promise<string> {
+    const worktreePath = `/mock/worktrees/${taskId}`;
+    this.worktrees.set(taskId, { path: worktreePath, branchName });
+    return worktreePath;
+  }
+
+  async removeWorktree(taskId: string): Promise<void> {
+    this.worktrees.delete(taskId);
+  }
+
+  async addAndCommit(filePath: string, message: string): Promise<void> {
+    // No-op for testing
+  }
+
+  async push(branchName: string): Promise<void> {
+    // No-op for testing
+  }
+
+  getWorktrees(): Map<string, { path: string; branchName: string }> {
+    return new Map(this.worktrees);
+  }
+
+  reset(): void {
+    this.worktrees.clear();
+  }
+}
+
+/**
+ * Create mock DataPersistence for testing without file I/O
+ */
+export function createMockDataPersistence() {
+  return {
+    initialize: jest.fn().mockResolvedValue(undefined),
+    loadGlobalQueue: jest.fn().mockResolvedValue([]),
+    loadAllProjectMetadata: jest.fn().mockResolvedValue(new Map()),
+    saveProjectMetadata: jest.fn().mockResolvedValue(undefined),
+    loadRepositoryMetadata: jest.fn().mockResolvedValue({
+      repositoryName: 'test-repo',
+      analyzedAt: new Date().toISOString(),
+      kugutsuVersion: '2.0.0',
+    }),
+    saveRepositoryMetadata: jest.fn().mockResolvedValue(undefined),
+    loadTechStack: jest.fn().mockResolvedValue(null),
+    saveTechStack: jest.fn().mockResolvedValue(undefined),
+    loadRequirements: jest.fn().mockResolvedValue(undefined),
+    saveRequirements: jest.fn().mockResolvedValue(undefined),
+    loadTasks: jest.fn().mockResolvedValue([]),
+    saveTasks: jest.fn().mockResolvedValue(undefined),
+    loadGlobalTasks: jest.fn().mockResolvedValue([]),
+    saveGlobalTasks: jest.fn().mockResolvedValue(undefined),
+    loadSprintPlan: jest.fn().mockResolvedValue(null),
+    saveSprintPlan: jest.fn().mockResolvedValue(undefined),
+    loadProductBacklog: jest.fn().mockResolvedValue(null),
+    saveProductBacklog: jest.fn().mockResolvedValue(undefined),
+    loadActiveSprint: jest.fn().mockResolvedValue(null),
+    saveActiveSprint: jest.fn().mockResolvedValue(undefined),
+    loadStoryMapping: jest.fn().mockResolvedValue(null),
+    saveStoryMapping: jest.fn().mockResolvedValue(undefined),
+    loadDesignDocs: jest.fn().mockResolvedValue(null),
+    saveDesignDocs: jest.fn().mockResolvedValue(undefined),
+    loadArchitectureOverview: jest.fn().mockResolvedValue(null),
+    saveArchitectureOverview: jest.fn().mockResolvedValue(undefined),
+    loadCodingStandards: jest.fn().mockResolvedValue(null),
+    saveCodingStandards: jest.fn().mockResolvedValue(undefined),
+  };
+}

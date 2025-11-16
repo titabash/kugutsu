@@ -318,46 +318,7 @@ export function createUnifiedScrumWorkflowGraph() {
   // Engineer dispatch → conditional (feedback routing or Send API fan-out)
   workflow.addConditionalEdges(
     'engineer_dispatch',
-    (state: ParallelDevStateType) => {
-      // Feedback check (highest priority)
-      if (state.feedbackRequest) {
-        const target = state.feedbackRequest.targetNode;
-        console.log(`🔄 フィードバックルーティング: engineer_dispatch → ${target}`);
-        return `feedback_${target}`;
-      }
-
-      // Send API fan-out: Create Send objects for each in-progress task
-      const inProgressTasks = state.tasks.filter((t) => t.status === 'in_progress');
-
-      if (inProgressTasks.length === 0) {
-        console.log('[Graph] No tasks to execute, proceeding to sprint review');
-        return '__end__'; // Special marker for "no tasks" case
-      }
-
-      console.log(`[Graph] 📤 Fan-out: Sending ${inProgressTasks.length} tasks to parallel engineer nodes`);
-      for (const task of inProgressTasks) {
-        console.log(`   - [${task.id}] ${task.title}`);
-      }
-
-      // Return array of Send objects (fan-out)
-      return inProgressTasks.map(t => {
-        console.log(`[DEBUG ParallelDevGraph] Task object:`, JSON.stringify(t, null, 2));
-        console.log(`[DEBUG ParallelDevGraph] task.id type=${typeof t.id}, value="${t.id}"`);
-        const taskIdValue = t.id;
-        console.log(`[DEBUG ParallelDevGraph] Extracted taskIdValue type=${typeof taskIdValue}, value="${taskIdValue}"`);
-        return new Send('engineer', {
-          currentTaskId: taskIdValue,
-          config: state.config,
-          tasks: state.tasks,
-          tasksPath: state.tasksPath,
-          activeSprint: state.activeSprint,
-          globalTasks: state.globalTasks,
-          metadata: state.metadata,
-          feedbackRequest: state.feedbackRequest,
-          nodeRetryCounters: state.nodeRetryCounters,
-        });
-      });
-    },
+    engineerDispatchRouter,
     {
       // Normal routes
       __end__: 'sprint_review',
@@ -378,64 +339,7 @@ export function createUnifiedScrumWorkflowGraph() {
   // Review dispatch → conditional (Send API fan-out for review with maxEngineers limit)
   workflow.addConditionalEdges(
     'review_dispatch',
-    (state: ParallelDevStateType) => {
-      // Get tasks ready for review (in_review status)
-      // Allow re-review if latest review was changes_requested
-      const tasksToReview = state.tasks.filter((t) => {
-        if (t.status !== 'in_review') return false;
-
-        // Find the latest review for this task
-        const taskReviews = state.reviews
-          .filter((r) => r.taskId === t.id)
-          .sort((a, b) => {
-            const timeA = a.timestamp instanceof Date ? a.timestamp.getTime() : new Date(a.timestamp).getTime();
-            const timeB = b.timestamp instanceof Date ? b.timestamp.getTime() : new Date(b.timestamp).getTime();
-            return timeB - timeA;
-          });
-
-        // If no review exists, task is reviewable
-        if (taskReviews.length === 0) return true;
-
-        // If latest review is changes_requested, allow re-review
-        const latestReview = taskReviews[0];
-        if (latestReview.status === 'changes_requested') return true;
-
-        // If latest review is approved, task should not be in_review (but check anyway)
-        return false;
-      });
-
-      if (tasksToReview.length === 0) {
-        console.log('[Graph] No tasks to review, proceeding to merge');
-        return '__end__'; // Special marker for "no tasks" case
-      }
-
-      // Sort by priority (highest first)
-      tasksToReview.sort((a, b) => b.priority - a.priority);
-
-      // Apply maxEngineers limit (same as engineer dispatch)
-      const tasksToDispatch = tasksToReview.slice(0, state.config.maxEngineers);
-
-      console.log(`[Graph] 📤 Fan-out: Sending ${tasksToDispatch.length}/${tasksToReview.length} tasks to parallel review nodes (maxEngineers: ${state.config.maxEngineers})`);
-      for (const task of tasksToDispatch) {
-        console.log(`   - [${task.id}] ${task.title}`);
-      }
-
-      // Return array of Send objects (fan-out)
-      return tasksToDispatch.map(task =>
-        new Send('review', {
-          currentTaskId: task.id,
-          config: state.config,
-          tasks: state.tasks,
-          tasksPath: state.tasksPath,
-          activeSprint: state.activeSprint,
-          globalTasks: state.globalTasks,
-          storyMapping: state.storyMapping,
-          designDocs: state.designDocs,
-          sprintPlanPath: state.sprintPlanPath,
-          metadata: state.metadata,
-        })
-      );
-    },
+    reviewDispatchRouter,
     {
       __end__: 'merge_coordinator',
       // Send destination
@@ -649,3 +553,127 @@ export function compileUnifiedScrumWorkflowGraph(options?: { enableCheckpointer?
  * Export for convenience
  */
 export default compileUnifiedScrumWorkflowGraph;
+
+// ============================================================================
+// Router Functions (Exported for Testing)
+// ============================================================================
+
+/**
+ * Engineer Dispatch Router
+ *
+ * Routes after engineer dispatch execution:
+ * - Feedback routing (highest priority)
+ * - Send API fan-out for all in-progress tasks
+ * - __end__ marker if no tasks to execute
+ */
+export function engineerDispatchRouter(state: ParallelDevStateType): string | Send<any>[] {
+  // Feedback check (highest priority)
+  if (state.feedbackRequest) {
+    const target = state.feedbackRequest.targetNode;
+    console.log(`🔄 フィードバックルーティング: engineer_dispatch → ${target}`);
+    return `feedback_${target}`;
+  }
+
+  // Send API fan-out: Create Send objects for each in-progress task
+  const inProgressTasks = state.tasks.filter((t) => t.status === 'in_progress');
+
+  if (inProgressTasks.length === 0) {
+    console.log('[Graph] No tasks to execute, proceeding to sprint review');
+    return '__end__'; // Special marker for "no tasks" case
+  }
+
+  console.log(`[Graph] 📤 Fan-out: Sending ${inProgressTasks.length} tasks to parallel engineer nodes`);
+  for (const task of inProgressTasks) {
+    console.log(`   - [${task.id}] ${task.title}`);
+  }
+
+  // Return array of Send objects (fan-out)
+  return inProgressTasks.map(t => {
+    console.log(`[DEBUG ParallelDevGraph] Task object:`, JSON.stringify(t, null, 2));
+    console.log(`[DEBUG ParallelDevGraph] task.id type=${typeof t.id}, value="${t.id}"`);
+    const taskIdValue = t.id;
+    console.log(`[DEBUG ParallelDevGraph] Extracted taskIdValue type=${typeof taskIdValue}, value="${taskIdValue}"`);
+    return new Send('engineer', {
+      currentTaskId: taskIdValue,
+      config: state.config,
+      tasks: state.tasks,
+      tasksPath: state.tasksPath,
+      activeSprint: state.activeSprint,
+      globalTasks: state.globalTasks,
+      metadata: state.metadata,
+      feedbackRequest: state.feedbackRequest,
+      nodeRetryCounters: state.nodeRetryCounters,
+    });
+  });
+}
+
+/**
+ * Review Dispatch Router
+ *
+ * Routes after review dispatch execution:
+ * - Send API fan-out for reviewable tasks (respecting maxEngineers limit)
+ * - __end__ marker if no tasks to review
+ * - Send to engineer for changes_requested tasks
+ */
+export function reviewDispatchRouter(state: ParallelDevStateType): string | Send<any>[] {
+  // Get tasks ready for review (in_review status)
+  // Allow re-review if latest review was changes_requested
+  const tasksToReview = state.tasks.filter((t) => {
+    if (t.status !== 'in_review') return false;
+
+    // Get latest review for this task
+    const taskReviews = (state.reviews || [])
+      .filter((r) => r.taskId === t.id)
+      .sort((a, b) => {
+        const timeA = a.timestamp instanceof Date ? a.timestamp.getTime() : new Date(a.timestamp).getTime();
+        const timeB = b.timestamp instanceof Date ? b.timestamp.getTime() : new Date(b.timestamp).getTime();
+        return timeB - timeA;
+      });
+
+    // No reviews yet → reviewable
+    if (taskReviews.length === 0) {
+      return true;
+    }
+
+    // Latest review requested changes → re-review allowed
+    const latestReview = taskReviews[0];
+    if (latestReview.status === 'changes_requested') {
+      return true;
+    }
+
+    // Already approved or failed → skip
+    return false;
+  });
+
+  if (tasksToReview.length === 0) {
+    console.log('[Graph] No tasks to review');
+    return '__end__';
+  }
+
+  // Apply maxEngineers limit
+  const tasksToDispatch = tasksToReview.slice(0, state.config.maxEngineers);
+
+  console.log(`[Graph] 📤 Review Fan-out: Dispatching ${tasksToDispatch.length} tasks to parallel review nodes`);
+  for (const task of tasksToDispatch) {
+    console.log(`   - [${task.id}] ${task.title}`);
+  }
+
+  // Sort by priority (highest first)
+  tasksToDispatch.sort((a, b) => b.priority - a.priority);
+
+  // Return array of Send objects (fan-out with maxEngineers limit)
+  return tasksToDispatch.map(t =>
+    new Send('review', {
+      currentTaskId: t.id,
+      config: state.config,
+      tasks: state.tasks,
+      tasksPath: state.tasksPath,
+      activeSprint: state.activeSprint,
+      globalTasks: state.globalTasks,
+      storyMapping: state.storyMapping,
+      designDocs: state.designDocs,
+      sprintPlanPath: state.sprintPlanPath,
+      metadata: state.metadata,
+    })
+  );
+}

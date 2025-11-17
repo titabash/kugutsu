@@ -11,7 +11,7 @@ import { DataPersistence } from '../../utils/DataPersistence.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 import { GitWorktreeManager } from '../../managers/GitWorktreeManager.js';
 import { randomUUID } from 'crypto';
-import { MessageHandler } from '../../utils/MessageHandler.js';
+import { JSONExtractor } from '../../utils/JSONExtractor.js';
 /**
  * Check Mode Node
  *
@@ -25,6 +25,8 @@ import { MessageHandler } from '../../utils/MessageHandler.js';
 export async function checkModeNode(state) {
     const { userRequest, config } = state;
     const maxTurns = config.maxTurns || 50;
+    // Sync failed providers from state
+    AIProviderFactory.syncWithState(state.failedProviders || []);
     console.log('🔍 CheckMode: ユーザーリクエストを分析しています...');
     console.log(`📝 リクエスト: ${userRequest}`);
     // データ永続化マネージャーを初期化
@@ -129,10 +131,10 @@ export async function checkModeNode(state) {
             }
         }
         // JSONを抽出してパース
-        const repositoryJsonMatch = repositoryAnalysisText.match(/```json\n([\s\S]*?)\n```/);
-        if (repositoryJsonMatch) {
+        const repositoryExtractionResult = JSONExtractor.extractFromCodeBlock(repositoryAnalysisText);
+        if (repositoryExtractionResult.success) {
             try {
-                const analysisResult = JSON.parse(repositoryJsonMatch[1]);
+                const analysisResult = repositoryExtractionResult.data;
                 // メタデータを保存
                 const metadata = {
                     ...analysisResult,
@@ -246,19 +248,17 @@ JSON形式で以下を出力してください：
 }
 \`\`\`
 `;
-    const handler = new MessageHandler({
-        maxTurns,
-        nodeName: 'CheckMode - Continuation Detection',
-    });
+    // Collect messages and check for errors
+    // Note: FallbackAIProvider already handles logging via its own MessageHandler
     let aiResponseText = '';
+    let hasError = false;
+    let errorDetails = null;
     for await (const message of provider.execute(continuationDetectionPrompt, {
         maxTurns,
         cwd: config.baseRepoPath,
         allowedTools: [],
         permissionMode: 'acceptEdits',
-        includePartialMessages: true,
     })) {
-        await handler.handleMessage(message);
         if (message.type === 'assistant' && message.content) {
             // Handle both string and object content
             if (typeof message.content === 'string') {
@@ -268,15 +268,28 @@ JSON形式で以下を出力してください：
                 aiResponseText += JSON.stringify(message.content);
             }
         }
+        else if (message.type === 'result') {
+            // Check for errors in result message (sent by FallbackAIProvider)
+            if (message.content && !message.content.success) {
+                hasError = true;
+                errorDetails = message.content;
+            }
+        }
     }
-    handler.complete(true, '継続モード判定が完了しました');
+    // エラーチェック（FallbackAIProviderが検出したエラー）
+    if (hasError) {
+        const errorMsg = errorDetails?.error || errorDetails?.errors?.join('; ') || 'Unknown error';
+        console.error(`❌ 継続モード判定でエラーが発生しました: ${errorMsg}`);
+        // エラー時は新規モードとして扱う
+        // (次のセクションで処理される)
+    }
     // JSONを抽出してパース
-    const jsonMatch = aiResponseText.match(/```json\n([\s\S]*?)\n```/);
+    const extractionResult = JSONExtractor.extractFromCodeBlock(aiResponseText);
     let isContinuation = false;
     let reasoning = '';
-    if (jsonMatch) {
+    if (extractionResult.success) {
         try {
-            const result = JSON.parse(jsonMatch[1]);
+            const result = extractionResult.data;
             isContinuation = result.isContinuation;
             reasoning = result.reasoning;
             console.log(`✅ AI判定: ${isContinuation ? '継続モード' : '新規モード'}`);
@@ -289,7 +302,7 @@ JSON形式で以下を出力してください：
         }
     }
     else {
-        console.warn('⚠️ AI応答からJSONを抽出できませんでした。新規モードとして扱います。');
+        console.warn(`⚠️ AI応答からJSONを抽出できませんでした: ${extractionResult.error}。新規モードとして扱います。`);
         isContinuation = false;
     }
     let currentProjectId;
@@ -315,6 +328,7 @@ JSON形式で以下を出力してください：
             currentProjectId,
             globalTasks: updatedTasks,
             projects,
+            failedProviders: AIProviderFactory.getFailedProviders(),
             logs: [
                 {
                     timestamp: new Date(),
@@ -356,6 +370,7 @@ JSON形式で以下を出力してください：
             currentProjectId,
             globalTasks,
             projects: updatedProjects,
+            failedProviders: AIProviderFactory.getFailedProviders(),
             logs: [
                 {
                     timestamp: new Date(),

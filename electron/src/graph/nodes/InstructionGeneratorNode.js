@@ -14,6 +14,8 @@ import { MessageHandler } from '../../utils/MessageHandler.js';
  * タスクのinstructionGeneratedフラグを更新してglobalTasksを返します。
  */
 export async function instructionGeneratorNode(state) {
+    // Sync failed providers from state
+    AIProviderFactory.syncWithState(state.failedProviders || []);
     // state.taskToProcess から単一タスクを取得（Send APIで渡される）
     const task = state.taskToProcess;
     if (!task) {
@@ -25,6 +27,7 @@ export async function instructionGeneratorNode(state) {
                     source: 'InstructionGenerator',
                     message: '処理するタスクが設定されていません',
                 }],
+            failedProviders: AIProviderFactory.getFailedProviders(),
         };
     }
     console.log(`📝 Task ${task.id} のinstruction.md生成中...`);
@@ -53,6 +56,7 @@ export async function instructionGeneratorNode(state) {
                     message: `Task ${task.id} のinstruction.md生成完了`,
                     data: { taskId: task.id },
                 }],
+            failedProviders: AIProviderFactory.getFailedProviders(),
         };
     }
     catch (error) {
@@ -78,6 +82,7 @@ export async function instructionGeneratorNode(state) {
                     message: `Task ${task.id} のinstruction.md生成失敗: ${error}`,
                     data: { taskId: task.id, error: String(error) },
                 }],
+            failedProviders: AIProviderFactory.getFailedProviders(),
         };
     }
 }
@@ -125,8 +130,14 @@ ${context}
 1. タスクの目的・背景
 2. 実装すべき機能の詳細
 3. 技術的制約・要件
-4. 受入基準（Definition of Done）
-5. 参考資料・関連ファイル
+4. 環境セットアップ手順
+   - このタスクは隔離されたGit Worktree環境で実行されます
+   - エンジニアが実装を開始する前に行うべき環境初期化手順を明記してください
+   - 例: 依存関係のインストール（npm install, pip install, go mod download等）、設定ファイルのコピー、ビルドの実行等
+   - プロジェクトの種類（Node.js, Python, Go, Rust等）に応じた適切な初期化手順を判断して記載してください
+   - package.json, requirements.txt, go.mod, Cargo.toml等の存在を確認し、必要なコマンドを提示してください
+5. 受入基準（Definition of Done）
+6. 参考資料・関連ファイル
 
 出力形式: Markdown
   `.trim();
@@ -146,6 +157,23 @@ ${context}
     })) {
         // MessageHandlerでメッセージを処理
         await messageHandler.handleMessage(message);
+    }
+    // エラーチェック（Claude Agent SDK仕様準拠）
+    if (messageHandler.getHasError()) {
+        const details = messageHandler.getErrorDetails();
+        let errorMsg;
+        if (details?.message) {
+            errorMsg = details.subtype === 'error_max_turns'
+                ? `AI実行がmaxTurns制限に到達しました: ${details.message}`
+                : `AI実行中にエラーが発生しました: ${details.message}`;
+        }
+        else if (details?.errors && details.errors.length > 0) {
+            errorMsg = `AI実行中にエラーが発生しました: ${details.errors.join('; ')}`;
+        }
+        else {
+            errorMsg = `AI実行中にエラーが発生しました (subtype: ${details?.subtype || 'unknown'})`;
+        }
+        throw new Error(`インストラクション生成エラー (タスク: ${task.id}): ${errorMsg}`);
     }
     // ファイル作成の検証
     const fullInstructionPath = path.join(config.baseRepoPath, instructionPath);

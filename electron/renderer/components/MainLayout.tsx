@@ -1,14 +1,17 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { SprintViewer } from './SprintViewer'
 import { NodeExecutionViewer } from './NodeExecutionViewer'
+import { DependencyGraphViewer } from './DependencyGraphViewer'
+import { useAppStore } from '../store/appStore'
 
 interface MainLayoutProps {
   leftPanel: React.ReactNode
-  graphPanel: React.ReactNode
   taskPanel: React.ReactNode
 }
 
-export function MainLayout({ leftPanel, graphPanel, taskPanel }: MainLayoutProps) {
+export function MainLayout({ leftPanel, taskPanel }: MainLayoutProps) {
+  const { dependencyGraph } = useAppStore()
+
   return (
     <div className="flex flex-1 overflow-hidden">
       {/* Left Panel: Prompt/Chat */}
@@ -53,7 +56,19 @@ export function MainLayout({ leftPanel, graphPanel, taskPanel }: MainLayoutProps
           </TabsContent>
 
           <TabsContent value="graph" className="flex-1 overflow-hidden m-0">
-            {graphPanel}
+            {dependencyGraph ? (
+              <DependencyGraphViewer graph={dependencyGraph} />
+            ) : (
+              <div className="flex h-full items-center justify-center text-muted-foreground">
+                <div className="text-center">
+                  <div className="mb-2 text-4xl">📊</div>
+                  <div>依存関係グラフがありません</div>
+                  <div className="mt-2 text-xs">
+                    タスクの依存関係が定義されると、ここに表示されます
+                  </div>
+                </div>
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="sprints" className="flex-1 overflow-hidden m-0 p-4">

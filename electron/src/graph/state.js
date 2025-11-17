@@ -105,6 +105,10 @@ export const ParallelDevState = Annotation.Root({
      */
     tasks: Annotation({
         reducer: (state, update) => {
+            if (!update || !Array.isArray(update))
+                return state || [];
+            if (!state || !Array.isArray(state))
+                return update || [];
             const taskMap = new Map(state.map((t) => [t.id, t]));
             update.forEach((t) => taskMap.set(t.id, t));
             return Array.from(taskMap.values());
@@ -118,6 +122,10 @@ export const ParallelDevState = Annotation.Root({
      */
     completedTasks: Annotation({
         reducer: (state, update) => {
+            if (!update || !Array.isArray(update))
+                return state || [];
+            if (!state || !Array.isArray(state))
+                return update || [];
             // Prevent duplicates
             const existingIds = new Set(state.map((t) => t.id));
             const newTasks = update.filter((t) => !existingIds.has(t.id));
@@ -132,6 +140,10 @@ export const ParallelDevState = Annotation.Root({
      */
     failedTasks: Annotation({
         reducer: (state, update) => {
+            if (!update || !Array.isArray(update))
+                return state || [];
+            if (!state || !Array.isArray(state))
+                return update || [];
             // Prevent duplicates
             const existingIds = new Set(state.map((t) => t.id));
             const newTasks = update.filter((t) => !existingIds.has(t.id));
@@ -146,6 +158,10 @@ export const ParallelDevState = Annotation.Root({
      */
     reviews: Annotation({
         reducer: (state, update) => {
+            if (!update || !Array.isArray(update))
+                return state || [];
+            if (!state || !Array.isArray(state))
+                return update || [];
             return state.concat(update);
         },
         default: () => [],
@@ -157,6 +173,10 @@ export const ParallelDevState = Annotation.Root({
      */
     mergeQueue: Annotation({
         reducer: (state, update) => {
+            if (!update || !Array.isArray(update))
+                return state || [];
+            if (!state || !Array.isArray(state))
+                return update || [];
             const mergeMap = new Map(state.map((m) => [m.taskId, m]));
             update.forEach((m) => mergeMap.set(m.taskId, m));
             return Array.from(mergeMap.values());
@@ -170,6 +190,10 @@ export const ParallelDevState = Annotation.Root({
      */
     worktrees: Annotation({
         reducer: (state, update) => {
+            if (!update || !(update instanceof Map))
+                return state || new Map();
+            if (!state || !(state instanceof Map))
+                return update || new Map();
             return new Map([...state, ...update]);
         },
         default: () => new Map(),
@@ -181,6 +205,10 @@ export const ParallelDevState = Annotation.Root({
      */
     logs: Annotation({
         reducer: (state, update) => {
+            if (!update || !Array.isArray(update))
+                return state || [];
+            if (!state || !Array.isArray(state))
+                return update || [];
             const combined = state.concat(update);
             // Keep only the most recent 1000 logs
             return combined.slice(-1000);
@@ -193,6 +221,24 @@ export const ParallelDevState = Annotation.Root({
      * Reducer: Replace (default)
      */
     config: (Annotation),
+    /**
+     * Failed AI providers
+     *
+     * Tracks which providers have failed (e.g., rate_limit, crashes).
+     * Once a provider fails, it should not be retried in subsequent nodes.
+     *
+     * Example: ['codex'] means Codex has failed and should be skipped.
+     *
+     * Reducer: Append (prevents duplicates)
+     */
+    failedProviders: Annotation({
+        reducer: (state, update) => {
+            // Merge arrays and remove duplicates
+            const combined = [...state, ...update];
+            return Array.from(new Set(combined));
+        },
+        default: () => [],
+    }),
     /**
      * Workflow metadata
      */
@@ -212,6 +258,10 @@ export const ParallelDevState = Annotation.Root({
      */
     globalTasks: Annotation({
         reducer: (state, update) => {
+            if (!update || !Array.isArray(update))
+                return state || [];
+            if (!state || !Array.isArray(state))
+                return update || [];
             const taskMap = new Map(state.map((t) => [t.id, t]));
             update.forEach((t) => taskMap.set(t.id, t));
             return Array.from(taskMap.values());
@@ -223,10 +273,16 @@ export const ParallelDevState = Annotation.Root({
      *
      * Single task passed via LangGraph Send API for parallel processing.
      * Used by InstructionGeneratorNode to process individual tasks.
+     *
+     * NOTE: This field is explicitly reset to null after task processing.
+     * Reducer MUST support explicit null assignment.
      */
     taskToProcess: Annotation({
         reducer: (state, update) => {
-            return update ?? state;
+            // updateがundefinedの場合のみstateを保持、nullは明示的に設定
+            if (update === undefined)
+                return state;
+            return update;
         },
         default: () => null,
     }),
@@ -237,6 +293,10 @@ export const ParallelDevState = Annotation.Root({
      */
     projects: Annotation({
         reducer: (state, update) => {
+            if (!update || !(update instanceof Map))
+                return state || new Map();
+            if (!state || !(state instanceof Map))
+                return update || new Map();
             return new Map([...state, ...update]);
         },
         default: () => new Map(),
@@ -248,6 +308,10 @@ export const ParallelDevState = Annotation.Root({
      */
     sprints: Annotation({
         reducer: (state, update) => {
+            if (!update || !Array.isArray(update))
+                return state || [];
+            if (!state || !Array.isArray(state))
+                return update || [];
             const sprintMap = new Map(state.map((s) => [s.id, s]));
             update.forEach((s) => sprintMap.set(s.id, s));
             return Array.from(sprintMap.values());
@@ -261,7 +325,10 @@ export const ParallelDevState = Annotation.Root({
      */
     activeSprint: Annotation({
         reducer: (state, update) => {
-            return update ?? state;
+            // updateがundefinedの場合のみstateを保持、nullは明示的に設定
+            if (update === undefined)
+                return state;
+            return update;
         },
         default: () => null,
     }),
@@ -272,6 +339,10 @@ export const ParallelDevState = Annotation.Root({
      */
     completedSprintIds: Annotation({
         reducer: (state, update) => {
+            if (!update || !Array.isArray(update))
+                return state || [];
+            if (!state || !Array.isArray(state))
+                return update || [];
             return state.concat(update);
         },
         default: () => [],
@@ -385,11 +456,17 @@ export const ParallelDevState = Annotation.Root({
      * 現在アクティブなフィードバックリクエスト
      * Conditional edgeがこれを見てルーティングを決定
      *
+     * NOTE: This field is explicitly reset to null after feedback processing.
+     * Reducer MUST support explicit null assignment.
+     *
      * Reducer: Replace (default)
      */
     feedbackRequest: Annotation({
         reducer: (state, update) => {
-            return update ?? state;
+            // updateがundefinedの場合のみstateを保持、nullは明示的に設定
+            if (update === undefined)
+                return state;
+            return update;
         },
         default: () => null,
     }),
@@ -400,6 +477,10 @@ export const ParallelDevState = Annotation.Root({
      */
     feedbackHistory: Annotation({
         reducer: (state, update) => {
+            if (!update || !Array.isArray(update))
+                return state || [];
+            if (!state || !Array.isArray(state))
+                return update || [];
             const combined = state.concat(update);
             // Keep only the most recent 100 feedback requests
             return combined.slice(-100);
@@ -435,11 +516,17 @@ export const ParallelDevState = Annotation.Root({
      * This field is used when a node is executed in parallel via Send API.
      * Each parallel node instance receives a specific task ID to process.
      *
+     * NOTE: This field is explicitly reset to null after task completion.
+     * Reducer MUST support explicit null assignment.
+     *
      * Reducer: Replace (default)
      */
     currentTaskId: Annotation({
         reducer: (state, update) => {
-            return update ?? state;
+            // updateがundefinedの場合のみstateを保持、nullは明示的に設定
+            if (update === undefined)
+                return state;
+            return update;
         },
         default: () => null,
     }),
@@ -453,6 +540,10 @@ export const ParallelDevState = Annotation.Root({
      */
     taskSplitSuggestions: Annotation({
         reducer: (state, update) => {
+            if (!update || !Array.isArray(update))
+                return state || [];
+            if (!state || !Array.isArray(state))
+                return update || [];
             return state.concat(update);
         },
         default: () => [],
@@ -467,6 +558,10 @@ export const ParallelDevState = Annotation.Root({
      */
     taskMergeSuggestions: Annotation({
         reducer: (state, update) => {
+            if (!update || !Array.isArray(update))
+                return state || [];
+            if (!state || !Array.isArray(state))
+                return update || [];
             return state.concat(update);
         },
         default: () => [],
@@ -502,6 +597,7 @@ export function createInitialState(userRequest, config) {
             },
         ],
         config,
+        failedProviders: [],
         metadata: {
             startedAt: new Date(),
             phase: 'analysis',

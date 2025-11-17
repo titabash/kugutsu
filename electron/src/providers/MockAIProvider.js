@@ -14,6 +14,13 @@ export class MockAIProvider {
     callCount = 0;
     lastPrompt = '';
     lastOptions = {};
+    scenarios = new Map();
+    activeScenario = null;
+    scenarioTurnCounter = 0;
+    executionCallbacks = [];
+    allPrompts = [];
+    allOptions = [];
+    currentCwd;
     constructor() { }
     /**
      * Set mock response for a specific prompt pattern
@@ -29,18 +36,116 @@ export class MockAIProvider {
         this.defaultResponse = response;
     }
     /**
+     * Clear all mock responses (useful for test cleanup)
+     */
+    clearMockResponses() {
+        this.mockResponses = [];
+        this.defaultResponse = undefined;
+        this.activeScenario = null;
+        this.scenarioTurnCounter = 0;
+    }
+    /**
+     * Set up a scenario for sequential responses
+     *
+     * @param scenario - Mock scenario configuration
+     */
+    setupScenario(scenario) {
+        this.scenarios.set(scenario.name, scenario);
+    }
+    /**
+     * Activate a scenario
+     *
+     * @param scenarioName - Name of the scenario to activate
+     */
+    activateScenario(scenarioName) {
+        if (!this.scenarios.has(scenarioName)) {
+            throw new Error(`Scenario '${scenarioName}' not found. Please set it up first.`);
+        }
+        this.activeScenario = scenarioName;
+        this.scenarioTurnCounter = 0;
+    }
+    /**
+     * Deactivate the current scenario
+     */
+    deactivateScenario() {
+        this.activeScenario = null;
+        this.scenarioTurnCounter = 0;
+    }
+    /**
+     * Register an execution callback
+     *
+     * Useful for verifying that prompts are called with expected arguments
+     *
+     * @param callback - Callback function to execute on each call
+     */
+    onExecute(callback) {
+        this.executionCallbacks.push(callback);
+    }
+    /**
+     * Clear all execution callbacks
+     */
+    clearCallbacks() {
+        this.executionCallbacks = [];
+    }
+    /**
+     * Get all prompts that were executed
+     *
+     * @returns Array of all prompts
+     */
+    getAllPrompts() {
+        return [...this.allPrompts];
+    }
+    /**
+     * Get all options that were used
+     *
+     * @returns Array of all options
+     */
+    getAllOptions() {
+        return [...this.allOptions];
+    }
+    /**
      * Execute mock prompt
      */
     async *execute(prompt, options = {}) {
         this.callCount++;
         this.lastPrompt = prompt;
         this.lastOptions = options;
+        this.allPrompts.push(prompt);
+        this.allOptions.push(options);
+        // Save cwd for file path resolution in simulateTool
+        this.currentCwd = options.cwd;
+        // Execute callbacks
+        for (const callback of this.executionCallbacks) {
+            try {
+                callback(prompt, options);
+            }
+            catch (error) {
+                console.error('Error in execution callback:', error);
+            }
+        }
         // Find matching response
         let response;
-        for (const { pattern, response: resp } of this.mockResponses) {
-            if (pattern.test(prompt)) {
-                response = resp;
-                break;
+        // Check active scenario first
+        if (this.activeScenario) {
+            const scenario = this.scenarios.get(this.activeScenario);
+            if (scenario) {
+                // Get response for current turn
+                if (this.scenarioTurnCounter < scenario.responses.length) {
+                    response = scenario.responses[this.scenarioTurnCounter];
+                    this.scenarioTurnCounter++;
+                }
+                else if (scenario.defaultResponse) {
+                    response = scenario.defaultResponse;
+                }
+            }
+        }
+        // If no scenario response, check pattern-based responses
+        if (!response) {
+            for (const { pattern, response: resp } of this.mockResponses) {
+                if (pattern.test(prompt)) {
+                    response = resp;
+                    break;
+                }
             }
         }
         // Use default if no match
@@ -138,22 +243,32 @@ export class MockAIProvider {
      */
     async simulateTool(toolUse) {
         const { tool, arguments: args } = toolUse;
+        const path = await import('path');
         if (tool === 'Write') {
             // Simulate Write tool: actually create the file
             const fs = await import('fs/promises');
-            const path = await import('path');
             const { file_path, content } = args;
-            const dir = path.dirname(file_path);
+            // Resolve file path relative to cwd if provided
+            const resolvedPath = this.currentCwd && !path.isAbsolute(file_path)
+                ? path.join(this.currentCwd, file_path)
+                : file_path;
+            const dir = path.dirname(resolvedPath);
             // Create directory if it doesn't exist
             await fs.mkdir(dir, { recursive: true });
             // Write file
-            await fs.writeFile(file_path, content, 'utf-8');
+            await fs.writeFile(resolvedPath, content, 'utf-8');
+            console.log(`[MockAIProvider] File written: ${resolvedPath}`);
         }
         else if (tool === 'Read') {
             // Simulate Read tool: actually read the file
             const fs = await import('fs/promises');
             const { file_path } = args;
-            await fs.readFile(file_path, 'utf-8');
+            // Resolve file path relative to cwd if provided
+            const resolvedPath = this.currentCwd && !path.isAbsolute(file_path)
+                ? path.join(this.currentCwd, file_path)
+                : file_path;
+            await fs.readFile(resolvedPath, 'utf-8');
+            console.log(`[MockAIProvider] File read: ${resolvedPath}`);
         }
         // Add more tool simulations as needed (Bash, Edit, etc.)
     }
@@ -214,6 +329,12 @@ export class MockAIProvider {
         this.callCount = 0;
         this.lastPrompt = '';
         this.lastOptions = {};
+        this.scenarios.clear();
+        this.activeScenario = null;
+        this.scenarioTurnCounter = 0;
+        this.executionCallbacks = [];
+        this.allPrompts = [];
+        this.allOptions = [];
     }
     /**
      * Set up mock response for complexity judgment (AnalyzeComplexityNode)
@@ -228,7 +349,7 @@ export class MockAIProvider {
             complexityLevel,
             reason,
         }, null, 2);
-        this.setMockResponse(/analyze.*complexity|determine.*complexity|Complexity Criteria/i, {
+        this.setMockResponse(/expert software architect|complexity|Complexity Criteria/i, {
             messages: [
                 createMockMessage.assistant(`\`\`\`json\n${jsonResponse}\n\`\`\``),
                 createMockMessage.result(true),

@@ -48,10 +48,38 @@ export interface BufferedEvent {
   priority: 'high' | 'normal' | 'low';
 }
 
+/**
+ * ノードフロー情報の型定義
+ */
+export interface NodeFlowData {
+  nodes: FlowNode[];
+  edges: FlowEdge[];
+}
+
+export interface FlowNode {
+  id: string;
+  type: 'start' | 'process' | 'decision' | 'end';
+  label: string;
+  status: 'pending' | 'executing' | 'completed' | 'failed' | 'skipped';
+  executionTime?: number;
+  startedAt?: number;
+  completedAt?: number;
+}
+
+export interface FlowEdge {
+  id: string;
+  source: string;
+  target: string;
+  label?: string;
+  condition?: string;  // 条件分岐の場合のラベル
+}
+
 export type EventType =
   | 'state-init'
   | 'node-started'
   | 'node-completed'
+  | 'node-flow-init'       // ノードフロー全体の初期化
+  | 'node-status-change'   // ノード状態変更
   | 'task-update'
   | 'tasks-batch'
   | 'logs-batch'
@@ -67,6 +95,10 @@ export class StateStreamManager {
   private lastFlushTime: number = 0;
   private options: Required<StreamManagerOptions>;
   private destroyed: boolean = false;
+
+  // ノードフロー管理
+  private nodeFlowData: NodeFlowData | null = null;
+  private nodeExecutionTimes: Map<string, { startedAt: number; completedAt?: number }> = new Map();
 
   constructor(options: StreamManagerOptions = {}) {
     this.options = {
@@ -228,29 +260,58 @@ export class StateStreamManager {
   ): Promise<void> {
     if (!this.window || this.destroyed) return;
 
+    const now = Date.now();
+
     if (status === 'started') {
       this.currentNode = nodeName;
+
+      // 実行時間の記録開始
+      this.nodeExecutionTimes.set(nodeName, { startedAt: now });
+
+      // ノードフロー状態の更新
+      if (this.nodeFlowData) {
+        this.updateNodeStatus(nodeName, 'executing', now);
+      }
 
       // Add node-started event to buffer
       this.addToBuffer({
         type: 'node-started',
         data: {
           nodeName,
-          timestamp: Date.now(),
+          timestamp: now,
         },
-        timestamp: Date.now(),
+        timestamp: now,
         priority: 'high',
       });
     } else if (status === 'completed' || status === 'failed') {
+      // 実行時間の記録終了
+      const timing = this.nodeExecutionTimes.get(nodeName);
+      if (timing) {
+        timing.completedAt = now;
+      }
+
+      const executionTime = timing ? now - timing.startedAt : undefined;
+
+      // ノードフロー状態の更新
+      if (this.nodeFlowData) {
+        this.updateNodeStatus(
+          nodeName,
+          status === 'completed' ? 'completed' : 'failed',
+          now,
+          executionTime
+        );
+      }
+
       // Add node-completed event to buffer
       this.addToBuffer({
         type: 'node-completed',
         data: {
           nodeName,
           status,
-          timestamp: Date.now(),
+          timestamp: now,
+          executionTime,
         },
-        timestamp: Date.now(),
+        timestamp: now,
         priority: 'high',
       });
 
@@ -259,6 +320,97 @@ export class StateStreamManager {
         this.currentNode = null;
       }
     }
+  }
+
+  /**
+   * ノードフロー全体を初期化
+   *
+   * @param flowData - ノードフローデータ（ノードとエッジ）
+   */
+  public initializeNodeFlow(flowData: NodeFlowData): void {
+    if (!this.window || this.destroyed) return;
+
+    this.nodeFlowData = flowData;
+
+    // ノードフロー初期化イベントを送信
+    this.addToBuffer({
+      type: 'node-flow-init',
+      data: flowData,
+      timestamp: Date.now(),
+      priority: 'high',
+    });
+  }
+
+  /**
+   * ノードの状態を更新
+   *
+   * @param nodeId - ノードID
+   * @param status - 新しい状態
+   * @param timestamp - タイムスタンプ
+   * @param executionTime - 実行時間（ミリ秒）
+   */
+  private updateNodeStatus(
+    nodeId: string,
+    status: FlowNode['status'],
+    timestamp: number,
+    executionTime?: number
+  ): void {
+    if (!this.nodeFlowData) return;
+
+    const node = this.nodeFlowData.nodes.find((n) => n.id === nodeId);
+    if (!node) return;
+
+    // 状態の更新
+    const previousStatus = node.status;
+    node.status = status;
+
+    if (status === 'executing') {
+      node.startedAt = timestamp;
+    } else if (status === 'completed' || status === 'failed') {
+      node.completedAt = timestamp;
+      if (executionTime !== undefined) {
+        node.executionTime = executionTime;
+      }
+    }
+
+    // 状態変更イベントを送信
+    this.addToBuffer({
+      type: 'node-status-change',
+      data: {
+        nodeId,
+        status,
+        previousStatus,
+        timestamp,
+        executionTime,
+      },
+      timestamp,
+      priority: 'high',
+    });
+  }
+
+  /**
+   * ノードフローを初期化
+   */
+  public initNodeFlow(flowData: NodeFlowData): void {
+    this.nodeFlowData = flowData;
+    this.nodeExecutionTimes.clear();
+
+    console.log('[StateStreamManager] Node flow initialized:', flowData);
+
+    // 初期化イベントを送信
+    this.addToBuffer({
+      type: 'node-flow-init',
+      data: flowData,
+      timestamp: Date.now(),
+      priority: 'high',
+    });
+  }
+
+  /**
+   * 現在のノードフロー状態を取得
+   */
+  public getNodeFlowData(): NodeFlowData | null {
+    return this.nodeFlowData;
   }
 
   /**
@@ -402,6 +554,9 @@ export class StateStreamManager {
     this.buffer = [];
     this.previousState = null;
     this.window = null;
+    this.nodeFlowData = null;
+    this.nodeExecutionTimes.clear();
+    this.currentNode = null;
   }
 }
 

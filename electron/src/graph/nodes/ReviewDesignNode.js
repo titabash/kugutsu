@@ -11,6 +11,7 @@
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 import { DataPersistence } from '../../utils/DataPersistence.js';
 import { MessageHandler } from '../../utils/MessageHandler.js';
+import { JSONExtractor } from '../../utils/JSONExtractor.js';
 /**
  * Review Design Node
  *
@@ -24,6 +25,8 @@ import { MessageHandler } from '../../utils/MessageHandler.js';
 export async function reviewDesignNode(state) {
     const { config, currentProjectId } = state;
     const maxTurns = config.maxTurns || 50;
+    // Sync failed providers from state
+    AIProviderFactory.syncWithState(state.failedProviders || []);
     console.log('🔍 DesignReview: 設計書レビュー開始（3者協調）');
     if (!currentProjectId) {
         console.log('⚠️ プロジェクトIDが指定されていません');
@@ -36,6 +39,7 @@ export async function reviewDesignNode(state) {
                     message: 'プロジェクトIDなし',
                 },
             ],
+            failedProviders: AIProviderFactory.getFailedProviders(),
         };
     }
     // データ永続化マネージャーを初期化
@@ -58,6 +62,7 @@ export async function reviewDesignNode(state) {
                     message: '設計書なし',
                 },
             ],
+            failedProviders: AIProviderFactory.getFailedProviders(),
         };
     }
     console.log('📖 設計書読み込み完了');
@@ -72,28 +77,29 @@ export async function reviewDesignNode(state) {
     const provider = AIProviderFactory.create(providerConfig);
     // ストーリーマッピングも読み込み（参照用）
     const storyMapping = await persistence.loadStoryMapping(currentProjectId);
-    // 3者レビューを並行実行
-    console.log('🤖 AI: DirectorAIレビュー実行中...');
-    const directorReview = await executeReview(provider, 'DirectorAI', {
-        designDocsMarkdown,
-        wireframesMarkdown,
-        erDiagramMarkdown,
-        apiSpecMarkdown,
-    }, storyMapping, config.baseRepoPath, maxTurns);
-    console.log('🤖 AI: ProductOwnerAIレビュー実行中...');
-    const productOwnerReview = await executeReview(provider, 'ProductOwnerAI', {
-        designDocsMarkdown,
-        wireframesMarkdown,
-        erDiagramMarkdown,
-        apiSpecMarkdown,
-    }, storyMapping, config.baseRepoPath, maxTurns);
-    console.log('🤖 AI: TechLeadAIレビュー実行中...');
-    const techLeadReview = await executeReview(provider, 'TechLeadAI', {
-        designDocsMarkdown,
-        wireframesMarkdown,
-        erDiagramMarkdown,
-        apiSpecMarkdown,
-    }, storyMapping, config.baseRepoPath, maxTurns);
+    // 3者レビューを並列実行
+    console.log('🤖 AI: DirectorAI、ProductOwnerAI、TechLeadAIレビューを並列実行中...');
+    const [directorReview, productOwnerReview, techLeadReview] = await Promise.all([
+        executeReview(provider, 'DirectorAI', {
+            designDocsMarkdown,
+            wireframesMarkdown,
+            erDiagramMarkdown,
+            apiSpecMarkdown,
+        }, storyMapping, config.baseRepoPath, maxTurns),
+        executeReview(provider, 'ProductOwnerAI', {
+            designDocsMarkdown,
+            wireframesMarkdown,
+            erDiagramMarkdown,
+            apiSpecMarkdown,
+        }, storyMapping, config.baseRepoPath, maxTurns),
+        executeReview(provider, 'TechLeadAI', {
+            designDocsMarkdown,
+            wireframesMarkdown,
+            erDiagramMarkdown,
+            apiSpecMarkdown,
+        }, storyMapping, config.baseRepoPath, maxTurns),
+    ]);
+    console.log('✅ 3者レビューの並列実行が完了しました');
     // レビュー結果を統合
     const consolidatedResult = consolidateReviews(directorReview, productOwnerReview, techLeadReview);
     console.log(`📋 統合レビュー結果: ${consolidatedResult.approved ? '承認' : '修正必要'}`);
@@ -132,6 +138,7 @@ export async function reviewDesignNode(state) {
                     message: '設計書承認（3者協調レビュー完了）',
                 },
             ],
+            failedProviders: AIProviderFactory.getFailedProviders(),
         };
     }
     else {
@@ -157,6 +164,7 @@ export async function reviewDesignNode(state) {
                     message: `修正必要: Critical ${consolidatedResult.criticalIssues.length}件、Major ${consolidatedResult.majorIssues.length}件`,
                 },
             ],
+            failedProviders: AIProviderFactory.getFailedProviders(),
         };
     }
 }
@@ -222,7 +230,7 @@ async function executeReview(provider, reviewer, designDocs, storyMapping, cwd, 
             }
         }
     }
-    handler.complete(true, `${reviewer}レビューが完了しました`);
+    handler.completeWithErrorCheck(`${reviewer}レビューが完了しました`, 'ReviewDesign');
     // レビュー結果を解析
     return extractReviewerResult(reviewer, aiResponseText);
 }
@@ -349,41 +357,24 @@ JSON形式で以下を出力してください：
  * AIレスポンスからレビュー結果を抽出
  */
 function extractReviewerResult(reviewer, response) {
-    // JSONコードブロックを抽出
-    const jsonMatch = response.match(/```json\s*([\s\S]*?)\s*```/);
-    let parsedResult;
-    if (jsonMatch) {
-        try {
-            parsedResult = JSON.parse(jsonMatch[1]);
-        }
-        catch (error) {
-            console.error(`❌ ${reviewer} レビュー結果のパースエラー:`, error);
-            parsedResult = {
-                approved: false,
-                issues: [
-                    {
-                        severity: 'critical',
-                        category: 'parse_error',
-                        message: `${reviewer}のレスポンスパースに失敗`,
-                    },
-                ],
-                comments: [],
-            };
-        }
-    }
-    else {
-        parsedResult = {
+    // JSONを抽出
+    const extractionResult = JSONExtractor.extractFromCodeBlock(response);
+    if (!extractionResult.success) {
+        console.error(`❌ ${reviewer} レビュー結果の抽出エラー:`, extractionResult.error);
+        return {
+            reviewer,
             approved: false,
             issues: [
                 {
                     severity: 'critical',
                     category: 'format_error',
-                    message: `${reviewer}のレスポンスが不正な形式`,
+                    message: `${reviewer}のレスポンス抽出に失敗: ${extractionResult.error}`,
                 },
             ],
             comments: [],
         };
     }
+    const parsedResult = extractionResult.data;
     return {
         reviewer,
         approved: parsedResult.approved || false,

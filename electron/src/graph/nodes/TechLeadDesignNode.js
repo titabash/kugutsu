@@ -26,6 +26,8 @@ import * as path from 'path';
  */
 export async function techLeadDesignNode(state) {
     const { config, currentProjectId, storyMappingApproved } = state;
+    // Sync failed providers from state
+    AIProviderFactory.syncWithState(state.failedProviders || []);
     console.log('🎨 TechLeadDesign: 設計書作成開始');
     if (!currentProjectId) {
         console.log('⚠️ プロジェクトIDが指定されていません');
@@ -38,6 +40,7 @@ export async function techLeadDesignNode(state) {
                     message: 'プロジェクトIDなし',
                 },
             ],
+            failedProviders: AIProviderFactory.getFailedProviders(),
         };
     }
     if (!storyMappingApproved) {
@@ -51,6 +54,7 @@ export async function techLeadDesignNode(state) {
                     message: 'ストーリーマッピング未承認',
                 },
             ],
+            failedProviders: AIProviderFactory.getFailedProviders(),
         };
     }
     // Define file paths
@@ -73,6 +77,7 @@ export async function techLeadDesignNode(state) {
                     message: `ストーリーマッピングなし: ${error.message}`,
                 },
             ],
+            failedProviders: AIProviderFactory.getFailedProviders(),
         };
     }
     // AIプロバイダーを作成
@@ -104,44 +109,51 @@ export async function techLeadDesignNode(state) {
     })) {
         await handler1.handleMessage(message);
     }
-    handler1.complete(true, '全体設計書生成が完了しました');
+    handler1.completeWithErrorCheck('全体設計書生成が完了しました', 'TechLeadDesign');
     console.log('✅ 全体設計書を保存しました');
-    console.log('🤖 AI: UI/UX設計を生成中...');
-    // ステップ2: UI/UX設計を生成
+    console.log('🤖 AI: UI/UX設計とDB設計を並列生成中...');
+    // ステップ2 & 3: UI/UX設計とDB設計を並列実行
     const uiuxPrompt = buildUIUXDesignPrompt(storyMapping, screensJsonPath, wireframesMdPath);
-    const handler2 = new MessageHandler({
-        maxTurns: config.maxTurns || 50,
-        nodeName: 'TechLeadDesign - UI/UX Design',
-    });
-    for await (const message of provider.execute(uiuxPrompt, {
-        maxTurns: config.maxTurns || 50,
-        cwd: config.baseRepoPath,
-        allowedTools: ['Write'],
-        permissionMode: 'acceptEdits',
-        includePartialMessages: true,
-    })) {
-        await handler2.handleMessage(message);
-    }
-    handler2.complete(true, 'UI/UX設計生成が完了しました');
-    console.log('✅ screens.json と wireframes.md を保存しました');
-    console.log('🤖 AI: DB設計を生成中...');
-    // ステップ3: DB設計を生成
     const dbPrompt = buildDatabaseDesignPrompt(storyMapping, schemaJsonPath, erDiagramMdPath);
-    const handler3 = new MessageHandler({
-        maxTurns: config.maxTurns || 50,
-        nodeName: 'TechLeadDesign - Database Design',
-    });
-    for await (const message of provider.execute(dbPrompt, {
-        maxTurns: config.maxTurns || 50,
-        cwd: config.baseRepoPath,
-        allowedTools: ['Write'],
-        permissionMode: 'acceptEdits',
-        includePartialMessages: true,
-    })) {
-        await handler3.handleMessage(message);
-    }
-    handler3.complete(true, 'DB設計生成が完了しました');
-    console.log('✅ schema.json と er-diagram.md を保存しました');
+    await Promise.all([
+        // UI/UX設計生成
+        (async () => {
+            const handler2 = new MessageHandler({
+                maxTurns: config.maxTurns || 50,
+                nodeName: 'TechLeadDesign - UI/UX Design',
+            });
+            for await (const message of provider.execute(uiuxPrompt, {
+                maxTurns: config.maxTurns || 50,
+                cwd: config.baseRepoPath,
+                allowedTools: ['Write'],
+                permissionMode: 'acceptEdits',
+                includePartialMessages: true,
+            })) {
+                await handler2.handleMessage(message);
+            }
+            handler2.completeWithErrorCheck('UI/UX設計生成が完了しました', 'TechLeadDesign');
+            console.log('✅ screens.json と wireframes.md を保存しました');
+        })(),
+        // DB設計生成
+        (async () => {
+            const handler3 = new MessageHandler({
+                maxTurns: config.maxTurns || 50,
+                nodeName: 'TechLeadDesign - Database Design',
+            });
+            for await (const message of provider.execute(dbPrompt, {
+                maxTurns: config.maxTurns || 50,
+                cwd: config.baseRepoPath,
+                allowedTools: ['Write'],
+                permissionMode: 'acceptEdits',
+                includePartialMessages: true,
+            })) {
+                await handler3.handleMessage(message);
+            }
+            handler3.completeWithErrorCheck('DB設計生成が完了しました', 'TechLeadDesign');
+            console.log('✅ schema.json と er-diagram.md を保存しました');
+        })(),
+    ]);
+    console.log('✅ UI/UX設計とDB設計の並列生成が完了しました');
     console.log('🤖 AI: API設計を生成中...');
     // Read schema.json to pass to API design
     let dbSchema = null;
@@ -167,7 +179,7 @@ export async function techLeadDesignNode(state) {
     })) {
         await handler4.handleMessage(message);
     }
-    handler4.complete(true, 'API設計生成が完了しました');
+    handler4.completeWithErrorCheck('API設計生成が完了しました', 'TechLeadDesign');
     console.log('✅ api-spec.json と api-spec.md を保存しました');
     console.log('✅ 設計書作成完了');
     // repository/の変更をコミット
@@ -189,6 +201,7 @@ export async function techLeadDesignNode(state) {
                 message: '設計書作成完了（全体設計、UI/UX、DB、API）',
             },
         ],
+        failedProviders: AIProviderFactory.getFailedProviders(),
     };
 }
 /**

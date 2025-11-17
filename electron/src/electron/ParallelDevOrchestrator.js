@@ -8,6 +8,7 @@ import { compileUnifiedScrumWorkflowGraph } from '../graph/ParallelDevGraph.js';
 import { createInitialState } from '../graph/state.js';
 import { StateStreamManager } from './StateStreamManager.js';
 import { UnifiedProgressManager } from '../utils/UnifiedProgressManager.js';
+import { buildUnifiedScrumWorkflowFlow } from '../utils/NodeFlowBuilder.js';
 /**
  * Parallel Development Orchestrator
  *
@@ -83,6 +84,12 @@ export class ParallelDevOrchestrator {
         console.log('🚀 Parallel Development Orchestrator 起動');
         console.log(`📝 ユーザー要求: ${userRequest}`);
         console.log(`🔄 ワークフロー: 統合Scrumワークフロー（複雑度判定による自動分岐）`);
+        // Initialize node flow for Electron UI
+        if (this.stateStreamManager) {
+            const nodeFlowData = buildUnifiedScrumWorkflowFlow();
+            this.stateStreamManager.initNodeFlow(nodeFlowData);
+            console.log(`📊 ノードフロー初期化完了: ${nodeFlowData.nodes.length} ノード, ${nodeFlowData.edges.length} エッジ`);
+        }
         // Track current state for error handling
         let currentState = null;
         try {
@@ -97,6 +104,10 @@ export class ParallelDevOrchestrator {
             // Stream initial state to UI via StateStreamManager
             if (this.stateStreamManager) {
                 await this.stateStreamManager.processStateUpdate(initialState);
+                // Initialize node flow visualization
+                const nodeFlowData = buildUnifiedScrumWorkflowFlow();
+                this.stateStreamManager.initializeNodeFlow(nodeFlowData);
+                console.log('🎨 ノードフロー可視化を初期化しました');
             }
             // Execute graph with streaming
             // Enable multiple stream modes: values (state updates), debug (node execution), tasks (task tracking)

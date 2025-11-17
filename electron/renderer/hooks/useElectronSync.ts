@@ -17,6 +17,13 @@ export function useElectronSync() {
     updateTasks,
     addNodeExecution,
     updateNodeExecution,
+    clearNodeExecutions,
+    setDependencyGraph,
+    setStoryMapping,
+    setSprints,
+    setNodeFlowData,
+    setCurrentExecutingNode,
+    updateNodeFlowStatus,
   } = useAppStore()
 
   useEffect(() => {
@@ -176,10 +183,227 @@ export function useElectronSync() {
             })
             break
 
+          case 'node-flow-init':
+            // Node flow initialization
+            console.log('[useElectronSync] Node flow initialized:', event.data)
+            setNodeFlowData(event.data)
+            addLog({
+              id: `${Date.now()}-${Math.random()}`,
+              timestamp: new Date(event.timestamp),
+              level: 'info',
+              source: 'Workflow',
+              message: `📊 ワークフローフローチャートを初期化 (${event.data.nodes?.length || 0}ノード)`,
+            })
+            break
+
+          case 'node-status-change':
+            // Node status change
+            console.log('[useElectronSync] Node status changed:', event.data)
+            updateNodeFlowStatus(
+              event.data.nodeId,
+              event.data.status,
+              event.data.timestamp,
+              event.data.executionTime
+            )
+
+            // Update current executing node
+            if (event.data.status === 'executing') {
+              setCurrentExecutingNode(event.data.nodeId)
+            } else if (
+              event.data.status === 'completed' ||
+              event.data.status === 'failed' ||
+              event.data.status === 'skipped'
+            ) {
+              setCurrentExecutingNode(null)
+            }
+            break
+
           default:
             console.warn(`[useElectronSync] Unknown event type: ${event.type}`)
         }
       })
+    }
+
+    // ==========================================
+    // File System Events (Initial Data & Changes)
+    // ==========================================
+
+    // Initial data loaded handlers
+    const handleInitialTasksLoaded = ({ data }: { filePath: string; data: any }) => {
+      console.log('[useElectronSync] Initial tasks loaded')
+      if (data.tasks && Array.isArray(data.tasks)) {
+        setTasks(data.tasks)
+        addLog({
+          id: `${Date.now()}-${Math.random()}`,
+          timestamp: new Date(),
+          level: 'info',
+          source: 'FileSystem',
+          message: `📥 初期タスクデータを読み込みました (${data.tasks.length}件)`,
+        })
+      }
+    }
+
+    const handleInitialDependencyGraphLoaded = ({ data }: { filePath: string; data: any }) => {
+      console.log('[useElectronSync] Initial dependency graph loaded')
+      setDependencyGraph(data)
+      addLog({
+        id: `${Date.now()}-${Math.random()}`,
+        timestamp: new Date(),
+        level: 'info',
+        source: 'FileSystem',
+        message: '📥 依存関係グラフを読み込みました',
+      })
+    }
+
+    const handleInitialStoryMapLoaded = ({ data }: { filePath: string; data: any }) => {
+      console.log('[useElectronSync] Initial story map loaded')
+      setStoryMapping(data)
+      addLog({
+        id: `${Date.now()}-${Math.random()}`,
+        timestamp: new Date(),
+        level: 'info',
+        source: 'FileSystem',
+        message: '📥 ストーリーマッピングを読み込みました',
+      })
+    }
+
+    const handleInitialNodeExecutionsLoaded = ({ data }: { filePath: string; data: any }) => {
+      console.log('[useElectronSync] Initial node executions loaded')
+      if (data.nodeExecutions && Array.isArray(data.nodeExecutions)) {
+        // nodeExecutionsをappStoreに設定
+        // 各NodeExecutionをaddNodeExecutionで追加するのではなく、一括設定する
+        // appStoreにsetNodeExecutions actionがあればそれを使う、なければaddで追加
+        data.nodeExecutions.forEach((execution: any) => {
+          const nodeExecution = {
+            nodeName: execution.nodeName,
+            status: execution.status,
+            startedAt: new Date(execution.startedAt),
+            completedAt: execution.completedAt ? new Date(execution.completedAt) : undefined,
+            duration: execution.duration,
+            error: execution.error,
+          }
+          addNodeExecution(nodeExecution)
+        })
+
+        addLog({
+          id: `${Date.now()}-${Math.random()}`,
+          timestamp: new Date(),
+          level: 'info',
+          source: 'FileSystem',
+          message: `📥 ノード実行履歴を読み込みました (${data.nodeExecutions.length}件)`,
+        })
+      }
+    }
+
+    // File changed handlers
+    const handleTasksChanged = ({ data, event }: { filePath: string; data: any; event: string }) => {
+      console.log(`[useElectronSync] Tasks file ${event}`)
+      if (data.tasks && Array.isArray(data.tasks)) {
+        setTasks(data.tasks)
+        addLog({
+          id: `${Date.now()}-${Math.random()}`,
+          timestamp: new Date(),
+          level: 'info',
+          source: 'FileSystem',
+          message: `🔄 タスクデータが更新されました (${data.tasks.length}件)`,
+        })
+      }
+    }
+
+    const handleDependencyGraphChanged = ({ data }: { filePath: string; data: any; event: string }) => {
+      console.log('[useElectronSync] Dependency graph file changed')
+      setDependencyGraph(data)
+      addLog({
+        id: `${Date.now()}-${Math.random()}`,
+        timestamp: new Date(),
+        level: 'info',
+        source: 'FileSystem',
+        message: '🔄 依存関係グラフが更新されました',
+      })
+    }
+
+    const handleStoryMapChanged = ({ data }: { filePath: string; data: any; event: string }) => {
+      console.log('[useElectronSync] Story map file changed')
+      setStoryMapping(data)
+      addLog({
+        id: `${Date.now()}-${Math.random()}`,
+        timestamp: new Date(),
+        level: 'info',
+        source: 'FileSystem',
+        message: '🔄 ストーリーマッピングが更新されました',
+      })
+    }
+
+    const handleNodeExecutionsChanged = ({ data, event }: { filePath: string; data: any; event: string }) => {
+      console.log(`[useElectronSync] Node executions file ${event}`)
+      if (data.nodeExecutions && Array.isArray(data.nodeExecutions)) {
+        // 既存のnodeExecutionsをクリアして、新しいデータで上書き
+        clearNodeExecutions()
+
+        data.nodeExecutions.forEach((execution: any) => {
+          const nodeExecution = {
+            nodeName: execution.nodeName,
+            status: execution.status,
+            startedAt: new Date(execution.startedAt),
+            completedAt: execution.completedAt ? new Date(execution.completedAt) : undefined,
+            duration: execution.duration,
+            error: execution.error,
+          }
+          addNodeExecution(nodeExecution)
+        })
+
+        addLog({
+          id: `${Date.now()}-${Math.random()}`,
+          timestamp: new Date(),
+          level: 'info',
+          source: 'FileSystem',
+          message: `🔄 ノード実行履歴が更新されました (${data.nodeExecutions.length}件)`,
+        })
+      }
+    }
+
+    // Register file system event listeners
+    let cleanupInitialTasks: (() => void) | undefined
+    let cleanupInitialDependencyGraph: (() => void) | undefined
+    let cleanupInitialStoryMap: (() => void) | undefined
+    let cleanupInitialNodeExecutions: (() => void) | undefined
+    let cleanupTasksChanged: (() => void) | undefined
+    let cleanupDependencyGraphChanged: (() => void) | undefined
+    let cleanupStoryMapChanged: (() => void) | undefined
+    let cleanupNodeExecutionsChanged: (() => void) | undefined
+
+    if (window.electronAPI.onInitialDataLoaded) {
+      cleanupInitialTasks = window.electronAPI.onInitialDataLoaded(
+        'tasks',
+        handleInitialTasksLoaded
+      )
+      cleanupInitialDependencyGraph = window.electronAPI.onInitialDataLoaded(
+        'dependency-graph',
+        handleInitialDependencyGraphLoaded
+      )
+      cleanupInitialStoryMap = window.electronAPI.onInitialDataLoaded(
+        'story-map',
+        handleInitialStoryMapLoaded
+      )
+      cleanupInitialNodeExecutions = window.electronAPI.onInitialDataLoaded(
+        'node-executions',
+        handleInitialNodeExecutionsLoaded
+      )
+      console.log('[useElectronSync] Initial data event listeners registered')
+    }
+
+    if (window.electronAPI.onFileChanged) {
+      cleanupTasksChanged = window.electronAPI.onFileChanged('tasks', handleTasksChanged)
+      cleanupDependencyGraphChanged = window.electronAPI.onFileChanged(
+        'dependency-graph',
+        handleDependencyGraphChanged
+      )
+      cleanupStoryMapChanged = window.electronAPI.onFileChanged('story-map', handleStoryMapChanged)
+      cleanupNodeExecutionsChanged = window.electronAPI.onFileChanged(
+        'node-executions',
+        handleNodeExecutionsChanged
+      )
+      console.log('[useElectronSync] File changed event listeners registered')
     }
 
     // Register Graph Events Batch listener
@@ -189,6 +413,43 @@ export function useElectronSync() {
       console.log('[useElectronSync] Graph events batch listener registered')
     } else {
       console.warn('[useElectronSync] onGraphEventsBatch not available')
+    }
+
+    // ==========================================
+    // Register Node Flow Event Listeners
+    // ==========================================
+
+    let cleanupNodeFlowInit: (() => void) | undefined
+    let cleanupNodeStatusChange: (() => void) | undefined
+
+    if (window.electronAPI.onNodeFlowInit) {
+      cleanupNodeFlowInit = window.electronAPI.onNodeFlowInit((flowData) => {
+        console.log('[useElectronSync] Node flow initialized:', flowData)
+        setNodeFlowData(flowData)
+        addLog({
+          id: `${Date.now()}-${Math.random()}`,
+          timestamp: new Date(),
+          level: 'info',
+          source: 'FileSystem',
+          message: `📊 ワークフローフローチャートを読み込みました (${flowData.nodes?.length || 0}ノード)`,
+        })
+      })
+      console.log('[useElectronSync] Node flow init listener registered')
+    }
+
+    if (window.electronAPI.onNodeStatusChange) {
+      cleanupNodeStatusChange = window.electronAPI.onNodeStatusChange((data) => {
+        console.log('[useElectronSync] Node status changed:', data)
+        updateNodeFlowStatus(data.nodeId, data.status as any, data.timestamp)
+
+        // Update current executing node
+        if (data.status === 'executing') {
+          setCurrentExecutingNode(data.nodeId)
+        } else if (data.status === 'completed' || data.status === 'failed' || data.status === 'skipped') {
+          setCurrentExecutingNode(null)
+        }
+      })
+      console.log('[useElectronSync] Node status change listener registered')
     }
 
     // Initial state fetch (if available)
@@ -218,12 +479,41 @@ export function useElectronSync() {
     return () => {
       console.log('[useElectronSync] Cleaning up Electron IPC listeners')
 
+      // Cleanup file system listeners
+      if (cleanupInitialTasks) cleanupInitialTasks()
+      if (cleanupInitialDependencyGraph) cleanupInitialDependencyGraph()
+      if (cleanupInitialStoryMap) cleanupInitialStoryMap()
+      if (cleanupInitialNodeExecutions) cleanupInitialNodeExecutions()
+      if (cleanupTasksChanged) cleanupTasksChanged()
+      if (cleanupDependencyGraphChanged) cleanupDependencyGraphChanged()
+      if (cleanupStoryMapChanged) cleanupStoryMapChanged()
+      if (cleanupNodeExecutionsChanged) cleanupNodeExecutionsChanged()
+
       // Cleanup graph events batch listener
       if (cleanupGraphEventsBatch) {
         cleanupGraphEventsBatch()
       }
+
+      // Cleanup node flow listeners
+      if (cleanupNodeFlowInit) cleanupNodeFlowInit()
+      if (cleanupNodeStatusChange) cleanupNodeStatusChange()
     }
-  }, [addLog, addLogs, setTasks, setMetadata, updateTasks, addNodeExecution, updateNodeExecution])
+  }, [
+    addLog,
+    addLogs,
+    setTasks,
+    setMetadata,
+    updateTasks,
+    addNodeExecution,
+    updateNodeExecution,
+    clearNodeExecutions,
+    setDependencyGraph,
+    setStoryMapping,
+    setSprints,
+    setNodeFlowData,
+    setCurrentExecutingNode,
+    updateNodeFlowStatus,
+  ])
 }
 
 /**

@@ -45,15 +45,34 @@ export class OpenAICodexProvider {
         this.ready = true;
     }
     /**
+     * Map permissionMode to Codex SDK sandboxMode
+     */
+    mapPermissionModeToSandboxMode(permissionMode) {
+        switch (permissionMode) {
+            case 'acceptEdits':
+                return 'workspace-write';
+            case 'bypassPermissions':
+                return 'danger-full-access';
+            case 'default':
+            case 'plan':
+            case undefined:
+            default:
+                return 'read-only';
+        }
+    }
+    /**
      * Execute a prompt using Codex SDK
      */
     async *execute(prompt, options = {}) {
-        const { maxTurns = 50, cwd = process.cwd(), allowedTools, resume, model, includePartialMessages = false, providerOptions = {}, } = options;
+        const { maxTurns = 50, cwd = process.cwd(), allowedTools, resume, model, includePartialMessages = false, permissionMode, providerOptions = {}, } = options;
         try {
+            // Map permissionMode to sandboxMode
+            const sandboxMode = this.mapPermissionModeToSandboxMode(permissionMode);
             // Build thread options
             const threadOptions = {
                 model: model || this.model,
                 workingDirectory: cwd,
+                sandboxMode,
                 ...providerOptions,
             };
             // Create or resume thread
@@ -87,11 +106,29 @@ export class OpenAICodexProvider {
         }
         catch (error) {
             // Yield error message
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            // Check if error message contains usage limit patterns
+            const errorMessageLower = errorMessage.toLowerCase();
+            const isUsageLimitError = (errorMessageLower.includes('weekly limit') ||
+                errorMessageLower.includes('monthly limit') ||
+                errorMessageLower.includes('usage limit') ||
+                errorMessageLower.includes('usage_limit') ||
+                errorMessageLower.includes('upgrade to pro') ||
+                errorMessageLower.includes('quota') ||
+                errorMessageLower.includes('limit reached') ||
+                errorMessageLower.includes('subscription') ||
+                errorMessageLower.includes('billing') ||
+                errorMessageLower.includes('rate limit') ||
+                errorMessageLower.includes('rate_limit') ||
+                errorMessageLower.includes('hit your usage limit') ||
+                errorMessageLower.includes('purchase more credits'));
             yield {
                 type: 'result',
                 content: {
                     success: false,
-                    error: error instanceof Error ? error.message : String(error),
+                    subtype: isUsageLimitError ? 'rate_limit' : 'exception',
+                    error: errorMessage,
+                    errors: [errorMessage], // Also include in errors array for consistency
                 },
                 timestamp: new Date(),
             };
@@ -142,16 +179,35 @@ export class OpenAICodexProvider {
                     },
                     session_id: this.currentSession || undefined,
                 };
-            case 'turn.failed':
+            case 'turn.failed': {
+                // Check if error message contains usage limit patterns
+                const errorMessage = event.error.message || '';
+                const errorMessageLower = errorMessage.toLowerCase();
+                const isUsageLimitError = (errorMessageLower.includes('weekly limit') ||
+                    errorMessageLower.includes('monthly limit') ||
+                    errorMessageLower.includes('usage limit') ||
+                    errorMessageLower.includes('usage_limit') ||
+                    errorMessageLower.includes('upgrade to pro') ||
+                    errorMessageLower.includes('quota') ||
+                    errorMessageLower.includes('limit reached') ||
+                    errorMessageLower.includes('subscription') ||
+                    errorMessageLower.includes('billing') ||
+                    errorMessageLower.includes('rate limit') ||
+                    errorMessageLower.includes('rate_limit') ||
+                    errorMessageLower.includes('hit your usage limit') ||
+                    errorMessageLower.includes('purchase more credits'));
                 return {
                     ...baseMessage,
                     type: 'result',
                     content: {
                         success: false,
-                        errors: [event.error.message],
+                        subtype: isUsageLimitError ? 'rate_limit' : 'turn_failed',
+                        error: errorMessage,
+                        errors: [errorMessage],
                     },
                     session_id: this.currentSession || undefined,
                 };
+            }
             case 'item.started':
                 if (!includePartialMessages)
                     return null;
@@ -162,16 +218,35 @@ export class OpenAICodexProvider {
                 return this.convertItemToMessage(event.item, 'updated');
             case 'item.completed':
                 return this.convertItemToMessage(event.item, 'completed');
-            case 'error':
+            case 'error': {
+                // Check if error message contains usage limit patterns
+                const errorMessage = event.message || '';
+                const errorMessageLower = errorMessage.toLowerCase();
+                const isUsageLimitError = (errorMessageLower.includes('weekly limit') ||
+                    errorMessageLower.includes('monthly limit') ||
+                    errorMessageLower.includes('usage limit') ||
+                    errorMessageLower.includes('usage_limit') ||
+                    errorMessageLower.includes('upgrade to pro') ||
+                    errorMessageLower.includes('quota') ||
+                    errorMessageLower.includes('limit reached') ||
+                    errorMessageLower.includes('subscription') ||
+                    errorMessageLower.includes('billing') ||
+                    errorMessageLower.includes('rate limit') ||
+                    errorMessageLower.includes('rate_limit') ||
+                    errorMessageLower.includes('hit your usage limit') ||
+                    errorMessageLower.includes('purchase more credits'));
                 return {
                     ...baseMessage,
                     type: 'result',
                     content: {
                         success: false,
-                        error: event.message,
+                        subtype: isUsageLimitError ? 'rate_limit' : 'error',
+                        error: errorMessage,
+                        errors: [errorMessage],
                     },
                     session_id: this.currentSession || undefined,
                 };
+            }
             default:
                 return null;
         }
@@ -202,13 +277,21 @@ export class OpenAICodexProvider {
                     uuid: item.id,
                 };
             case 'command_execution':
+                // Debug: Log when command fails with no output
+                if (item.status === 'failed' && !item.aggregated_output) {
+                    console.error(`⚠️  [OpenAICodexProvider] Command failed with no output:`);
+                    console.error(`   Command: ${item.command}`);
+                    console.error(`   Exit Code: ${item.exit_code}`);
+                    console.error(`   Aggregated Output: ${JSON.stringify(item.aggregated_output)}`);
+                    console.error(`   Full Item:`, JSON.stringify(item, null, 2));
+                }
                 return {
                     ...baseMessage,
                     type: 'system',
                     content: {
                         commandExecution: {
                             command: item.command,
-                            output: item.aggregated_output,
+                            output: item.aggregated_output || '[No output captured]',
                             exitCode: item.exit_code,
                             status: item.status,
                         },

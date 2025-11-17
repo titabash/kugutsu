@@ -4,15 +4,18 @@
  * 各ノードの前提条件をチェックし、不備があれば責任ノードを特定する
  */
 import { FileReader } from './FileReader.js';
+import { DataPersistence } from './DataPersistence.js';
 /**
  * 前提条件チェッカー
  */
 export class PrerequisiteChecker {
     fileReader;
+    persistence;
     config;
     constructor(config) {
         this.config = config;
         this.fileReader = new FileReader(config.baseRepoPath);
+        this.persistence = new DataPersistence(config.baseRepoPath);
     }
     /**
      * ProductOwnerNode の前提条件チェック
@@ -26,8 +29,8 @@ export class PrerequisiteChecker {
      * EngineerNode の前提条件チェック
      *
      * 前提条件:
-     * - tasks.json が存在し、読み込み可能
-     * - 対象タスクが tasks.json に存在
+     * - Sprint Backlog が存在し、読み込み可能
+     * - 対象タスクが Sprint Backlog に存在
      * - タスクに worktreePath が設定されている
      * - instruction.md が存在し、読み込み可能
      *
@@ -35,7 +38,6 @@ export class PrerequisiteChecker {
      * @param taskId - チェック対象のタスクID
      */
     async checkEngineer(state, taskId) {
-        const tasksPath = state.tasksPath || '.kugutsu/tasks.json';
         if (!state.activeSprint?.id) {
             return {
                 success: false,
@@ -45,26 +47,34 @@ export class PrerequisiteChecker {
             };
         }
         const sprintId = state.activeSprint.id;
-        // Step 1: tasks.json の存在・読み込みチェック
-        let tasks;
+        // Step 1: Sprint Backlog の存在・読み込みチェック
+        let backlog;
         try {
-            tasks = await this.fileReader.readJSON(tasksPath);
+            backlog = await this.persistence.loadSprintBacklog(sprintId);
+            if (!backlog || !backlog.tasks) {
+                return {
+                    success: false,
+                    responsibleNode: 'sprint_planning',
+                    error: `Sprint Backlog not found: ${sprintId}`,
+                    missingFiles: [`.kugutsu/sprints/${sprintId}/sprint-backlog.json`],
+                };
+            }
         }
         catch (error) {
             return {
                 success: false,
-                responsibleNode: 'product_owner',
-                error: `tasks.json の読み込みに失敗: ${error instanceof Error ? error.message : String(error)}`,
-                missingFiles: [tasksPath],
+                responsibleNode: 'sprint_planning',
+                error: `Sprint Backlog の読み込みに失敗: ${error instanceof Error ? error.message : String(error)}`,
+                missingFiles: [`.kugutsu/sprints/${sprintId}/sprint-backlog.json`],
             };
         }
         // Step 2: 対象タスクの存在チェック
-        const task = tasks.find((t) => t.id === taskId);
+        const task = backlog.tasks.find((t) => t.id === taskId);
         if (!task) {
             return {
                 success: false,
-                responsibleNode: 'product_owner',
-                error: `タスク ${taskId} が tasks.json に存在しません`,
+                responsibleNode: 'sprint_planning',
+                error: `タスク ${taskId} が Sprint Backlog に存在しません`,
                 missingFields: ['taskId'],
             };
         }
@@ -97,39 +107,48 @@ export class PrerequisiteChecker {
      * EngineerDispatchNode の前提条件チェック
      *
      * 前提条件:
-     * - tasksPath が設定されている
-     * - tasks.json が存在し、読み込み可能
-     * - タスクが存在する
+     * - アクティブなスプリントが設定されている
+     * - Sprint Backlog が存在し、読み込み可能
+     * - Sprint Backlog にタスクが含まれている
      *
      * @param state - 現在のState
      */
     async checkEngineerDispatch(state) {
-        // Step 1: tasksPath 設定チェック
-        if (!state.tasksPath) {
+        // Step 1: アクティブなスプリントのチェック
+        if (!state.activeSprint?.id) {
             return {
                 success: false,
-                responsibleNode: 'product_owner',
-                error: 'tasksPath が設定されていません',
-                missingFields: ['tasksPath'],
+                responsibleNode: 'sprint_planning',
+                error: 'アクティブなスプリントが設定されていません',
+                missingFields: ['activeSprint.id'],
             };
         }
-        // Step 2: tasks.json の存在・読み込みチェック
+        const sprintId = state.activeSprint.id;
+        // Step 2: Sprint Backlog の存在・読み込みチェック
         try {
-            const tasks = await this.fileReader.readJSON(state.tasksPath);
-            if (tasks.length === 0) {
+            const backlog = await this.persistence.loadSprintBacklog(sprintId);
+            if (!backlog || !backlog.tasks) {
                 return {
                     success: false,
-                    responsibleNode: 'product_owner',
-                    error: 'tasks.json にタスクが含まれていません',
+                    responsibleNode: 'sprint_planning',
+                    error: `Sprint Backlog not found: ${sprintId}`,
+                    missingFiles: [`.kugutsu/sprints/${sprintId}/sprint-backlog.json`],
+                };
+            }
+            if (backlog.tasks.length === 0) {
+                return {
+                    success: false,
+                    responsibleNode: 'sprint_planning',
+                    error: 'Sprint Backlog にタスクが含まれていません',
                 };
             }
         }
         catch (error) {
             return {
                 success: false,
-                responsibleNode: 'product_owner',
-                error: `tasks.json の読み込みに失敗: ${error instanceof Error ? error.message : String(error)}`,
-                missingFiles: [state.tasksPath],
+                responsibleNode: 'sprint_planning',
+                error: `Sprint Backlog の読み込みに失敗: ${error instanceof Error ? error.message : String(error)}`,
+                missingFiles: [`.kugutsu/sprints/${sprintId}/sprint-backlog.json`],
             };
         }
         return { success: true };
@@ -138,6 +157,8 @@ export class PrerequisiteChecker {
      * ReviewNode の前提条件チェック
      *
      * 前提条件:
+     * - Sprint Backlog が存在し、読み込み可能
+     * - タスクが Sprint Backlog に存在
      * - タスクが in_review または completed 状態
      * - タスクに worktreePath が設定されている
      *
@@ -145,16 +166,33 @@ export class PrerequisiteChecker {
      * @param taskId - チェック対象のタスクID
      */
     async checkReview(state, taskId) {
-        const tasksPath = state.tasksPath || '.kugutsu/tasks.json';
-        // tasks.json 読み込み
+        if (!state.activeSprint?.id) {
+            return {
+                success: false,
+                responsibleNode: 'sprint_planning',
+                error: 'アクティブなスプリントが設定されていません',
+                missingFields: ['activeSprint.id'],
+            };
+        }
+        const sprintId = state.activeSprint.id;
+        // Sprint Backlog 読み込み
         try {
-            const tasks = await this.fileReader.readJSON(tasksPath);
-            const task = tasks.find((t) => t.id === taskId);
+            const backlog = await this.persistence.loadSprintBacklog(sprintId);
+            if (!backlog || !backlog.tasks) {
+                return {
+                    success: false,
+                    responsibleNode: 'sprint_planning',
+                    error: `Sprint Backlog not found: ${sprintId}`,
+                    missingFiles: [`.kugutsu/sprints/${sprintId}/sprint-backlog.json`],
+                };
+            }
+            const task = backlog.tasks.find((t) => t.id === taskId);
             if (!task) {
                 return {
                     success: false,
-                    responsibleNode: 'product_owner',
-                    error: `タスク ${taskId} が見つかりません`,
+                    responsibleNode: 'sprint_planning',
+                    error: `タスク ${taskId} が Sprint Backlog に存在しません`,
+                    missingFields: ['taskId'],
                 };
             }
             // ステータスチェック
@@ -179,9 +217,9 @@ export class PrerequisiteChecker {
         catch (error) {
             return {
                 success: false,
-                responsibleNode: 'product_owner',
-                error: `tasks.json の読み込みに失敗: ${error instanceof Error ? error.message : String(error)}`,
-                missingFiles: [tasksPath],
+                responsibleNode: 'sprint_planning',
+                error: `Sprint Backlog の読み込みに失敗: ${error instanceof Error ? error.message : String(error)}`,
+                missingFiles: [`.kugutsu/sprints/${sprintId}/sprint-backlog.json`],
             };
         }
         return { success: true };
@@ -190,14 +228,15 @@ export class PrerequisiteChecker {
      * MergeCoordinatorNode の前提条件チェック
      *
      * 前提条件:
-     * - タスクが reviewed 状態
+     * - Sprint Backlog が存在し、読み込み可能
+     * - タスクが Sprint Backlog に存在
+     * - タスクが completed 状態（レビュー承認済み）
      * - review.json が存在し、status === 'approved'
      *
      * @param state - 現在のState
      * @param taskId - チェック対象のタスクID
      */
     async checkMergeCoordinator(state, taskId) {
-        const tasksPath = state.tasksPath || '.kugutsu/tasks.json';
         if (!state.activeSprint?.id) {
             return {
                 success: false,
@@ -207,11 +246,19 @@ export class PrerequisiteChecker {
             };
         }
         const sprintId = state.activeSprint.id;
-        // tasks.json 読み込み
+        // Sprint Backlog 読み込み
         try {
-            const tasks = await this.fileReader.readJSON(tasksPath);
-            const task = tasks.find((t) => t.id === taskId);
-            if (!task || task.status !== 'reviewed') {
+            const backlog = await this.persistence.loadSprintBacklog(sprintId);
+            if (!backlog || !backlog.tasks) {
+                return {
+                    success: false,
+                    responsibleNode: 'sprint_planning',
+                    error: `Sprint Backlog not found: ${sprintId}`,
+                    missingFiles: [`.kugutsu/sprints/${sprintId}/sprint-backlog.json`],
+                };
+            }
+            const task = backlog.tasks.find((t) => t.id === taskId);
+            if (!task || task.status !== 'completed') {
                 return {
                     success: false,
                     responsibleNode: 'review',
@@ -222,9 +269,9 @@ export class PrerequisiteChecker {
         catch (error) {
             return {
                 success: false,
-                responsibleNode: 'product_owner',
-                error: `tasks.json の読み込みに失敗: ${error instanceof Error ? error.message : String(error)}`,
-                missingFiles: [tasksPath],
+                responsibleNode: 'sprint_planning',
+                error: `Sprint Backlog の読み込みに失敗: ${error instanceof Error ? error.message : String(error)}`,
+                missingFiles: [`.kugutsu/sprints/${sprintId}/sprint-backlog.json`],
             };
         }
         // review.json 読み込み

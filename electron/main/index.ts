@@ -3,6 +3,8 @@ import * as path from 'path';
 import { existsSync, statSync } from 'fs';
 import { StateStreamManager } from '../../src/electron/StateStreamManager.js';
 import { ParallelDevOrchestrator } from '../../src/electron/ParallelDevOrchestrator.js';
+import { FileSystemWatcher } from './FileSystemWatcher.js';
+import { FileSystemLoader } from './FileSystemLoader.js';
 import type { ParallelDevStateType } from '../../src/graph/state.js';
 import type { ParallelDevConfig } from '../../src/graph/types.js';
 
@@ -13,6 +15,8 @@ let currentProjectPath: string | null = null;
 let stateStreamManager: StateStreamManager | null = null;
 let currentGraphState: ParallelDevStateType | null = null;
 let orchestrator: ParallelDevOrchestrator | null = null;
+let fileSystemWatcher: FileSystemWatcher | null = null;
+let fileSystemLoader: FileSystemLoader | null = null;
 
 // コマンドライン引数をチェック
 const shouldOpenDevTools = process.argv.includes('--devtools');
@@ -25,6 +29,27 @@ if (cwdIndex !== -1 && process.argv[cwdIndex + 1]) {
   console.log('[Electron Main] Original working directory:', originalCwd);
 }
 
+// コマンドライン引数からプロジェクトパスを取得（VSCode風）
+// 使用例: npm run electron -- /path/to/project
+let initialProjectPath: string | undefined;
+
+// 1. --project-path オプションをチェック
+const projectPathIndex = process.argv.indexOf('--project-path');
+if (projectPathIndex !== -1 && process.argv[projectPathIndex + 1]) {
+  initialProjectPath = process.argv[projectPathIndex + 1];
+  console.log('[Electron Main] Project path from --project-path:', initialProjectPath);
+}
+
+// 2. 最後の引数をプロジェクトパスとして扱う（オプションでない場合）
+if (!initialProjectPath) {
+  const lastArg = process.argv[process.argv.length - 1];
+  // Electronの実行ファイルパスやその他のオプションを除外
+  if (lastArg && !lastArg.startsWith('-') && !lastArg.includes('electron') && existsSync(lastArg)) {
+    initialProjectPath = lastArg;
+    console.log('[Electron Main] Project path from last argument:', initialProjectPath);
+  }
+}
+
 function createWindow() {
   const preloadPath = path.join(__dirname, '../preload/index.mjs');
   console.log('[Electron Main] Preload script path:', preloadPath);
@@ -35,10 +60,10 @@ function createWindow() {
     height: 1000,
     webPreferences: {
       preload: preloadPath,
-      contextIsolation: false,
-      nodeIntegration: true,
-      sandbox: false,
-      webSecurity: false
+      contextIsolation: true,   // セキュリティ改善: contextBridge使用
+      nodeIntegration: false,   // セキュリティ改善: Rendererでnode機能無効化
+      sandbox: false,           // 一部機能で必要なため false のまま
+      webSecurity: true         // セキュリティ改善: CORS有効化
     },
     title: 'Multi-Engineer Parallel Development'
   });
@@ -61,11 +86,11 @@ function createWindow() {
   });
 
   // レンダラープロセスの準備が完了したらログを確認
-  mainWindow.webContents.once('did-finish-load', () => {
+  mainWindow.webContents.once('did-finish-load', async () => {
     console.log('[Electron Main] Renderer loaded successfully');
 
-    // 開発環境では常にDevToolsを開く（デバッグのため）
-    if (mainWindow && !mainWindow.isDestroyed()) {
+    // --devtoolsフラグがある場合のみDevToolsを開く
+    if (shouldOpenDevTools && mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.openDevTools();
       console.log('[Electron Main] DevTools opened');
     }
@@ -89,6 +114,19 @@ function createWindow() {
         });
       }
     }, 500);
+
+    // コマンドライン引数で指定されたプロジェクトを自動的に開く
+    if (initialProjectPath) {
+      console.log('[Electron Main] Auto-opening project from command line:', initialProjectPath);
+      setTimeout(async () => {
+        const success = await openProjectByPath(initialProjectPath!, false);
+        if (success) {
+          console.log('[Electron Main] Project auto-opened successfully');
+        } else {
+          console.error('[Electron Main] Failed to auto-open project');
+        }
+      }, 1000); // UIが完全に準備されるまで少し待つ
+    }
   });
 
   mainWindow.on('closed', () => {
@@ -192,7 +230,7 @@ function createMenu() {
 }
 
 /**
- * プロジェクトを開く
+ * プロジェクトを開く（ダイアログ経由）
  */
 async function openProject() {
   if (!mainWindow) return;
@@ -215,33 +253,61 @@ async function openProject() {
   }
 
   const selectedPath = result.filePaths[0];
+  await openProjectByPath(selectedPath);
+}
+
+/**
+ * 指定されたパスのプロジェクトを開く
+ */
+async function openProjectByPath(selectedPath: string, showErrors: boolean = true): Promise<boolean> {
+  if (!mainWindow) return false;
 
   // Gitリポジトリかどうか確認
   const gitDir = path.join(selectedPath, '.git');
   if (!existsSync(gitDir)) {
-    await dialog.showMessageBox(mainWindow, {
-      type: 'error',
-      title: 'Invalid Project',
-      message: 'The selected directory is not a Git repository.',
-      detail: 'Please select a directory that contains a .git folder.'
-    });
-    return;
+    if (showErrors) {
+      await dialog.showMessageBox(mainWindow, {
+        type: 'error',
+        title: 'Invalid Project',
+        message: 'The selected directory is not a Git repository.',
+        detail: 'Please select a directory that contains a .git folder.'
+      });
+    } else {
+      console.error('[Electron Main] Not a Git repository:', selectedPath);
+    }
+    return false;
   }
 
   // worktreeまたはサブモジュールのチェック
   const gitDirStat = statSync(gitDir);
   if (gitDirStat.isFile()) {
-    await dialog.showMessageBox(mainWindow, {
-      type: 'error',
-      title: 'Invalid Project',
-      message: 'Cannot open Git worktree or submodule.',
-      detail: 'Please select the main repository root directory.'
-    });
-    return;
+    if (showErrors) {
+      await dialog.showMessageBox(mainWindow, {
+        type: 'error',
+        title: 'Invalid Project',
+        message: 'Cannot open Git worktree or submodule.',
+        detail: 'Please select the main repository root directory.'
+      });
+    } else {
+      console.error('[Electron Main] Cannot open worktree/submodule:', selectedPath);
+    }
+    return false;
   }
 
   // プロジェクトパスを設定
   currentProjectPath = selectedPath;
+
+  // ファイルシステム監視を開始
+  if (!fileSystemWatcher) {
+    fileSystemWatcher = new FileSystemWatcher();
+  }
+  fileSystemWatcher.startWatching(currentProjectPath, mainWindow);
+
+  // 初期データを読み込む
+  if (!fileSystemLoader) {
+    fileSystemLoader = new FileSystemLoader();
+  }
+  await fileSystemLoader.loadInitialData(currentProjectPath, mainWindow);
 
   // Rendererプロセスに通知
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -254,6 +320,7 @@ async function openProject() {
   createMenu();
 
   console.log('[Electron Main] Project opened:', currentProjectPath);
+  return true;
 }
 
 /**

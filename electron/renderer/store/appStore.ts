@@ -8,6 +8,10 @@ import type {
   Sprint,
   GlobalTask,
   NodeExecution,
+  NodeFlowData,
+  FlowNode,
+  StoryMapping,
+  DesignDocs,
 } from '../types'
 
 /**
@@ -16,7 +20,7 @@ import type {
 interface AppState {
   // Tasks
   tasks: Task[]
-  tasksById: Map<string, Task>
+  tasksById: Map<string, Task>  // Map型: setTasks内で配列から変換
 
   // Logs
   logs: LogEntry[]
@@ -43,9 +47,19 @@ interface AppState {
   currentSprint: Sprint | null
   globalTasks: GlobalTask[]
 
+  // Story Mapping (Scrum Development)
+  storyMapping: StoryMapping | null
+
+  // Design Documents (Scrum Development)
+  designDocs: DesignDocs | null
+
   // Node Executions (LangGraph Real-time Tracking)
-  nodeExecutions: NodeExecution[]
-  activeNodes: Map<string, NodeExecution>
+  nodeExecutions: NodeExecution[]  // IPC経由で受け取る配列
+  activeNodes: Map<string, NodeExecution>  // Map型: renderer側で管理（O(1)検索）
+
+  // Node Flow Visualization
+  nodeFlowData: NodeFlowData | null
+  currentExecutingNode: string | null
 
   // Actions - Tasks
   setTasks: (tasks: Task[]) => void
@@ -97,6 +111,12 @@ interface AppState {
     percentage: number
   } | null
 
+  // Actions - Story Mapping
+  setStoryMapping: (storyMapping: StoryMapping | null) => void
+
+  // Actions - Design Documents
+  setDesignDocs: (designDocs: DesignDocs | null) => void
+
   // Actions - Node Executions
   addNodeExecution: (execution: NodeExecution) => void
   updateNodeExecution: (nodeName: string, updates: Partial<NodeExecution>) => void
@@ -112,6 +132,19 @@ interface AppState {
     failedExecutions: number
     averageDuration: number
   } | null
+
+  // Actions - Node Flow
+  setNodeFlowData: (flowData: NodeFlowData | null) => void
+  setCurrentExecutingNode: (nodeName: string | null) => void
+  updateNodeFlowStatus: (
+    nodeId: string,
+    status: FlowNode['status'],
+    timestamp?: number,
+    executionTime?: number
+  ) => void
+
+  // Selectors - Node Flow
+  getFlowNode: (nodeId: string) => FlowNode | undefined
 }
 
 /**
@@ -145,11 +178,17 @@ export const useAppStore = create<AppState>()(
       sprints: [],
       currentSprint: null,
       globalTasks: [],
+      storyMapping: null,
+      designDocs: null,
       nodeExecutions: [],
       activeNodes: new Map(),
+      nodeFlowData: null,
+      currentExecutingNode: null,
 
       // Task Actions
       setTasks: (tasks) => {
+        // Map型の処理: 配列からMapを生成（O(1)検索のため）
+        // IPCで受け取った配列をMapに変換
         const tasksById = new Map(tasks.map((task) => [task.id, task]))
 
         // Update metadata based on tasks
@@ -359,10 +398,17 @@ export const useAppStore = create<AppState>()(
         }
       },
 
+      // Story Mapping Actions
+      setStoryMapping: (storyMapping) => set({ storyMapping }),
+
+      // Design Documents Actions
+      setDesignDocs: (designDocs) => set({ designDocs }),
+
       // Node Execution Actions
       addNodeExecution: (execution) =>
         set((state) => {
           const nodeExecutions = [...state.nodeExecutions, execution]
+          // Map型の処理: 新しいMapインスタンスを作成（イミュータブル）
           const activeNodes = new Map(state.activeNodes)
 
           // Add to active nodes if status is 'started'
@@ -382,6 +428,7 @@ export const useAppStore = create<AppState>()(
               : exec
           )
 
+          // Map型の処理: 新しいMapインスタンスを作成（イミュータブル）
           const activeNodes = new Map(state.activeNodes)
 
           // Remove from active nodes if status is 'completed' or 'failed'
@@ -456,6 +503,47 @@ export const useAppStore = create<AppState>()(
           failedExecutions,
           averageDuration,
         }
+      },
+
+      // Node Flow Actions
+      setNodeFlowData: (flowData) => set({ nodeFlowData: flowData }),
+
+      setCurrentExecutingNode: (nodeName) => set({ currentExecutingNode: nodeName }),
+
+      updateNodeFlowStatus: (nodeId, status, timestamp, executionTime) =>
+        set((state) => {
+          if (!state.nodeFlowData) return state
+
+          const nodes = state.nodeFlowData.nodes.map((node) => {
+            if (node.id !== nodeId) return node
+
+            const updatedNode = { ...node, status }
+
+            if (status === 'executing') {
+              updatedNode.startedAt = timestamp || Date.now()
+            } else if (status === 'completed' || status === 'failed') {
+              updatedNode.completedAt = timestamp || Date.now()
+              if (executionTime !== undefined) {
+                updatedNode.executionTime = executionTime
+              }
+            }
+
+            return updatedNode
+          })
+
+          return {
+            nodeFlowData: {
+              ...state.nodeFlowData,
+              nodes,
+            },
+          }
+        }),
+
+      // Node Flow Selectors
+      getFlowNode: (nodeId) => {
+        const state = get()
+        if (!state.nodeFlowData) return undefined
+        return state.nodeFlowData.nodes.find((node) => node.id === nodeId)
       },
     }),
     { name: 'KugutsuAppStore' }

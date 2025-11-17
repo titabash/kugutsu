@@ -283,3 +283,41 @@ export interface NodeRole {
   description: string
   category: 'planning' | 'design' | 'development' | 'review' | 'coordination'
 }
+
+/**
+ * FlowNode (ノードフローの個別ノード定義)
+ *
+ * LangGraphワークフローの各ノードの状態を表現
+ */
+export interface FlowNode {
+  id: string                                               // ノードID
+  type: 'start' | 'process' | 'decision' | 'end'           // ノード種類
+  label: string                                            // 表示ラベル
+  status: 'pending' | 'executing' | 'completed' | 'failed' | 'skipped'  // 実行状態
+  executionTime?: number                                   // 実行時間（ミリ秒）
+  startedAt?: number                                       // 開始タイムスタンプ
+  completedAt?: number                                     // 完了タイムスタンプ
+}
+
+/**
+ * FlowEdge (ノードフローのエッジ定義)
+ *
+ * ノード間の接続を表現
+ */
+export interface FlowEdge {
+  id: string          // エッジID
+  source: string      // 開始ノードID
+  target: string      // 終了ノードID
+  label?: string      // エッジラベル（条件分岐の説明など）
+  condition?: string  // 条件分岐のラベル
+}
+
+/**
+ * NodeFlowData (ノードフロー全体の定義)
+ *
+ * ワークフロー全体のノードとエッジの情報
+ */
+export interface NodeFlowData {
+  nodes: FlowNode[]   // 全ノード
+  edges: FlowEdge[]   // 全エッジ
+}

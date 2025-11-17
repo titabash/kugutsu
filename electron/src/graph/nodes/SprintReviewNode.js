@@ -12,6 +12,7 @@
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 import { DataPersistence } from '../../utils/DataPersistence.js';
 import { MessageHandler } from '../../utils/MessageHandler.js';
+import { JSONExtractor } from '../../utils/JSONExtractor.js';
 /**
  * Sprint Review Node
  *
@@ -25,6 +26,8 @@ import { MessageHandler } from '../../utils/MessageHandler.js';
 export async function sprintReviewNode(state) {
     const { activeSprint, globalTasks, config } = state;
     const maxTurns = config.maxTurns || 50;
+    // Sync failed providers from state
+    AIProviderFactory.syncWithState(state.failedProviders || []);
     console.log('🔍 SprintReview: スプリント完了確認中...');
     if (!activeSprint) {
         console.log('⚠️ アクティブなスプリントが存在しません');
@@ -37,6 +40,7 @@ export async function sprintReviewNode(state) {
                     message: 'アクティブなスプリントなし',
                 },
             ],
+            failedProviders: AIProviderFactory.getFailedProviders(),
         };
     }
     console.log(`📋 スプリント: ${activeSprint.name}`);
@@ -44,8 +48,23 @@ export async function sprintReviewNode(state) {
     // データ永続化マネージャーを初期化
     const persistence = new DataPersistence(config.baseRepoPath);
     await persistence.initialize();
-    // スプリントに含まれるタスクの完了状況を確認
-    const sprintTasks = globalTasks.filter((task) => activeSprint.taskIds.includes(task.id));
+    // スプリントに含まれるタスクの完了状況を確認（Sprint Backlogから読み込む）
+    let sprintBacklog;
+    try {
+        sprintBacklog = await persistence.loadSprintBacklog(activeSprint.id);
+        if (!sprintBacklog || !sprintBacklog.tasks) {
+            console.warn('⚠️ Sprint Backlogが見つかりません。state.globalTasksを使用します。');
+            sprintBacklog = null;
+        }
+    }
+    catch (error) {
+        console.warn('⚠️ Sprint Backlogの読み込みに失敗。state.globalTasksを使用します。', error);
+        sprintBacklog = null;
+    }
+    // Sprint Backlogから読み込むか、fallbackでglobalTasksを使用
+    const sprintTasks = sprintBacklog?.tasks
+        ? sprintBacklog.tasks.filter((task) => activeSprint.taskIds.includes(task.id))
+        : globalTasks.filter((task) => activeSprint.taskIds.includes(task.id));
     const completedTasks = sprintTasks.filter((task) => task.status === 'completed');
     const failedTasks = sprintTasks.filter((task) => task.status === 'failed');
     const incompleteTasks = sprintTasks.filter((task) => task.status !== 'completed' &&
@@ -128,16 +147,16 @@ JSON形式で以下を出力してください：
                 }
             }
         }
-        handler.complete(true, 'デプロイ可能性チェックが完了しました');
+        handler.completeWithErrorCheck('デプロイ可能性チェックが完了しました', 'SprintReview');
         // JSONを抽出してパース
-        const jsonMatch = aiResponseText.match(/```json\n([\s\S]*?)\n```/);
+        const extractionResult = JSONExtractor.extractFromCodeBlock(aiResponseText);
         let deployable = true;
         let e2eTestable = true;
         let reasoning = '';
         let blockers = [];
-        if (jsonMatch) {
+        if (extractionResult.success) {
             try {
-                const result = JSON.parse(jsonMatch[1]);
+                const result = extractionResult.data;
                 deployable = result.deployable;
                 e2eTestable = result.e2eTestable;
                 reasoning = result.reasoning;
@@ -157,7 +176,7 @@ JSON形式で以下を出力してください：
             }
         }
         else {
-            console.warn('⚠️ AI応答からJSONを抽出できませんでした。デフォルトでデプロイ可能とします。');
+            console.warn(`⚠️ AI応答からJSONを抽出できませんでした: ${extractionResult.error}。デフォルトでデプロイ可能とします。`);
             deployable = true;
             e2eTestable = true;
             reasoning = 'AI判定エラーのため、デフォルトでデプロイ可能とします';
@@ -176,40 +195,103 @@ JSON形式で以下を出力してください：
         // スプリント履歴に保存
         await persistence.addToSprintHistory(completedSprint);
         console.log(`📚 スプリント履歴に記録: ${completedSprint.id}`);
-        // アクティブスプリントをクリア
-        await persistence.saveActiveSprint(null);
-        console.log('🗑️ アクティブスプリントをクリアしました');
-        // 未割り当てタスクが残っているか確認
-        const remainingUnassignedTasks = globalTasks.filter((task) => !task.sprint &&
-            task.status !== 'completed' &&
-            task.status !== 'failed');
+        // 未完了タスクをProduct Backlogに戻す（タスク移動）
+        if (incompleteTasks.length > 0) {
+            try {
+                const productBacklog = await persistence.loadProductBacklog();
+                const currentBacklogTasks = productBacklog?.tasks || [];
+                // 未完了タスクをProduct Backlog形式に変換
+                const tasksToReturn = incompleteTasks.map((task) => ({
+                    id: task.id,
+                    type: task.type || 'feature',
+                    title: task.title,
+                    description: task.description,
+                    priority: task.priority || 50,
+                    estimatedPoints: task.estimatedPoints || 8,
+                    dependencies: task.dependencies || [],
+                    status: 'pending',
+                    createdAt: task.createdAt || new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
+                }));
+                // 既存のタスクとマージ（重複は更新）
+                const taskMap = new Map(currentBacklogTasks.map((t) => [t.id, t]));
+                tasksToReturn.forEach((task) => {
+                    taskMap.set(task.id, task);
+                });
+                const updatedBacklog = {
+                    tasks: Array.from(taskMap.values()),
+                    metadata: {
+                        totalTasks: taskMap.size,
+                        lastUpdated: new Date().toISOString(),
+                    },
+                };
+                await persistence.saveProductBacklog(updatedBacklog);
+                console.log(`✅ ${incompleteTasks.length}件の未完了タスクをProduct Backlogに戻しました`);
+            }
+            catch (error) {
+                console.warn('⚠️ Product Backlogへの戻しに失敗しましたが、処理を続行します:', error);
+            }
+        }
+        // アクティブスプリントをクリア（stateとファイルの同期を確実にする）
+        let activeSprintCleared = false;
+        try {
+            await persistence.saveActiveSprint(null);
+            activeSprintCleared = true;
+            console.log('🗑️ アクティブスプリントをクリアしました（ファイルとstate同期）');
+        }
+        catch (error) {
+            console.error('❌ アクティブスプリントのクリアに失敗:', error);
+            // エラーが発生してもstateはnullを返す（次のノードでファイルから読み込まないように修正済み）
+            activeSprintCleared = false;
+        }
+        // 未割り当てタスクが残っているか確認（Product Backlogから）
+        let remainingUnassignedTasks = [];
+        try {
+            const productBacklog = await persistence.loadProductBacklog();
+            if (productBacklog && productBacklog.tasks) {
+                remainingUnassignedTasks = productBacklog.tasks.filter((task) => task.status !== 'completed' &&
+                    task.status !== 'failed');
+            }
+        }
+        catch (error) {
+            console.warn('⚠️ Product Backlogの読み込みに失敗。state.globalTasksを使用します。', error);
+            remainingUnassignedTasks = globalTasks.filter((task) => !task.sprint &&
+                task.status !== 'completed' &&
+                task.status !== 'failed');
+        }
         console.log(`📊 残りの未割り当てタスク: ${remainingUnassignedTasks.length}件`);
+        // stateとファイルの同期を確実にするため、activeSprint: nullを返す
+        // ファイルのクリアに失敗した場合でも、stateはnullを返す（SprintPlanningNodeがファイルから読み込まないように修正済み）
         if (remainingUnassignedTasks.length > 0) {
             console.log('🔄 次のスプリント計画が必要です');
             return {
-                activeSprint: null,
+                activeSprint: null, // stateを確実にnullに設定
                 sprints: [...(state.sprints || []), completedSprint],
                 logs: [
                     {
                         timestamp: new Date(),
-                        level: 'info',
+                        level: activeSprintCleared ? 'info' : 'warn',
                         source: 'sprint_review',
-                        message: `スプリント完了: ${completedSprint.name}。次スプリント計画へ`,
+                        message: activeSprintCleared
+                            ? `スプリント完了: ${completedSprint.name}。次スプリント計画へ`
+                            : `スプリント完了: ${completedSprint.name}。次スプリント計画へ（ファイルクリア失敗、stateはnull）`,
                         data: {
                             sprintId: completedSprint.id,
                             completedTasks: completedTasks.length,
                             failedTasks: failedTasks.length,
                             deployable: completedSprint.deployable,
                             remainingTasks: remainingUnassignedTasks.length,
+                            activeSprintCleared,
                         },
                     },
                 ],
+                failedProviders: AIProviderFactory.getFailedProviders(),
             };
         }
         else {
             console.log('🎉 すべてのタスクが完了しました！');
             return {
-                activeSprint: null,
+                activeSprint: null, // stateを確実にnullに設定
                 sprints: [...(state.sprints || []), completedSprint],
                 metadata: {
                     ...state.metadata,
@@ -218,16 +300,20 @@ JSON形式で以下を出力してください：
                 logs: [
                     {
                         timestamp: new Date(),
-                        level: 'info',
+                        level: activeSprintCleared ? 'info' : 'warn',
                         source: 'sprint_review',
-                        message: `全タスク完了: プロジェクト終了`,
+                        message: activeSprintCleared
+                            ? `全タスク完了: プロジェクト終了`
+                            : `全タスク完了: プロジェクト終了（ファイルクリア失敗、stateはnull）`,
                         data: {
                             sprintId: completedSprint.id,
                             completedTasks: completedTasks.length,
                             deployable: completedSprint.deployable,
+                            activeSprintCleared,
                         },
                     },
                 ],
+                failedProviders: AIProviderFactory.getFailedProviders(),
             };
         }
     }
@@ -252,6 +338,7 @@ JSON形式で以下を出力してください：
                     },
                 },
             ],
+            failedProviders: AIProviderFactory.getFailedProviders(),
         };
     }
 }

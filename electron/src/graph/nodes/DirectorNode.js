@@ -15,6 +15,8 @@ import { MessageHandler } from '../../utils/MessageHandler.js';
  * Phase 1: Analyze user requirements and create story mapping
  */
 export async function directorNode(state) {
+    // Sync failed providers from state
+    AIProviderFactory.syncWithState(state.failedProviders || []);
     console.log('📋 DirectorAI: ストーリーマッピング作成開始');
     // currentProjectId 必須チェック
     if (!state.currentProjectId) {
@@ -28,6 +30,7 @@ export async function directorNode(state) {
                     message: 'currentProjectId が設定されていません（check_modeで設定されるべき）',
                 },
             ],
+            failedProviders: AIProviderFactory.getFailedProviders(),
         };
     }
     try {
@@ -129,12 +132,12 @@ ${state.userRequest}
         // エラーチェック（Claude Agent SDK仕様準拠）
         if (handler.getHasError()) {
             const details = handler.getErrorDetails();
-            // エラーメッセージの構築
             let errorMsg;
             if (details?.message) {
-                errorMsg = details.subtype === 'error_max_turns'
-                    ? `AI実行がmaxTurns制限に到達しました: ${details.message}`
-                    : `AI実行中にエラーが発生しました: ${details.message}`;
+                errorMsg =
+                    details.subtype === 'error_max_turns'
+                        ? `AI実行がmaxTurns制限に到達しました: ${details.message}`
+                        : `AI実行中にエラーが発生しました: ${details.message}`;
             }
             else if (details?.errors && details.errors.length > 0) {
                 errorMsg = `AI実行中にエラーが発生しました: ${details.errors.join('; ')}`;
@@ -181,6 +184,7 @@ ${state.userRequest}
                     },
                 },
             ],
+            failedProviders: AIProviderFactory.getFailedProviders(),
         };
     }
     catch (error) {
@@ -195,6 +199,7 @@ ${state.userRequest}
                     data: { error: String(error) },
                 },
             ],
+            failedProviders: AIProviderFactory.getFailedProviders(),
         };
     }
 }

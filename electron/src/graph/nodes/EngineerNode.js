@@ -4,19 +4,21 @@
  * Executes code implementation for a specific task
  *
  * **File-based Artifact Management:**
- * - Reads tasks from `.kugutsu/tasks.json`
+ * - Reads tasks from Sprint Backlog (`.kugutsu/sprints/{sprintId}/sprint-backlog.json`)
  * - Reads instruction from `.kugutsu/sprints/{sprintId}/tasks/{taskId}/instruction.md`
- * - Updates task status to `implemented` in tasks.json after completion
+ * - Updates task status in Sprint Backlog after completion
  */
 import { interrupt } from '@langchain/langgraph';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 import { FileReader } from '../../utils/FileReader.js';
-import { AIFileWriter } from '../../utils/AIFileWriter.js';
+import { DataPersistence } from '../../utils/DataPersistence.js';
 import { TaskStateMachine } from '../../utils/TaskStateMachine.js';
 import { RetryManager } from '../../utils/RetryManager.js';
 import { ErrorClassifier } from '../../utils/ErrorClassifier.js';
 import { PrerequisiteChecker } from '../../utils/PrerequisiteChecker.js';
 import { MessageHandler } from '../../utils/MessageHandler.js';
+import { GitWorktreeManager } from '../../managers/GitWorktreeManager.js';
+import { execSync } from 'child_process';
 /**
  * Engineer Node
  *
@@ -32,27 +34,25 @@ import { MessageHandler } from '../../utils/MessageHandler.js';
  * This node is designed to be called via Send API with `currentTaskId` in state.
  * The taskId is retrieved from `state.currentTaskId` for parallel execution.
  *
- * **Backward Compatibility:**
- * For backward compatibility with tests, taskId can also be passed as a second parameter.
+ * **LangGraph Node Function Signature:**
+ * LangGraph nodes receive only `(state)` as parameter. The second parameter
+ * passed by LangGraph is the config object, not a custom parameter.
  */
-export async function engineerNode(state, taskIdParam) {
+export async function engineerNode(state) {
     const { config, tasks, tasksPath, activeSprint, currentTaskId } = state;
     const startTime = Date.now();
-    // Retrieve task ID from parameter (backward compatibility) or state (Send API pattern)
-    const taskId = taskIdParam || currentTaskId;
-    // DEBUG: 型チェック
-    console.log(`[DEBUG] taskIdParam type: ${typeof taskIdParam}, value: ${JSON.stringify(taskIdParam)}`);
-    console.log(`[DEBUG] currentTaskId type: ${typeof currentTaskId}, value: ${JSON.stringify(currentTaskId)}`);
-    console.log(`[DEBUG] taskId type: ${typeof taskId}, value: ${JSON.stringify(taskId)}`);
+    // Retrieve task ID from state (Send API pattern)
+    // LangGraph Send API sets currentTaskId in state when calling this node
+    const taskId = currentTaskId;
     if (!taskId) {
-        console.error('❌ taskId is not provided (neither as parameter nor in state.currentTaskId)');
+        console.error('❌ taskId is not provided in state.currentTaskId');
         return {
             logs: [
                 {
                     timestamp: new Date(),
                     level: 'error',
                     source: 'EngineerNode',
-                    message: 'taskId is not provided (neither as parameter nor in state.currentTaskId)',
+                    message: 'taskId is not provided in state.currentTaskId',
                 },
             ],
         };
@@ -279,11 +279,18 @@ export async function engineerNode(state, taskIdParam) {
             ],
         };
     }
-    // Read tasks from file
-    const fileReader = new FileReader(config.baseRepoPath);
-    let taskArtifacts;
+    // Read task from Sprint Backlog
+    const persistence = new DataPersistence(config.baseRepoPath);
+    let taskArtifact;
     try {
-        taskArtifacts = await fileReader.readJSON(tasksPath || '.kugutsu/tasks.json');
+        const backlog = await persistence.loadSprintBacklog(sprintId);
+        if (!backlog || !backlog.tasks) {
+            throw new Error(`Sprint Backlog not found: ${sprintId}`);
+        }
+        taskArtifact = backlog.tasks.find((t) => t.id === taskId);
+        if (!taskArtifact) {
+            throw new Error(`Task ${taskId} not found in Sprint Backlog`);
+        }
     }
     catch (error) {
         return {
@@ -292,14 +299,12 @@ export async function engineerNode(state, taskIdParam) {
                     timestamp: new Date(),
                     level: 'error',
                     source: 'EngineerNode',
-                    message: `tasks.json の読み込みに失敗: ${error instanceof Error ? error.message : String(error)}`,
+                    message: `Sprint Backlog の読み込みに失敗: ${error instanceof Error ? error.message : String(error)}`,
                     taskId,
                 },
             ],
         };
     }
-    // Find the task
-    const taskArtifact = taskArtifacts.find((t) => t.id === taskId);
     if (!taskArtifact) {
         return {
             logs: [
@@ -380,6 +385,7 @@ export async function engineerNode(state, taskIdParam) {
         };
     }
     // Read instruction.md
+    const fileReader = new FileReader(config.baseRepoPath);
     const instructionPath = `.kugutsu/sprints/${sprintId}/tasks/${taskId}/instruction.md`;
     let instruction;
     try {
@@ -436,6 +442,20 @@ export async function engineerNode(state, taskIdParam) {
         };
     }
     console.log(`📖 instruction.md を読み込みました`);
+    // Read review.json if exists (修正実装の場合)
+    const reviewPath = `.kugutsu/sprints/${sprintId}/tasks/${taskId}/review.json`;
+    let reviewArtifact = null;
+    try {
+        const reviewContent = await fileReader.readFile(reviewPath);
+        reviewArtifact = JSON.parse(reviewContent);
+        console.log(`📖 review.json を読み込みました (修正実装)`);
+    }
+    catch (error) {
+        // review.jsonがない場合は初回実装
+        console.log(`📝 review.json が見つかりません (初回実装)`);
+    }
+    // Sync failed providers from state
+    AIProviderFactory.syncWithState(state.failedProviders || []);
     try {
         // Create AI provider
         const providerConfig = AIProviderFactory.buildProviderConfig({
@@ -490,18 +510,58 @@ ${state.designDocs.uiuxPath ? `### UI/UX設計
 このスプリントの目標とタスク全体を把握してください。
 `
             : '';
+        // レビューコメント取得ロジック
+        const taskReviews = (state.reviews || [])
+            .filter(r => r.taskId === taskId)
+            .sort((a, b) => {
+            const timeA = a.timestamp instanceof Date ? a.timestamp.getTime() : new Date(a.timestamp).getTime();
+            const timeB = b.timestamp instanceof Date ? b.timestamp.getTime() : new Date(b.timestamp).getTime();
+            return timeB - timeA;
+        });
+        const latestReview = taskReviews.length > 0 ? taskReviews[0] : null;
+        // レビューフィードバックセクション
+        const reviewFeedbackSection = latestReview && latestReview.status === 'changes_requested'
+            ? `
+## 🔍 前回のレビュー結果 - 修正が必要です
+
+**レビュアー**: ${latestReview.reviewer}
+**レビュー日時**: ${latestReview.timestamp instanceof Date ? latestReview.timestamp.toISOString() : latestReview.timestamp}
+
+### 指摘事項:
+${latestReview.comments.map((comment, idx) => `${idx + 1}. ${comment}`).join('\n')}
+
+${latestReview.issues && latestReview.issues.length > 0 ? `
+### 検出された問題:
+${latestReview.issues.map((issue, idx) => `${idx + 1}. [${issue.severity}] ${issue.description}${issue.file ? ` (${issue.file}${issue.line ? ':' + issue.line : ''})` : ''}`).join('\n')}
+` : ''}
+
+${reviewArtifact && reviewArtifact.comments ? `
+### 詳細なレビューコメント (review.jsonから):
+${reviewArtifact.comments.map((comment, idx) => `${idx + 1}. [${comment.severity || 'info'}] ${comment.message}${comment.file ? ` (${comment.file})` : ''}`).join('\n')}
+` : ''}
+
+${reviewArtifact && reviewArtifact.suggestions && reviewArtifact.suggestions.length > 0 ? `
+### 改善提案:
+${reviewArtifact.suggestions.map((suggestion, idx) => `${idx + 1}. ${suggestion}`).join('\n')}
+` : ''}
+
+**重要**: 上記の指摘事項を必ず修正してください。これは再実装です。前回のレビューで指摘された問題を解決することが最優先です。
+`
+            : '';
         const implementationPrompt = `
-# Task Implementation
+# Task Implementation${latestReview && latestReview.status === 'changes_requested' ? ' - 修正実装' : ''}
+
+${reviewFeedbackSection}
 
 以下のタスクを実装してください。
 
 ## 【前提条件：必須ファイル】
-以下のファイルは前のノード（ProductOwner）が作成済みです。このタスクの実装に必要な情報が含まれています：
+以下のファイルは前のノードが作成済みです。このタスクの実装に必要な情報が含まれています：
 
-1. **.kugutsu/tasks.json** - タスク一覧と自分の担当タスク情報
+1. **Sprint Backlog** (\`.kugutsu/sprints/\${sprintId}/sprint-backlog.json\`) - タスク一覧と自分の担当タスク情報
    → このファイルからタスクの状態を確認できます
 
-2. **.kugutsu/sprints/${sprintId}/tasks/${taskArtifact.id}/instruction.md** - このタスクの実装詳細指示
+2. **.kugutsu/sprints/\${sprintId}/tasks/\${taskArtifact.id}/instruction.md** - このタスクの実装詳細指示
    → 下記「タスクの詳細指示」に既に読み込まれています
 
 これらのファイルが存在しない場合はエラーです。
@@ -512,6 +572,29 @@ ${state.designDocs.uiuxPath ? `### UI/UX設計
 
 ## 作業ディレクトリ
 ${taskArtifact.worktreePath}
+
+## 🚀 環境セットアップ（最優先実行）
+
+**重要**: あなたはGit Worktree環境で作業しています。実装を開始する前に、必ず以下を実行してください:
+
+1. **プロジェクトの種類を確認**
+   - Readツールで\`package.json\`, \`requirements.txt\`, \`go.mod\`, \`Cargo.toml\`等の存在を確認
+   - プロジェクトのビルドシステムを特定
+
+2. **依存関係のインストール**
+   - Node.jsプロジェクト: \`npm install\` または \`yarn install\`
+   - Pythonプロジェクト: \`pip install -r requirements.txt\`
+   - Goプロジェクト: \`go mod download\`
+   - Rustプロジェクト: \`cargo build\`
+   - その他のプロジェクトも、適切な依存関係インストールコマンドを実行
+
+3. **必要に応じてビルドやコード生成を実行**
+   - TypeScriptのビルド、プロトコルバッファのコード生成等
+
+4. **環境が正しくセットアップされたことを確認**
+   - 必要に応じてテストコマンドやビルドコマンドを実行して動作確認
+
+これらの手順を完了してから、タスクの実装に進んでください。
 
 ## タスクの詳細指示
 
@@ -525,26 +608,21 @@ ${storyMappingSection}${designDocsSection}${sprintPlanSection}
 - テストを実行して失敗を確認してください
 - その後、テストをパスする実装を行ってください
 
-### 2. コミット
-- 適切な単位でgit commitを作成してください
-- コミットメッセージは明確で説明的に
-
-### 3. コード品質
+### 2. コード品質
 - 既存のコードスタイルに従ってください
 - エラーハンドリングを適切に実装してください
 - 必要に応じてドキュメントを追加してください
 
-### 4. 依存関係
+### 3. 依存関係
 ${dependenciesSection}
 
 ## 完了条件
 - すべてのテストが通過する
 - コードレビュー可能な状態
-- 適切なコミットが作成されている
 
 ## 重要な注意
-- **git add と git commit は実行してください**
-- ただし、**git push は実行しないでください**（レビュー後にマージします）
+- **git操作（add/commit/push）は実行しないでください**
+- コミットはシステムが自動的に作成します
 `;
         // Execute implementation with retry mechanism
         const messages = [];
@@ -560,6 +638,14 @@ ${dependenciesSection}
             for await (const message of provider.execute(implementationPrompt, {
                 maxTurns: state.config.maxTurns,
                 cwd: taskArtifact.worktreePath,
+                systemPrompt: `You are an AI engineer working in an isolated Git worktree environment.
+
+CRITICAL FIRST STEPS:
+1. Before starting any implementation, ALWAYS check for dependency files (package.json, requirements.txt, go.mod, Cargo.toml, etc.)
+2. If dependency files exist, INSTALL dependencies first using appropriate commands (npm install, pip install, go mod download, cargo build, etc.)
+3. Ensure the development environment is properly set up before writing code
+
+This is a MANDATORY step. Failure to set up the environment will cause implementation failures.`,
                 permissionMode: 'acceptEdits',
                 allowedTools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
                 resume: taskArtifact.sessionId,
@@ -578,38 +664,120 @@ ${dependenciesSection}
             // ここでエラーを検出して例外をスローすることで、RetryManagerが正しく動作する
             if (handler.getHasError()) {
                 const details = handler.getErrorDetails();
-                // エラーメッセージの構築（より詳細な情報を含める）
                 let errorMsg;
                 if (details?.message) {
-                    // MessageHandler が正しく errors 配列を解析できた場合
-                    errorMsg = details.subtype === 'error_max_turns'
-                        ? `AI実行がmaxTurns制限に到達しました: ${details.message}`
-                        : `AI実行中にエラーが発生しました: ${details.message}`;
+                    errorMsg =
+                        details.subtype === 'error_max_turns'
+                            ? `AI実行がmaxTurns制限に到達しました: ${details.message}`
+                            : `AI実行中にエラーが発生しました: ${details.message}`;
                 }
                 else if (details?.errors && details.errors.length > 0) {
-                    // errors 配列が直接利用可能な場合
                     errorMsg = `AI実行中にエラーが発生しました: ${details.errors.join('; ')}`;
                 }
                 else {
-                    // フォールバック: サブタイプのみ
                     errorMsg = `AI実行中にエラーが発生しました (subtype: ${details?.subtype || 'unknown'})`;
                     console.warn(`⚠️  エラー詳細が取得できませんでした。ErrorDetails:`, JSON.stringify(details, null, 2));
                 }
                 throw new Error(errorMsg);
             }
             handler.complete(true, 'タスクの実装が完了しました');
-            return { messages: collectedMessages, sessionId: capturedSessionId };
+            return {
+                messages: collectedMessages,
+                sessionId: capturedSessionId,
+            };
         }, {
             maxRetries: 3,
             initialDelayMs: 2000,
             maxDelayMs: 30000,
             backoffMultiplier: 2,
-            retryableErrors: ['ETIMEDOUT', 'ECONNRESET', 'rate_limit', 'Rate limit', 'timeout', 'network'],
+            // Note: ネットワークエラーのみリトライ対象（rate_limit/error_max_turnsはFallbackAIProviderが処理）
+            retryableErrors: ['ETIMEDOUT', 'ECONNRESET', 'timeout', 'network'],
         });
+        // AI実行が成功した場合、変更をコミット
+        if (executionResult.success) {
+            try {
+                console.log(`\n${'='.repeat(60)}`);
+                console.log(`📝 変更をコミット中...`);
+                console.log(`${'='.repeat(60)}\n`);
+                // GitWorktreeManagerを初期化
+                const gitManager = new GitWorktreeManager(config.baseRepoPath, config.worktreeBasePath, config.baseBranch);
+                // Worktree内で変更されたファイルを検出
+                const worktreePath = taskArtifact.worktreePath;
+                try {
+                    // git statusで変更を確認
+                    const statusOutput = execSync('git status --porcelain', {
+                        cwd: worktreePath,
+                        encoding: 'utf-8',
+                        stdio: 'pipe'
+                    });
+                    if (statusOutput.trim()) {
+                        console.log(`📋 変更検出:\n${statusOutput}`);
+                        // 全ての変更をステージング（worktree内から実行）
+                        execSync('git add -A', {
+                            cwd: worktreePath,
+                            stdio: 'pipe'
+                        });
+                        // コミットメッセージを生成
+                        const commitMessage = `feat(${taskId}): ${instruction.split('\n')[0].substring(0, 72)}
+
+タスクID: ${taskId}
+スプリント: ${sprintId}
+
+実装内容:
+${instruction.split('\n').slice(0, 5).join('\n')}
+
+[Automated commit by Kugutsu AI Engineer]`;
+                        // コミットを作成（worktree内から実行）
+                        execSync(`git commit -m "${commitMessage.replace(/"/g, '\\"')}"`, {
+                            cwd: worktreePath,
+                            stdio: 'pipe'
+                        });
+                        console.log(`✅ コミット作成完了`);
+                        console.log(`   📦 タスク: ${taskId}`);
+                        console.log(`   📝 メッセージ: ${commitMessage.split('\n')[0]}`);
+                    }
+                    else {
+                        console.log(`ℹ️  変更なし - コミットをスキップ`);
+                    }
+                }
+                catch (gitError) {
+                    console.warn(`⚠️  Git操作に失敗しましたが、処理を継続します: ${gitError}`);
+                    // Git操作の失敗はタスク失敗とはしない（実装自体は成功している）
+                }
+                console.log(`\n${'='.repeat(60)}\n`);
+            }
+            catch (commitError) {
+                console.error(`❌ コミット作成エラー: ${commitError}`);
+                // コミット作成エラーもタスク失敗とはしない（レビュー時に対応可能）
+            }
+        }
         if (!executionResult.success) {
             // AI実行失敗 - エラーを分類して適切に処理
             const classifiedError = ErrorClassifier.classify(executionResult.error);
-            console.error(`❌ タスク ${taskId} の実装に失敗 (${executionResult.attempts}回試行): ${executionResult.error?.message}`);
+            console.error(`\n${'='.repeat(60)}`);
+            console.error(`❌ タスク ${taskId} の実装に失敗 (${executionResult.attempts}回試行)`);
+            console.error(`${'='.repeat(60)}`);
+            // エラー詳細を表示
+            const error = executionResult.error;
+            if (error) {
+                console.error(`\n🔴 エラーメッセージ:`);
+                console.error(`   ${error.message}`);
+                // スタックトレースがあれば表示
+                if (error.stack) {
+                    console.error(`\n📚 スタックトレース:`);
+                    console.error(error.stack);
+                }
+                // エラーオブジェクトに追加情報があれば表示
+                const errorKeys = Object.keys(error).filter(k => k !== 'message' && k !== 'stack' && k !== 'name');
+                if (errorKeys.length > 0) {
+                    console.error(`\n📋 追加情報:`);
+                    errorKeys.forEach(key => {
+                        console.error(`   ${key}: ${JSON.stringify(error[key])}`);
+                    });
+                }
+            }
+            console.error(`\n🏷️  エラー分類: ${classifiedError.severity} - ${classifiedError.message}`);
+            console.error(`${'='.repeat(60)}\n`);
             // タスクをfailedに遷移
             const task = tasks.find((t) => t.id === taskId);
             if (task) {
@@ -619,11 +787,10 @@ ${dependenciesSection}
                     error: executionResult.error || new Error(`AI実行失敗 (分類: ${classifiedError.severity})`),
                 };
                 const failedTask = TaskStateMachine.transition(taskWithError, 'failed');
-                // tasks.jsonを更新 using AI
-                await AIFileWriter.updateTaskInTasksJson(provider, tasksPath || '.kugutsu/tasks.json', taskId, {
+                // Sprint Backlogを更新
+                await persistence.updateSprintBacklogTask(sprintId, taskId, {
                     status: 'failed',
-                    updatedAt: new Date().toISOString(),
-                }, config.baseRepoPath);
+                });
                 // Sync to globalTasks
                 const globalTask = state.globalTasks.find((t) => t.id === taskId);
                 const updatedGlobalTasks = globalTask
@@ -664,13 +831,12 @@ ${dependenciesSection}
         console.log(`   所要時間: ${duration}秒`);
         console.log(`   SessionID: ${sessionId}`);
         console.log(`${'='.repeat(70)}\n`);
-        // Update task status in file artifact using AI
-        await AIFileWriter.updateTaskInTasksJson(provider, tasksPath || '.kugutsu/tasks.json', taskId, {
-            status: 'implemented',
+        // Update task status in Sprint Backlog
+        await persistence.updateSprintBacklogTask(sprintId, taskId, {
+            status: 'in_review', // implementedではなくin_reviewに変更（TaskStateMachineに合わせる）
             sessionId,
-            updatedAt: new Date().toISOString(),
-        }, config.baseRepoPath);
-        console.log(`📝 タスクステータス(ファイル)を更新しました: implemented`);
+        });
+        console.log(`📝 Sprint Backlogのタスクステータスを更新しました: in_review`);
         // Update State task: in_progress → in_review
         const stateTask = state.tasks.find((t) => t.id === taskId);
         if (stateTask) {
@@ -695,6 +861,7 @@ ${dependenciesSection}
             return {
                 tasks: [inReviewTask],
                 globalTasks: updatedGlobalTasks,
+                failedProviders: AIProviderFactory.getFailedProviders(),
                 feedbackRequest: null, // フィードバッククリア（成功）
                 logs: [
                     {
@@ -717,6 +884,7 @@ ${dependenciesSection}
             };
         }
         return {
+            failedProviders: AIProviderFactory.getFailedProviders(),
             feedbackRequest: null, // フィードバッククリア（成功）
             logs: [
                 {
@@ -741,21 +909,20 @@ ${dependenciesSection}
     }
     catch (error) {
         console.error(`❌ タスク ${taskId} の実装に失敗:`, error);
-        // Update task status to 'failed' in tasks.json using AI
+        // Update task status to 'failed' in Sprint Backlog
         try {
             // Create AI provider for this error path
             const providerConfig = AIProviderFactory.buildProviderConfig({
                 provider: state.config.provider || 'claude',
             });
             const provider = AIProviderFactory.create(providerConfig);
-            await AIFileWriter.updateTaskInTasksJson(provider, tasksPath || '.kugutsu/tasks.json', taskId, {
+            await persistence.updateSprintBacklogTask(sprintId, taskId, {
                 status: 'failed',
-                updatedAt: new Date().toISOString(),
-            }, config.baseRepoPath);
-            console.log(`📝 タスクステータス(ファイル)を更新しました: failed`);
+            });
+            console.log(`📝 Sprint Backlogのタスクステータスを更新しました: failed`);
         }
         catch (fileError) {
-            console.error(`❌ tasks.json の更新に失敗:`, fileError);
+            console.error(`❌ Sprint Backlog の更新に失敗:`, fileError);
         }
         // Update State task: in_progress → failed
         const stateTask = state.tasks.find((t) => t.id === taskId);

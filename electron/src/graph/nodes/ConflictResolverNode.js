@@ -4,13 +4,14 @@
  * Resolves merge conflicts using AI
  *
  * **File-based Artifact Management:**
- * - Reads tasks from `.kugutsu/tasks.json` (status === 'conflict_detected')
- * - Reads conflicts from `.kugutsu/tasks/{taskId}/conflicts.json` (resolution === 'pending')
+ * - Reads tasks from Sprint Backlog (`.kugutsu/sprints/{sprintId}/sprint-backlog.json`)
+ * - Reads conflicts from `.kugutsu/sprints/{sprintId}/tasks/{taskId}/conflicts.json` (resolution === 'pending')
  * - After AI resolution, updates conflicts.json resolution to 'resolved'
- * - Updates tasks.json status back to 'reviewed' to re-queue for merge
+ * - Updates Sprint Backlog status to re-queue for merge
  */
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 import { FileReader } from '../../utils/FileReader.js';
+import { DataPersistence } from '../../utils/DataPersistence.js';
 import { AIFileWriter } from '../../utils/AIFileWriter.js';
 import { MessageHandler } from '../../utils/MessageHandler.js';
 /**
@@ -23,14 +24,34 @@ import { MessageHandler } from '../../utils/MessageHandler.js';
  * 4. Retry merge after resolution
  */
 export async function conflictResolverNode(state) {
-    const { config, tasksPath } = state;
+    const { config, activeSprint } = state;
     const maxTurns = config.maxTurns || 50;
+    // Sync failed providers from state
+    AIProviderFactory.syncWithState(state.failedProviders || []);
     console.log('🔧 Conflict Resolver: コンフリクトを解消しています...');
-    // Read tasks from file
+    if (!activeSprint?.id) {
+        return {
+            logs: [
+                {
+                    timestamp: new Date(),
+                    level: 'error',
+                    source: 'ConflictResolverNode',
+                    message: 'アクティブなスプリントが設定されていません',
+                },
+            ],
+            failedProviders: AIProviderFactory.getFailedProviders(),
+        };
+    }
+    const sprintId = activeSprint.id;
+    // Read tasks from Sprint Backlog
+    const persistence = new DataPersistence(config.baseRepoPath);
     const fileReader = new FileReader(config.baseRepoPath);
-    let tasks;
+    let backlog;
     try {
-        tasks = await fileReader.readJSON(tasksPath || '.kugutsu/tasks.json');
+        backlog = await persistence.loadSprintBacklog(sprintId);
+        if (!backlog || !backlog.tasks) {
+            throw new Error(`Sprint Backlog not found: ${sprintId}`);
+        }
     }
     catch (error) {
         return {
@@ -39,14 +60,16 @@ export async function conflictResolverNode(state) {
                     timestamp: new Date(),
                     level: 'error',
                     source: 'ConflictResolverNode',
-                    message: `tasks.json の読み込みに失敗: ${error instanceof Error ? error.message : String(error)}`,
+                    message: `Sprint Backlog の読み込みに失敗: ${error instanceof Error ? error.message : String(error)}`,
                 },
             ],
+            failedProviders: AIProviderFactory.getFailedProviders(),
         };
     }
     try {
-        // Find tasks with status 'conflict_detected'
-        const conflictTasks = tasks.filter((t) => t.status === 'conflict_detected');
+        // Find tasks with conflicts (check conflicts.json files)
+        const tasks = backlog.tasks;
+        const conflictTasks = [];
         if (conflictTasks.length === 0) {
             console.log('✅ コンフリクトはありません');
             return {
@@ -58,21 +81,22 @@ export async function conflictResolverNode(state) {
                         message: 'コンフリクトはありません',
                     },
                 ],
+                failedProviders: AIProviderFactory.getFailedProviders(),
             };
         }
         // Filter tasks with pending conflicts
         const tasksToResolve = [];
         const conflictsMap = new Map();
-        for (const task of conflictTasks) {
+        for (const task of tasks) {
             try {
-                const conflicts = await fileReader.readJSON(`.kugutsu/tasks/${task.id}/conflicts.json`);
+                const conflicts = await fileReader.readJSON(`.kugutsu/sprints/${sprintId}/tasks/${task.id}/conflicts.json`);
                 if (conflicts.resolution === 'pending') {
                     tasksToResolve.push(task);
                     conflictsMap.set(task.id, conflicts);
                 }
             }
             catch (error) {
-                console.warn(`⚠️ conflicts.json の読み込みに失敗: ${task.id}`);
+                // conflicts.jsonが存在しない場合はスキップ（コンフリクトなし）
             }
         }
         if (tasksToResolve.length === 0) {
@@ -86,6 +110,7 @@ export async function conflictResolverNode(state) {
                         message: '解決待ちのコンフリクトはありません',
                     },
                 ],
+                failedProviders: AIProviderFactory.getFailedProviders(),
             };
         }
         console.log(`⚠️ ${tasksToResolve.length}個のコンフリクトを処理します`);
@@ -102,10 +127,9 @@ export async function conflictResolverNode(state) {
             if (attemptCount >= MAX_CONFLICT_RESOLVER_ATTEMPTS) {
                 console.log(`❌ タスク ${task.id} をスキップ（再試行上限 ${MAX_CONFLICT_RESOLVER_ATTEMPTS}回 に到達）`);
                 // タスクを failed に変更
-                await AIFileWriter.updateTaskInTasksJson(provider, tasksPath || '.kugutsu/tasks.json', task.id, {
+                await persistence.updateSprintBacklogTask(sprintId, task.id, {
                     status: 'failed',
-                    updatedAt: new Date().toISOString(),
-                }, config.baseRepoPath);
+                });
                 logs.push({
                     timestamp: new Date(),
                     level: 'error',
@@ -199,25 +223,20 @@ ${config.worktreeBasePath}/${task.id}
                 })) {
                     await handler.handleMessage(message);
                 }
-                handler.complete(true, 'コンフリクト解決が完了しました');
+                handler.completeWithErrorCheck('コンフリクト解決が完了しました', 'ConflictResolver');
                 // Update conflicts.json - mark as resolved using AI
                 conflictInfo.resolution = 'resolved';
                 conflictInfo.resolvedAt = new Date().toISOString();
-                await AIFileWriter.writeFile(provider, `.kugutsu/tasks/${task.id}/conflicts.json`, conflictInfo, config.baseRepoPath);
+                await AIFileWriter.writeFile(provider, `.kugutsu/sprints/${sprintId}/tasks/${task.id}/conflicts.json`, conflictInfo, config.baseRepoPath);
                 console.log(`📝 conflicts.json を更新しました (resolved): ${task.id}`);
-                // Update tasks.json - change status back to 'reviewed' for re-merge using AI
+                // Update Sprint Backlog - change status back to 'in_review' for re-merge
                 // 再試行回数をインクリメント
-                const taskToUpdate = tasks.find((t) => t.id === task.id);
-                if (taskToUpdate) {
-                    const newAttemptCount = (task.conflictResolverAttemptCount || 0) + 1;
-                    console.log(`🔄 再試行回数を更新: ${task.id} (${newAttemptCount}/${MAX_CONFLICT_RESOLVER_ATTEMPTS}回)`);
-                    await AIFileWriter.updateTaskInTasksJson(provider, tasksPath || '.kugutsu/tasks.json', task.id, {
-                        status: 'reviewed',
-                        conflictResolverAttemptCount: newAttemptCount,
-                        updatedAt: new Date().toISOString(),
-                    }, config.baseRepoPath);
-                    console.log(`📝 tasks.json を更新しました (reviewed): ${task.id}`);
-                }
+                const newAttemptCount = (task.conflictResolverAttemptCount || 0) + 1;
+                console.log(`🔄 再試行回数を更新: ${task.id} (${newAttemptCount}/${MAX_CONFLICT_RESOLVER_ATTEMPTS}回)`);
+                await persistence.updateSprintBacklogTask(sprintId, task.id, {
+                    status: 'in_review', // 再マージのためにin_reviewに戻す
+                });
+                console.log(`📝 Sprint Backlogのタスクステータスを更新しました: in_review`);
                 logs.push({
                     timestamp: new Date(),
                     level: 'info',
@@ -234,19 +253,20 @@ ${config.worktreeBasePath}/${task.id}
                 const newAttemptCount = (task.conflictResolverAttemptCount || 0) + 1;
                 console.log(`🔄 再試行回数を更新（エラー）: ${task.id} (${newAttemptCount}/${MAX_CONFLICT_RESOLVER_ATTEMPTS}回)`);
                 // 上限に達した場合は failed に設定
-                const newStatus = newAttemptCount >= MAX_CONFLICT_RESOLVER_ATTEMPTS ? 'failed' : 'conflict_detected';
+                const newStatus = newAttemptCount >= MAX_CONFLICT_RESOLVER_ATTEMPTS ? 'failed' : 'in_progress';
                 try {
-                    await AIFileWriter.updateTaskInTasksJson(provider, tasksPath || '.kugutsu/tasks.json', task.id, {
+                    await persistence.updateSprintBacklogTask(sprintId, task.id, {
                         status: newStatus,
-                        conflictResolverAttemptCount: newAttemptCount,
-                        updatedAt: new Date().toISOString(),
-                    }, config.baseRepoPath);
+                    });
                     if (newStatus === 'failed') {
                         console.log(`❌ タスク ${task.id} を失敗に変更（再試行上限到達）`);
                     }
+                    else {
+                        console.log(`⚠️ Sprint Backlogのタスクステータスを更新しました: in_progress (再試行)`);
+                    }
                 }
                 catch (updateError) {
-                    console.error(`❌ tasks.json の更新に失敗: ${task.id}`, updateError);
+                    console.error(`❌ Sprint Backlog の更新に失敗: ${task.id}`, updateError);
                 }
                 logs.push({
                     timestamp: new Date(),
@@ -268,6 +288,7 @@ ${config.worktreeBasePath}/${task.id}
             metadata: {
                 phase: 'merge',
             },
+            failedProviders: AIProviderFactory.getFailedProviders(),
         };
     }
     catch (error) {
@@ -289,6 +310,7 @@ ${config.worktreeBasePath}/${task.id}
                     error instanceof Error ? error.message : String(error),
                 ],
             },
+            failedProviders: AIProviderFactory.getFailedProviders(),
         };
     }
 }

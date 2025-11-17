@@ -13,6 +13,7 @@
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 import { DataPersistence } from '../../utils/DataPersistence.js';
 import { MessageHandler } from '../../utils/MessageHandler.js';
+import { JSONExtractor } from '../../utils/JSONExtractor.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 /**
@@ -28,6 +29,8 @@ import * as path from 'path';
 export async function reviewStoryMappingNode(state) {
     const { config, currentProjectId } = state;
     const maxTurns = config.maxTurns || 50;
+    // Sync failed providers from state
+    AIProviderFactory.syncWithState(state.failedProviders || []);
     console.log('📖 StoryMappingReview: ストーリーマッピングレビュー開始');
     if (!currentProjectId) {
         console.log('⚠️ プロジェクトIDが指定されていません');
@@ -40,6 +43,7 @@ export async function reviewStoryMappingNode(state) {
                     message: 'プロジェクトIDなし',
                 },
             ],
+            failedProviders: AIProviderFactory.getFailedProviders(),
         };
     }
     // Define file paths
@@ -61,6 +65,7 @@ export async function reviewStoryMappingNode(state) {
                     message: `ストーリーマッピングなし: ${error.message}`,
                 },
             ],
+            failedProviders: AIProviderFactory.getFailedProviders(),
         };
     }
     console.log(`📊 Epic数: ${storyMapping.epics.length}`);
@@ -104,12 +109,12 @@ export async function reviewStoryMappingNode(state) {
     // エラーチェック（Claude Agent SDK仕様準拠）
     if (handler1.getHasError()) {
         const details = handler1.getErrorDetails();
-        // エラーメッセージの構築
         let errorMsg;
         if (details?.message) {
-            errorMsg = details.subtype === 'error_max_turns'
-                ? `AI実行がmaxTurns制限に到達しました: ${details.message}`
-                : `AI実行中にエラーが発生しました: ${details.message}`;
+            errorMsg =
+                details.subtype === 'error_max_turns'
+                    ? `AI実行がmaxTurns制限に到達しました: ${details.message}`
+                    : `AI実行中にエラーが発生しました: ${details.message}`;
         }
         else if (details?.errors && details.errors.length > 0) {
             errorMsg = `AI実行中にエラーが発生しました: ${details.errors.join('; ')}`;
@@ -154,6 +159,7 @@ export async function reviewStoryMappingNode(state) {
                     message: `ストーリーマッピング承認 (${totalStories}ストーリー)`,
                 },
             ],
+            failedProviders: AIProviderFactory.getFailedProviders(),
         };
     }
     else {
@@ -176,6 +182,7 @@ export async function reviewStoryMappingNode(state) {
                     message: `修正必要: ${reviewResult.issues.length}件の指摘`,
                 },
             ],
+            failedProviders: AIProviderFactory.getFailedProviders(),
         };
     }
 }
@@ -258,45 +265,25 @@ JSON形式で以下を出力してください：
  * AIレスポンスからレビュー結果を抽出
  */
 function extractReviewResult(response) {
-    // JSONコードブロックを抽出
-    const jsonMatch = response.match(/```json\s*([\s\S]*?)\s*```/);
-    let parsedResult;
-    if (jsonMatch) {
-        try {
-            parsedResult = JSON.parse(jsonMatch[1]);
-        }
-        catch (error) {
-            console.error('JSONパースエラー:', error);
-            // パースエラーの場合はデフォルト値
-            parsedResult = {
-                approved: false,
-                issues: [
-                    {
-                        severity: 'critical',
-                        category: 'parse_error',
-                        message: 'AIレスポンスのパースに失敗しました',
-                    },
-                ],
-                suggestions: [],
-                overallAssessment: 'レビュー結果の解析に失敗',
-            };
-        }
-    }
-    else {
-        // JSONブロックが見つからない場合
-        parsedResult = {
+    // JSONを抽出
+    const extractionResult = JSONExtractor.extractFromCodeBlock(response);
+    if (!extractionResult.success) {
+        console.error('JSON抽出エラー:', extractionResult.error);
+        // 抽出エラーの場合はデフォルト値
+        return {
             approved: false,
             issues: [
                 {
                     severity: 'critical',
                     category: 'format_error',
-                    message: 'AIレスポンスが期待された形式ではありません',
+                    message: `AIレスポンスの抽出に失敗しました: ${extractionResult.error}`,
                 },
             ],
             suggestions: [],
-            overallAssessment: 'レビュー結果が不正な形式',
+            overallAssessment: 'レビュー結果の解析に失敗',
         };
     }
+    const parsedResult = extractionResult.data;
     return {
         approved: parsedResult.approved || false,
         issues: parsedResult.issues || [],

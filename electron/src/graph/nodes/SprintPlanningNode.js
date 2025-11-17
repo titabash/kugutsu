@@ -14,6 +14,7 @@ import { randomUUID } from 'crypto';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { MessageHandler } from '../../utils/MessageHandler.js';
+import { JSONExtractor } from '../../utils/JSONExtractor.js';
 /**
  * Sprint Planning Node
  *
@@ -25,22 +26,59 @@ import { MessageHandler } from '../../utils/MessageHandler.js';
  * 5. Save sprint information
  */
 export async function sprintPlanningNode(state) {
-    const { globalTasks, projects, currentProjectId, config } = state;
+    const { globalTasks, projects, currentProjectId, config, activeSprint } = state;
     const maxTurns = config.maxTurns || 50;
+    // Sync failed providers from state
+    AIProviderFactory.syncWithState(state.failedProviders || []);
     console.log('📅 SprintPlanning: スプリント計画を作成しています...');
     // Define file paths
     const activeSprintPath = path.join(config.baseRepoPath, '.kugutsu', 'sprints', 'active-sprint.json');
     const globalQueuePath = path.join(config.baseRepoPath, '.kugutsu', 'tasks', 'global-queue.json');
     // DataPersistenceインスタンスを作成（早期に定義）
     const persistence = new DataPersistence(config.baseRepoPath);
-    // アクティブなスプリントを確認
+    // ✅ 修正: state.activeSprint を優先的に使用
+    // state.activeSprint が null の場合、ファイルも確実にクリアして、ファイルから読み込まない
     let existingActiveSprint = null;
-    try {
-        const activeSprintContent = await fs.readFile(activeSprintPath, 'utf-8');
-        existingActiveSprint = JSON.parse(activeSprintContent);
+    if (activeSprint === null) {
+        // state.activeSprint が明示的に null の場合、ファイルもクリアして終了
+        try {
+            await persistence.saveActiveSprint(null);
+            console.log('🗑️ state.activeSprint が null のため、ファイルもクリアしました');
+        }
+        catch (error) {
+            console.warn('⚠️ アクティブスプリントファイルのクリアに失敗しましたが、処理を続行します:', error);
+        }
+        existingActiveSprint = null;
     }
-    catch (error) {
-        // ファイルが存在しない場合はnull
+    else if (activeSprint) {
+        // state.activeSprint が存在する場合、それを使用
+        existingActiveSprint = activeSprint;
+    }
+    else {
+        // state.activeSprint が undefined の場合のみ、ファイルから読み込む
+        try {
+            const activeSprintContent = await fs.readFile(activeSprintPath, 'utf-8');
+            const parsed = JSON.parse(activeSprintContent);
+            // null が保存されている場合は null として扱う
+            existingActiveSprint = parsed === null ? null : parsed;
+        }
+        catch (error) {
+            // ファイルが存在しない場合はnull
+            existingActiveSprint = null;
+        }
+    }
+    // ✅ completed 状態のスプリントは無視して、新しいスプリントを作成
+    if (existingActiveSprint && existingActiveSprint.status === 'completed') {
+        console.log(`⚠️ 既存スプリントは完了済み: ${existingActiveSprint.name}。新しいスプリントを作成します。`);
+        // ファイルもクリアして、新しいスプリント作成を許可
+        try {
+            await persistence.saveActiveSprint(null);
+            console.log('🗑️ 完了済みスプリントをクリアしました');
+        }
+        catch (error) {
+            console.warn('⚠️ 完了済みスプリントのクリアに失敗しましたが、処理を続行します:', error);
+        }
+        existingActiveSprint = null;
     }
     if (existingActiveSprint &&
         (existingActiveSprint.status === 'planning' ||
@@ -78,10 +116,46 @@ export async function sprintPlanningNode(state) {
                     message: `既存のアクティブスプリント: ${existingActiveSprint.name} (${existingActiveSprint.status})`,
                 },
             ],
+            failedProviders: AIProviderFactory.getFailedProviders(),
         };
     }
+    // Load Product Backlog to get unassigned tasks
+    // This ensures consistency with the file-based approach
+    let productBacklogTasks = [];
+    try {
+        const backlogData = await persistence.loadProductBacklog();
+        if (backlogData && backlogData.tasks) {
+            productBacklogTasks = backlogData.tasks.filter((task) => task.status !== 'completed' && task.status !== 'failed');
+            console.log(`📊 Product Backlogから ${productBacklogTasks.length}件のタスクを読み込みました`);
+        }
+    }
+    catch (error) {
+        console.warn('⚠️ Product Backlogの読み込みに失敗、state.globalTasksを使用します:', error);
+    }
+    // Use Product Backlog tasks if available, otherwise fallback to globalTasks
+    const sourceTasks = productBacklogTasks.length > 0
+        ? productBacklogTasks.map((task) => {
+            // Map 'bug' to 'bugfix' to match GlobalTask type
+            const taskType = task.type === 'bug' ? 'bugfix' : (task.type || 'feature');
+            return {
+                id: task.id,
+                type: taskType,
+                title: task.title,
+                description: task.description,
+                priority: task.priority || 50,
+                dependencies: task.dependencies || [],
+                status: (task.status || 'pending'),
+                projectId: currentProjectId || '',
+                requestTimestamp: task.createdAt ? new Date(task.createdAt) : new Date(),
+                dynamicPriority: (task.priority || 50) * 10,
+                createdAt: task.createdAt ? new Date(task.createdAt) : new Date(),
+                updatedAt: task.updatedAt ? new Date(task.updatedAt) : new Date(),
+                sprint: undefined, // Product Backlog tasks are unassigned
+            };
+        })
+        : globalTasks;
     // 未割り当てタスクを取得（スプリントが未設定、かつ未完了）
-    const unassignedTasks = globalTasks.filter((task) => !task.sprint &&
+    const unassignedTasks = sourceTasks.filter((task) => !task.sprint &&
         task.status !== 'completed' &&
         task.status !== 'failed');
     console.log(`📊 未割り当てタスク: ${unassignedTasks.length}件`);
@@ -96,6 +170,7 @@ export async function sprintPlanningNode(state) {
                     message: 'すべてのタスクがスプリントに割り当て済み',
                 },
             ],
+            failedProviders: AIProviderFactory.getFailedProviders(),
         };
     }
     // AIプロバイダーを作成
@@ -104,10 +179,15 @@ export async function sprintPlanningNode(state) {
     });
     const provider = AIProviderFactory.create(providerConfig);
     // スプリント計画プロンプト
+    const productBacklogPath = '.kugutsu/product-backlog/backlog.json';
     const sprintPlanningPrompt = `
 # Sprint Planning
 
 タスクをスプリントに分割してください。
+
+## タスクソース
+**Readツールで${productBacklogPath}を読み込んで参照してください**
+Product Backlogから未割り当てタスクを取得し、スプリント計画を作成します。
 
 ## 制約条件
 - 各スプリントは8-16時間の作業量
@@ -187,14 +267,10 @@ export async function sprintPlanningNode(state) {
 \`\`\`
 
 ## 未割り当てタスク
-${JSON.stringify(unassignedTasks.map((t) => ({
-        id: t.id,
-        title: t.title,
-        description: t.description,
-        priority: t.priority,
-        dependencies: t.dependencies,
-        dynamicPriority: t.dynamicPriority,
-    })), null, 2)}
+Product Backlogファイル（${productBacklogPath}）から未割り当てタスクを読み込んでください。
+上記のReadツールで読み込んだProduct Backlogのtasks配列から、statusが'pending'でsprintが未設定のタスクを選択してください。
+
+参考: 現在の未割り当てタスク数は ${unassignedTasks.length}件です。
 
 ## 出力形式
 JSON形式で以下の構造で出力してください：
@@ -244,12 +320,12 @@ JSON形式で以下の構造で出力してください：
     // エラーチェック（Claude Agent SDK仕様準拠）
     if (handler1.getHasError()) {
         const details = handler1.getErrorDetails();
-        // エラーメッセージの構築
         let errorMsg;
         if (details?.message) {
-            errorMsg = details.subtype === 'error_max_turns'
-                ? `AI実行がmaxTurns制限に到達しました: ${details.message}`
-                : `AI実行中にエラーが発生しました: ${details.message}`;
+            errorMsg =
+                details.subtype === 'error_max_turns'
+                    ? `AI実行がmaxTurns制限に到達しました: ${details.message}`
+                    : `AI実行中にエラーが発生しました: ${details.message}`;
         }
         else if (details?.errors && details.errors.length > 0) {
             errorMsg = `AI実行中にエラーが発生しました: ${details.errors.join('; ')}`;
@@ -263,21 +339,22 @@ JSON形式で以下の構造で出力してください：
     handler1.complete(true, 'スプリント計画作成が完了しました');
     console.log('✅ スプリント計画生成完了');
     // JSONを抽出してパース
-    const jsonMatch = sprintPlanResult.match(/```json\n([\s\S]*?)\n```/);
-    if (!jsonMatch) {
-        console.error('❌ スプリント計画のJSON抽出に失敗しました');
+    const extractionResult = JSONExtractor.extractFromCodeBlock(sprintPlanResult);
+    if (!extractionResult.success) {
+        console.error('❌ スプリント計画のJSON抽出に失敗しました:', extractionResult.error);
         return {
             logs: [
                 {
                     timestamp: new Date(),
                     level: 'error',
                     source: 'sprint_planning',
-                    message: 'スプリント計画の生成に失敗',
+                    message: `スプリント計画の生成に失敗: ${extractionResult.error}`,
                 },
             ],
+            failedProviders: AIProviderFactory.getFailedProviders(),
         };
     }
-    const sprintPlan = JSON.parse(jsonMatch[1]);
+    const sprintPlan = extractionResult.data;
     const firstSprint = sprintPlan.sprints[0];
     // スプリントオブジェクトを作成
     const sprintId = `sprint-${randomUUID()}`;
@@ -300,7 +377,7 @@ JSON形式で以下の構造で出力してください：
     console.log(`⏱️  見積もり: ${newSprint.metadata.estimatedHours}時間`);
     console.log(`📦 タスク数: ${newSprint.taskIds.length}件`);
     // タスクにスプリントIDを割り当て
-    const updatedGlobalTasks = globalTasks.map((task) => {
+    const updatedGlobalTasks = sourceTasks.map((task) => {
         if (newSprint.taskIds.includes(task.id)) {
             return {
                 ...task,
@@ -309,6 +386,26 @@ JSON形式で以下の構造で出力してください：
         }
         return task;
     });
+    // Product Backlogから選択されたタスクを削除（タスク移動）
+    try {
+        const currentBacklog = await persistence.loadProductBacklog();
+        if (currentBacklog && currentBacklog.tasks) {
+            // スプリントに割り当てられたタスクをProduct Backlogから削除
+            const remainingTasks = currentBacklog.tasks.filter((task) => !newSprint.taskIds.includes(task.id));
+            const updatedBacklog = {
+                tasks: remainingTasks,
+                metadata: {
+                    totalTasks: remainingTasks.length,
+                    lastUpdated: new Date().toISOString(),
+                },
+            };
+            await persistence.saveProductBacklog(updatedBacklog);
+            console.log(`✅ Product Backlogから ${newSprint.taskIds.length}件のタスクを削除しました（Sprint Backlogへ移動）`);
+        }
+    }
+    catch (error) {
+        console.warn('⚠️ Product Backlogの更新に失敗:', error);
+    }
     // スプリント状態は 'planning' のまま（instruction.md未生成）
     // InstructionGenerator が完了後に 'active' に変更
     newSprint.startedAt = new Date();
@@ -344,6 +441,7 @@ JSON形式で以下の構造で出力してください：
                 },
             },
         ],
+        failedProviders: AIProviderFactory.getFailedProviders(),
     };
 }
 /**
@@ -351,11 +449,19 @@ JSON形式で以下の構造で出力してください：
  *
  * 'planning' 状態: instruction_generator_dispatch（instruction.md未生成）
  * 'active' 状態: sprint_review（instruction.md生成済み、継続）
+ * null/completed + 未割り当てタスクあり: instruction_generator_dispatch（新規スプリント作成）
  * その他: END
  */
 export function sprintPlanningRouter(state) {
-    if (!state.activeSprint) {
-        console.log('➡️ ルーティング: END (スプリント計画なし)');
+    // activeSprint が null または completed の場合、新しいスプリント作成を許可
+    if (!state.activeSprint || state.activeSprint.status === 'completed') {
+        // 未割り当てタスクがある場合、新しいスプリントを作成
+        const unassignedTasks = state.globalTasks.filter((task) => !task.sprint && task.status !== 'completed' && task.status !== 'failed');
+        if (unassignedTasks.length > 0) {
+            console.log(`➡️ ルーティング: instruction_generator_dispatch (新規スプリント作成、未割り当てタスク: ${unassignedTasks.length}件)`);
+            return 'instruction_generator_dispatch';
+        }
+        console.log('➡️ ルーティング: END (スプリント計画なし、未割り当てタスクなし)');
         return 'END';
     }
     // 'planning' 状態（instruction.md未生成） → instruction_generator_dispatch へ
@@ -369,7 +475,7 @@ export function sprintPlanningRouter(state) {
         console.log('➡️ ルーティング: sprint_review (既存スプリント継続)');
         return 'sprint_review';
     }
-    console.log('➡️ ルーティング: END (スプリント完了または不明な状態)');
+    console.log('➡️ ルーティング: END (スプリント不明な状態)');
     return 'END';
 }
 //# sourceMappingURL=SprintPlanningNode.js.map

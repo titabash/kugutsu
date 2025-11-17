@@ -13,6 +13,7 @@ import { Separator } from './ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs'
 import type { NodeExecution } from '../types'
 import { getNodeRole, getCategoryColor, getCategoryLabel } from '../constants/nodeRoles'
+import NodeFlowVisualization from './NodeFlowVisualization'
 
 export function NodeExecutionViewer() {
   const {
@@ -37,6 +38,7 @@ export function NodeExecutionViewer() {
           </TabsTrigger>
           <TabsTrigger value="history">📜 実行履歴 ({executionHistory.length})</TabsTrigger>
           <TabsTrigger value="statistics">📊 統計情報</TabsTrigger>
+          <TabsTrigger value="flowchart">🔀 フローチャート</TabsTrigger>
         </TabsList>
 
         {/* Active Nodes Tab */}
@@ -80,6 +82,13 @@ export function NodeExecutionViewer() {
           <ScrollArea className="h-full">
             <NodeStatisticsTable getNodeStatistics={getNodeStatistics} />
           </ScrollArea>
+        </TabsContent>
+
+        {/* Flowchart Tab */}
+        <TabsContent value="flowchart" className="flex-1 overflow-hidden">
+          <div className="h-full w-full">
+            <NodeFlowVisualization />
+          </div>
         </TabsContent>
       </Tabs>
     </div>

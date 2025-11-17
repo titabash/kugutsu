@@ -15,6 +15,7 @@ import { FileReader } from '../../utils/FileReader.js';
 import { RetryManager } from '../../utils/RetryManager.js';
 import { ErrorClassifier } from '../../utils/ErrorClassifier.js';
 import { MessageHandler } from '../../utils/MessageHandler.js';
+import { DataPersistence } from '../../utils/DataPersistence.js';
 /**
  * Product Owner Node
  *
@@ -39,8 +40,11 @@ export async function productOwnerNode(state) {
                     message: 'currentProjectId が設定されていません（check_modeで設定されるべき）',
                 },
             ],
+            failedProviders: AIProviderFactory.getFailedProviders(),
         };
     }
+    // Sync failed providers from state
+    AIProviderFactory.syncWithState(state.failedProviders || []);
     // Create AI provider
     const providerConfig = AIProviderFactory.buildProviderConfig({
         provider: config.provider || 'claude',
@@ -81,6 +85,7 @@ export async function productOwnerNode(state) {
                         `ProductOwner retry limit exceeded: ${feedback.reason}`,
                     ],
                 },
+                failedProviders: AIProviderFactory.getFailedProviders(),
             };
         }
         // フィードバック内容をプロンプトに追加するためのコンテキスト
@@ -169,6 +174,7 @@ MECE原則（漏れなく、重複なく）に基づいて要求を分析し、�
                 maxTurns,
                 nodeName: 'ProductOwner - Requirements Analysis',
             });
+            const collectedFailedProviders = [];
             for await (const message of provider.execute(requirementsAnalysisPrompt, {
                 maxTurns,
                 cwd: config.baseRepoPath,
@@ -177,6 +183,10 @@ MECE原則（漏れなく、重複なく）に基づいて要求を分析し、�
                 includePartialMessages: true,
             })) {
                 await handler.handleMessage(message);
+                // Collect failed providers from result messages
+                if (message.type === 'result' && message.content?.failedProviders) {
+                    collectedFailedProviders.push(...message.content.failedProviders);
+                }
             }
             // エラーチェック（Claude Agent SDK仕様準拠）
             if (handler.getHasError()) {
@@ -227,16 +237,17 @@ MECE原則（漏れなく、重複なく）に基づいて要求を分析し、�
                     hasErrors: true,
                     errors: [requirementsResult.error?.message || 'Unknown error'],
                 },
+                failedProviders: AIProviderFactory.getFailedProviders(),
             };
         }
         console.log('✅ 要求分析完了');
         // Phase 3: Task Generation
-        // Use relative path from baseRepoPath for AI prompts
-        const tasksFilePath = '.kugutsu/tasks.json';
+        // Use Product Backlog format (unified with High complexity path)
+        const productBacklogPath = '.kugutsu/product-backlog/backlog.json';
         const taskGenerationPrompt = `${feedbackContext}
 # Task Generation
 
-**🎯 必須タスク**: Writeツールで \`${tasksFilePath}\` を作成してください。
+**🎯 必須タスク**: Writeツールで \`${productBacklogPath}\` を作成してください。
 
 **重要**: これは既存プロジェクトへの機能追加です。新しいプロジェクトを作成する必要はありません。
 
@@ -392,30 +403,38 @@ ${userRequest}
 
 ## ファイル作成方針（Upsert）
 
-- **Readツールで${tasksFilePath}の存在を確認**
-- **存在する場合**: 既存タスクを読み込み、新しいタスクを追加（重複はid で判定して更新）してWriteツールで保存
+- **Readツールで${productBacklogPath}の存在を確認**
+- **存在する場合**: 既存Product Backlogを読み込み、新しいタスクを追加（重複はid で判定して更新）してWriteツールで保存
 - **存在しない場合**: 新規作成してWriteツールで保存
 
 ## 出力ファイル仕様
 
-**ファイルパス**: \`${tasksFilePath}\`
+**ファイルパス**: \`${productBacklogPath}\`
 
-**ファイル形式**: JSON配列
+**ファイル形式**: Product Backlog JSON形式
 
 **構造**:
 \`\`\`json
-[
-  {
-    "id": "task-001",
-    "title": "タスクタイトル",
-    "description": "概要",
-    "priority": 10,
-    "dependencies": [],
-    "status": "pending",
-    "createdAt": "2025-01-07T10:00:00Z",
-    "updatedAt": "2025-01-07T10:00:00Z"
+{
+  "tasks": [
+    {
+      "id": "task-001",
+      "title": "タスクタイトル",
+      "description": "概要",
+      "type": "feature",
+      "priority": 10,
+      "estimatedPoints": 8,
+      "dependencies": [],
+      "status": "pending",
+      "createdAt": "2025-01-07T10:00:00Z",
+      "updatedAt": "2025-01-07T10:00:00Z"
+    }
+  ],
+  "metadata": {
+    "totalTasks": 1,
+    "lastUpdated": "2025-01-07T10:00:00Z"
   }
-]
+}
 \`\`\`
 
 **⚠️ 重要**: このタスクを完了するには、Writeツールでファイルを作成することが必須です。
@@ -484,30 +503,35 @@ ${userRequest}
                     hasErrors: true,
                     errors: [taskGenerationResult.error?.message || 'Unknown error'],
                 },
+                failedProviders: AIProviderFactory.getFailedProviders(),
             };
         }
         console.log('✅ タスク生成完了');
         // Wait for file to be created (AI operations may be async)
         await new Promise(resolve => setTimeout(resolve, 2000));
-        // Read tasks from file created by AI
+        // Read Product Backlog from file created by AI
         let tasks = [];
+        const persistence = new DataPersistence(config.baseRepoPath);
         try {
-            console.log(`🔍 Reading tasks from ${tasksFilePath}...`);
-            const tasksData = await fileReader.readJSON('.kugutsu/tasks.json');
-            console.log(`🔍 Found ${tasksData.length} tasks in file`);
-            tasks = tasksData.map((task) => ({
+            console.log(`🔍 Reading Product Backlog from ${productBacklogPath}...`);
+            const backlogData = await persistence.loadProductBacklog();
+            if (!backlogData || !backlogData.tasks) {
+                throw new Error('Product Backlog file is missing or invalid');
+            }
+            console.log(`🔍 Found ${backlogData.tasks.length} tasks in Product Backlog`);
+            tasks = backlogData.tasks.map((task) => ({
                 id: task.id,
                 title: task.title,
                 description: task.description,
-                priority: task.priority,
-                dependencies: task.dependencies,
-                status: task.status,
-                createdAt: new Date(task.createdAt),
-                updatedAt: new Date(task.updatedAt),
+                priority: task.priority || 50,
+                dependencies: task.dependencies || [],
+                status: (task.status || 'pending'),
+                createdAt: task.createdAt ? new Date(task.createdAt) : new Date(),
+                updatedAt: task.updatedAt ? new Date(task.updatedAt) : new Date(),
             }));
         }
         catch (error) {
-            console.error(`❌ ${tasksFilePath} の読み込みに失敗:`, error);
+            console.error(`❌ ${productBacklogPath} の読み込みに失敗:`, error);
             console.error('⚠️ AIがファイルを作成しなかった可能性があります');
             // Fallback: Create a single task
             tasks = [
@@ -523,7 +547,7 @@ ${userRequest}
                 },
             ];
         }
-        console.log('✅ タスクリスト読み込み完了');
+        console.log('✅ Product Backlog読み込み完了');
         // Convert tasks to GlobalTask format (for SprintPlanningNode)
         const globalTasks = tasks.map((task) => {
             return {
@@ -541,23 +565,45 @@ ${userRequest}
                 updatedAt: task.updatedAt,
             };
         });
+        // Save Product Backlog using DataPersistence (for consistency)
+        const productBacklog = {
+            tasks: tasks.map((task) => ({
+                id: task.id,
+                title: task.title,
+                description: task.description,
+                type: 'feature',
+                priority: task.priority,
+                estimatedPoints: 8, // Default estimate
+                dependencies: task.dependencies,
+                status: task.status,
+                createdAt: (task.createdAt || new Date()).toISOString(),
+                updatedAt: (task.updatedAt || new Date()).toISOString(),
+            })),
+            metadata: {
+                totalTasks: tasks.length,
+                lastUpdated: new Date().toISOString(),
+            },
+        };
+        await persistence.saveProductBacklog(productBacklog);
+        console.log('✅ Product Backlog保存完了');
         // Return state update with file paths
         const result = {
             tasks,
             globalTasks, // Add globalTasks for SprintPlanningNode
             techStackPath: '.kugutsu/repository/architecture/tech-stack.json',
             requirementsPath: '.kugutsu/requirements.json',
-            tasksPath: '.kugutsu/tasks.json',
+            tasksPath: null, // tasks.json is deprecated, use Product Backlog instead
             feedbackRequest: null, // フィードバッククリア（成功）
             logs: [
                 {
                     timestamp: new Date(),
                     level: 'info',
                     source: 'ProductOwnerNode',
-                    message: `${tasks.length}個のタスクを生成しました`,
+                    message: `${tasks.length}個のタスクをProduct Backlogに追加しました`,
                     data: {
                         taskCount: tasks.length,
                         taskIds: tasks.map((t) => t.id),
+                        productBacklogPath,
                     },
                 },
             ],
@@ -565,8 +611,8 @@ ${userRequest}
                 phase: 'development',
                 totalTasks: tasks.length,
             },
+            failedProviders: AIProviderFactory.getFailedProviders(),
         };
-        console.log(`🔍 ProductOwner returning tasksPath: ${result.tasksPath}`);
         console.log(`🔍 ProductOwner returning ${result.tasks.length} tasks`);
         console.log(`🔍 ProductOwner returning ${result.globalTasks.length} globalTasks`);
         return result;
@@ -588,6 +634,7 @@ ${userRequest}
                 hasErrors: true,
                 errors: [error instanceof Error ? error.message : String(error)],
             },
+            failedProviders: AIProviderFactory.getFailedProviders(),
         };
     }
 }

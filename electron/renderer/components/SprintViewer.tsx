@@ -11,6 +11,7 @@
  * - Product Backlog表示
  */
 
+import { useMemo } from 'react'
 import { useAppStore } from '../store/appStore'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
 import { Badge } from './ui/badge'
@@ -34,12 +35,65 @@ export function SprintViewer() {
   const progress = getCurrentSprintProgress()
   const productBacklog = getProductBacklogTasks()
 
+  // Calculate statistics
+  const statistics = useMemo(() => {
+    const totalSprints = sprints.length
+    const activeSprints = sprints.filter(
+      (s) => s.status === 'active' || s.status === 'planning'
+    ).length
+    const completedSprints = sprints.filter((s) => s.status === 'completed').length
+    const totalEstimatedHours = sprints.reduce((sum, s) => sum + s.metadata.estimatedHours, 0)
+
+    return {
+      totalSprints,
+      activeSprints,
+      completedSprints,
+      totalEstimatedHours,
+    }
+  }, [sprints])
+
   const handleSprintClick = (sprint: Sprint) => {
     setCurrentSprint(sprint)
   }
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col p-4 gap-4">
+      {/* Statistics Section */}
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription>総スプリント数</CardDescription>
+            <CardTitle className="text-2xl" data-testid="stats-total-sprints">
+              {statistics.totalSprints}
+            </CardTitle>
+          </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription>アクティブ</CardDescription>
+            <CardTitle className="text-2xl" data-testid="stats-active-sprints">
+              {statistics.activeSprints}
+            </CardTitle>
+          </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription>完了</CardDescription>
+            <CardTitle className="text-2xl" data-testid="stats-completed-sprints">
+              {statistics.completedSprints}
+            </CardTitle>
+          </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription>総見積時間</CardDescription>
+            <CardTitle className="text-2xl" data-testid="stats-total-hours">
+              {statistics.totalEstimatedHours}h
+            </CardTitle>
+          </CardHeader>
+        </Card>
+      </div>
+
       <Tabs defaultValue="sprints" className="flex-1 flex flex-col">
         <TabsList className="w-full justify-start">
           <TabsTrigger value="sprints">Sprints</TabsTrigger>

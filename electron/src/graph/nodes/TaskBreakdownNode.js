@@ -11,8 +11,6 @@
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 import { DataPersistence } from '../../utils/DataPersistence.js';
 import { MessageHandler } from '../../utils/MessageHandler.js';
-import path from 'path';
-import { FileSystemManager } from '../../utils/FileSystemManager.js';
 import { JSONExtractor } from '../../utils/JSONExtractor.js';
 /**
  * Task Breakdown Node
@@ -29,6 +27,8 @@ import { JSONExtractor } from '../../utils/JSONExtractor.js';
 export async function taskBreakdownNode(state) {
     const { config, currentProjectId } = state;
     const maxTurns = config.maxTurns || 50;
+    // Sync failed providers from state
+    AIProviderFactory.syncWithState(state.failedProviders || []);
     console.log('📋 TaskBreakdown: タスク分解開始');
     if (!currentProjectId) {
         console.log('⚠️ プロジェクトIDが指定されていません');
@@ -41,6 +41,7 @@ export async function taskBreakdownNode(state) {
                     message: 'プロジェクトIDなし',
                 },
             ],
+            failedProviders: AIProviderFactory.getFailedProviders(),
         };
     }
     // データ永続化マネージャーを初期化
@@ -59,6 +60,7 @@ export async function taskBreakdownNode(state) {
                     message: 'ストーリーマッピングなし',
                 },
             ],
+            failedProviders: AIProviderFactory.getFailedProviders(),
         };
     }
     // 設計書を読み込み
@@ -139,6 +141,7 @@ export async function taskBreakdownNode(state) {
                     },
                 },
             ],
+            failedProviders: AIProviderFactory.getFailedProviders(),
         };
     }
     const taskList = extractionResult.data;
@@ -153,21 +156,6 @@ export async function taskBreakdownNode(state) {
     await persistence.saveDependencyGraph(currentProjectId, dependencyGraph);
     await persistence.saveKanbanState(currentProjectId, kanbanState);
     console.log('💾 タスク情報を保存しました');
-    // Convert to TaskArtifact format and save to .kugutsu/tasks.json
-    // This ensures compatibility with EngineerNode which expects this file
-    const taskArtifacts = taskList.map((task) => ({
-        id: task.id,
-        title: task.title,
-        description: task.description,
-        priority: task.priority,
-        dependencies: task.dependencies,
-        status: task.status,
-        createdAt: task.createdAt,
-        updatedAt: task.createdAt,
-    }));
-    const tasksJsonPath = path.join(config.baseRepoPath, '.kugutsu', 'tasks.json');
-    await FileSystemManager.writeJSON(tasksJsonPath, taskArtifacts);
-    console.log(`💾 .kugutsu/tasks.json を保存しました（${taskArtifacts.length}タスク）`);
     // サマリー表示
     console.log('\n📊 タスク分解サマリー:');
     console.log(`  - タスク総数: ${taskList.length}個`);
@@ -229,7 +217,6 @@ export async function taskBreakdownNode(state) {
     return {
         globalTasks: globalTasks,
         dependencyGraph: dependencyGraph,
-        tasksPath: '.kugutsu/tasks.json',
         logs: [
             {
                 timestamp: new Date(),
@@ -238,6 +225,7 @@ export async function taskBreakdownNode(state) {
                 message: `タスク分解完了（${taskList.length}タスク、${dependencyGraph.edges.length}依存関係）`,
             },
         ],
+        failedProviders: AIProviderFactory.getFailedProviders(),
     };
 }
 /**

@@ -9,6 +9,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Badge } from '@/components/ui/badge'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Search, Filter, Trash2, ChevronsDown } from 'lucide-react'
 import { useAppStore } from '../store/appStore'
 import { LogEntryComponent } from './LogEntry'
@@ -74,10 +75,30 @@ export function LogViewer() {
     { value: 'debug', label: 'デバッグ', count: logs.filter((l) => l.level === 'debug').length },
   ]
 
+  // Calculate statistics
+  const statistics = useMemo(() => {
+    const totalLogs = logs.length
+    const successLogs = logs.filter((l) => l.level === 'success').length
+    const errorLogs = logs.filter((l) => l.level === 'error').length
+    const warnLogs = logs.filter((l) => l.level === 'warn').length
+    const infoLogs = logs.filter((l) => l.level === 'info').length
+    const debugLogs = logs.filter((l) => l.level === 'debug').length
+
+    return {
+      totalLogs,
+      successLogs,
+      errorLogs,
+      warnLogs,
+      infoLogs,
+      debugLogs,
+    }
+  }, [logs])
+
   return (
-    <div className="flex h-full flex-col">
-      {/* Toolbar */}
-      <div className="flex items-center gap-2 border-b border-border bg-muted/30 px-4 py-2">
+    <div className="flex h-full flex-col p-4">
+      <div className="flex flex-col flex-1 min-h-0">
+        {/* Toolbar */}
+        <div className="flex items-center gap-2 border-b border-border bg-muted/30 px-4 py-2">
         {/* Search */}
         <div className="relative flex-1">
           <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -135,43 +156,44 @@ export function LogViewer() {
         </Button>
       </div>
 
-      {/* Log List */}
-      <div ref={parentRef} className="flex-1 overflow-auto bg-background" onScroll={handleScroll}>
-        {filteredLogs.length === 0 ? (
-          <div className="flex h-full items-center justify-center text-muted-foreground">
-            <div className="text-center">
-              <div className="mb-2 text-4xl">📝</div>
-              <div>ログがありません</div>
+        {/* Log List */}
+        <div ref={parentRef} className="flex-1 overflow-auto bg-background" onScroll={handleScroll}>
+          {filteredLogs.length === 0 ? (
+            <div className="flex h-full items-center justify-center text-muted-foreground">
+              <div className="text-center">
+                <div className="mb-2 text-4xl">📝</div>
+                <div>ログがありません</div>
+              </div>
             </div>
-          </div>
-        ) : (
-          <div
-            style={{
-              height: `${virtualizer.getTotalSize()}px`,
-              width: '100%',
-              position: 'relative',
-            }}
-          >
-            {virtualizer.getVirtualItems().map((virtualRow) => {
-              const log = filteredLogs[virtualRow.index]
-              return (
-                <div
-                  key={virtualRow.key}
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    height: `${virtualRow.size}px`,
-                    transform: `translateY(${virtualRow.start}px)`,
-                  }}
-                >
-                  <LogEntryComponent log={log} />
-                </div>
-              )
-            })}
-          </div>
-        )}
+          ) : (
+            <div
+              style={{
+                height: `${virtualizer.getTotalSize()}px`,
+                width: '100%',
+                position: 'relative',
+              }}
+            >
+              {virtualizer.getVirtualItems().map((virtualRow) => {
+                const log = filteredLogs[virtualRow.index]
+                return (
+                  <div
+                    key={virtualRow.key}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      height: `${virtualRow.size}px`,
+                      transform: `translateY(${virtualRow.start}px)`,
+                    }}
+                  >
+                    <LogEntryComponent log={log} />
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

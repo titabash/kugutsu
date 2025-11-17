@@ -15,6 +15,8 @@ import {
 import '@xyflow/react/dist/style.css'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import type { DependencyGraph, TaskStatus } from '../types'
 import { cn } from '../lib/utils'
 import { AlertTriangle, Zap, Users } from 'lucide-react'
@@ -245,37 +247,40 @@ export function DependencyGraphViewer({ graph, onNodeClick }: DependencyGraphVie
     )
   }
 
+  // Calculate statistics
+  const statistics = useMemo(() => {
+    const totalNodes = graph.nodes.length
+    const completedNodes = graph.nodes.filter((n) => n.status === 'completed').length
+    const inProgressNodes = graph.nodes.filter((n) => n.status === 'in_progress').length
+    const failedNodes = graph.nodes.filter((n) => n.status === 'failed').length
+    const totalTime = graph.nodes.reduce((sum, n) => sum + (n.data?.estimatedTime || 0), 0)
+    const criticalPathLength = graph.criticalPath?.length || 0
+    const parallelGroupsCount = graph.parallelGroups?.length || 0
+    const progressPercentage = totalNodes > 0 ? Math.round((completedNodes / totalNodes) * 100) : 0
+
+    return {
+      totalNodes,
+      completedNodes,
+      inProgressNodes,
+      failedNodes,
+      totalTime,
+      criticalPathLength,
+      parallelGroupsCount,
+      progressPercentage,
+    }
+  }, [graph])
+
   return (
     <div className="flex h-full flex-col gap-4 p-4">
-      {/* Legend */}
-      <Card className="border-primary/20">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">依存関係グラフ</CardTitle>
-          <CardDescription>タスクの依存関係とクリティカルパスを可視化</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap gap-4 text-sm">
-            <div className="flex items-center gap-2">
-              <div className="h-3 w-3 rounded-full bg-red-500 ring-2 ring-red-500 ring-offset-2" />
-              <span>クリティカルパス</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Badge variant="secondary" className="text-xs">
-                <Users className="mr-1 h-3 w-3" />
-                G1
-              </Badge>
-              <span>並列実行グループ</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="h-0.5 w-8 bg-blue-500" />
-              <span>依存関係</span>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <Tabs defaultValue="graph" className="flex h-full flex-col">
+        <TabsList>
+          <TabsTrigger value="graph">🔀 フローチャート</TabsTrigger>
+          <TabsTrigger value="statistics">📊 統計</TabsTrigger>
+        </TabsList>
 
-      {/* Graph Visualization */}
-      <div className="flex-1 rounded-lg border bg-card">
+        {/* Graph Visualization Tab */}
+        <TabsContent value="graph" className="flex-1 overflow-hidden mt-4">
+          <div className="h-full rounded-lg border bg-card">
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -311,7 +316,106 @@ export function DependencyGraphViewer({ graph, onNodeClick }: DependencyGraphVie
             className="bg-background"
           />
         </ReactFlow>
-      </div>
+          </div>
+        </TabsContent>
+
+        {/* Statistics Tab */}
+        <TabsContent value="statistics" className="flex-1 overflow-hidden mt-4">
+          <ScrollArea className="h-full">
+            <div className="space-y-4">
+              {/* Statistics Cards */}
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardDescription>総タスク数</CardDescription>
+                    <CardTitle className="text-2xl" data-testid="stats-total-nodes">
+                      {statistics.totalNodes}
+                    </CardTitle>
+                  </CardHeader>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardDescription>完了</CardDescription>
+                    <CardTitle className="text-2xl" data-testid="stats-completed-nodes">
+                      {statistics.completedNodes}
+                    </CardTitle>
+                  </CardHeader>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardDescription>進捗率</CardDescription>
+                    <CardTitle className="text-2xl" data-testid="stats-progress">
+                      {statistics.progressPercentage}%
+                    </CardTitle>
+                  </CardHeader>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardDescription>見積時間</CardDescription>
+                    <CardTitle className="text-2xl" data-testid="stats-total-time">
+                      {statistics.totalTime}h
+                    </CardTitle>
+                  </CardHeader>
+                </Card>
+              </div>
+
+              {/* Additional Statistics */}
+              <Card className="border-primary/20">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">グラフ統計</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-2 gap-4 text-sm md:grid-cols-3">
+                    <div className="flex flex-col">
+                      <span className="text-muted-foreground">クリティカルパス長</span>
+                      <span className="text-lg font-semibold" data-testid="stats-critical-path-length">
+                        {statistics.criticalPathLength}
+                      </span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-muted-foreground">並列グループ数</span>
+                      <span className="text-lg font-semibold" data-testid="stats-parallel-groups">
+                        {statistics.parallelGroupsCount}
+                      </span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-muted-foreground">実行中</span>
+                      <span className="text-lg font-semibold">{statistics.inProgressNodes}</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Legend */}
+              <Card className="border-primary/20">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">凡例</CardTitle>
+                  <CardDescription>グラフ要素の説明</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-wrap gap-4 text-sm" data-testid="legend">
+                    <div className="flex items-center gap-2">
+                      <div className="h-3 w-3 rounded-full bg-red-500 ring-2 ring-red-500 ring-offset-2" />
+                      <span>クリティカルパス</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="secondary" className="text-xs">
+                        <Users className="mr-1 h-3 w-3" />
+                        G1
+                      </Badge>
+                      <span>並列実行グループ</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="h-0.5 w-8 bg-blue-500" />
+                      <span>依存関係</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </ScrollArea>
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }

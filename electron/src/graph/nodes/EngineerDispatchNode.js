@@ -5,8 +5,7 @@
  */
 import { GitWorktreeManager } from '../../managers/GitWorktreeManager.js';
 import { TaskStateMachine } from '../../utils/TaskStateMachine.js';
-import { FileReader } from '../../utils/FileReader.js';
-import { AIFileWriter } from '../../utils/AIFileWriter.js';
+import { DataPersistence } from '../../utils/DataPersistence.js';
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
 /**
  * Engineer Dispatch Node
@@ -18,17 +17,27 @@ import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
  * 4. Use TaskStateMachine for all state transitions
  */
 export async function engineerDispatchNode(state) {
-    const { tasks, config, tasksPath, globalTasks } = state;
+    const { tasks, config, globalTasks, activeSprint } = state;
     console.log('🚀 Engineer Dispatch: タスクを割り当てています...');
-    console.log(`📝 tasksPath: ${tasksPath}`);
     console.log(`📝 Received ${tasks.length} tasks from state`);
-    // Fallback to default path if tasksPath is undefined
-    const actualTasksPath = tasksPath || '.kugutsu/tasks.json';
+    if (!activeSprint?.id) {
+        return {
+            logs: [
+                {
+                    timestamp: new Date(),
+                    level: 'error',
+                    source: 'EngineerDispatchNode',
+                    message: 'アクティブなスプリントが設定されていません',
+                },
+            ],
+        };
+    }
+    const sprintId = activeSprint.id;
     try {
         // Initialize Git Worktree Manager
         const gitWorktreeManager = new GitWorktreeManager(config.baseRepoPath, config.worktreeBasePath, config.baseBranch);
-        // Initialize File Reader for tasks.json
-        const fileReader = new FileReader(config.baseRepoPath);
+        // Initialize DataPersistence for Sprint Backlog sync
+        const persistence = new DataPersistence(config.baseRepoPath);
         // Create AI provider
         const providerConfig = AIProviderFactory.buildProviderConfig({
             provider: state.config.provider || 'claude',
@@ -100,6 +109,18 @@ export async function engineerDispatchNode(state) {
                 else {
                     updatedTasks.push(inProgressTask);
                 }
+                // Sync to Sprint Backlog
+                try {
+                    await persistence.updateSprintBacklogTask(sprintId, task.id, {
+                        status: 'in_progress',
+                        worktreePath: result.path,
+                        branchName: result.branchName,
+                    });
+                    console.log(`📝 Sprint Backlogを更新しました: ${task.id} → in_progress`);
+                }
+                catch (syncError) {
+                    console.warn(`⚠️ Sprint Backlogの同期に失敗しましたが、処理を続行します: ${task.id}`, syncError);
+                }
                 // Add worktree info
                 newWorktrees.set(task.id, {
                     path: result.path,
@@ -136,6 +157,16 @@ export async function engineerDispatchNode(state) {
                 else {
                     updatedTasks.push(failedTask);
                 }
+                // Sync to Sprint Backlog
+                try {
+                    await persistence.updateSprintBacklogTask(sprintId, task.id, {
+                        status: 'failed',
+                    });
+                    console.log(`📝 Sprint Backlogを更新しました: ${task.id} → failed`);
+                }
+                catch (syncError) {
+                    console.warn(`⚠️ Sprint Backlogの同期に失敗しましたが、処理を続行します: ${task.id}`, syncError);
+                }
                 logs.push({
                     timestamp: new Date(),
                     level: 'error',
@@ -150,31 +181,7 @@ export async function engineerDispatchNode(state) {
                 console.error(`❌ タスク ${task.id} の作成失敗:`, error);
             }
         }
-        // Update tasks.json with worktree information using AI
-        if (updatedTasks.length > 0) {
-            try {
-                // Build update map for tasks with worktree info
-                const taskUpdates = new Map();
-                for (const task of updatedTasks) {
-                    if (task.worktreePath && task.branchName) {
-                        taskUpdates.set(task.id, {
-                            worktreePath: task.worktreePath,
-                            branchName: task.branchName,
-                            status: task.status,
-                            updatedAt: new Date().toISOString(),
-                        });
-                    }
-                }
-                if (taskUpdates.size > 0) {
-                    await AIFileWriter.updateMultipleTasksInTasksJson(provider, actualTasksPath, taskUpdates, config.baseRepoPath);
-                    console.log(`📝 tasks.json を更新しました (${taskUpdates.size}個のworktree)`);
-                }
-            }
-            catch (error) {
-                console.warn('⚠️ tasks.json の更新に失敗:', error);
-                // Non-fatal error - continue with state update
-            }
-        }
+        // Sprint Backlogへの同期は各タスクのディスパッチ時に実行済み
         // Sync updatedTasks to globalTasks
         const updatedGlobalTasks = [];
         for (const task of updatedTasks) {

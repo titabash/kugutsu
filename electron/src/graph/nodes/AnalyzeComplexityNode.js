@@ -4,7 +4,8 @@
  * AI-driven complexity analysis to determine if detailed design phase is required
  */
 import { AIProviderFactory } from '../../providers/AIProviderFactory.js';
-import { MessageHandler } from '../../utils/MessageHandler.js';
+import { RetryManager } from '../../utils/RetryManager.js';
+import { JSONExtractor } from '../../utils/JSONExtractor.js';
 /**
  * Analyze Complexity Node
  *
@@ -24,14 +25,11 @@ import { MessageHandler } from '../../utils/MessageHandler.js';
  */
 export async function analyzeComplexityNode(state) {
     const { userRequest, config } = state;
+    // Sync failed providers from state
+    AIProviderFactory.syncWithState(state.failedProviders || []);
     console.log('🔍 Analyze Complexity: ユーザー要求の複雑度を判定中...');
     console.log(`📝 ユーザー要求: ${userRequest}`);
     try {
-        // Create AI provider
-        const providerConfig = AIProviderFactory.buildProviderConfig({
-            provider: config.provider || 'claude',
-        });
-        const provider = AIProviderFactory.create(providerConfig);
         // AI analysis prompt
         const analysisPrompt = `
 You are an expert software architect analyzing a development request to determine its complexity.
@@ -88,28 +86,85 @@ Or:
 
 DO NOT include any other text, only the JSON object.
 `.trim();
-        // Query AI provider
-        console.log('🤖 AI分析を実行中...');
-        const handler = new MessageHandler({
-            maxTurns: 5,
-            nodeName: 'AnalyzeComplexity - Complexity Analysis',
-        });
-        let aiResponseText = '';
-        for await (const message of provider.execute(analysisPrompt, {
-            maxTurns: 5,
-            cwd: config.baseRepoPath,
-            allowedTools: ['Read', 'Glob'],
-            permissionMode: 'acceptEdits',
-            includePartialMessages: true,
-        })) {
-            await handler.handleMessage(message);
-            if (message.type === 'assistant' && typeof message.content === 'string') {
-                aiResponseText += message.content;
+        // Helper function to execute analysis with a specific provider
+        const executeAnalysis = async (providerType) => {
+            const providerConfig = AIProviderFactory.buildProviderConfig({
+                provider: providerType,
+            });
+            const provider = AIProviderFactory.create(providerConfig);
+            // Collect messages and check for errors
+            // Note: FallbackAIProvider already handles logging via its own MessageHandler
+            let aiResponseText = '';
+            let hasError = false;
+            let errorDetails = null;
+            for await (const message of provider.execute(analysisPrompt, {
+                maxTurns: 5,
+                cwd: config.baseRepoPath,
+                allowedTools: ['Read', 'Glob'],
+                permissionMode: 'acceptEdits',
+            })) {
+                if (message.type === 'assistant' && typeof message.content === 'string') {
+                    aiResponseText += message.content;
+                }
+                else if (message.type === 'result') {
+                    // Check for errors in result message (sent by FallbackAIProvider)
+                    if (message.content && !message.content.success) {
+                        hasError = true;
+                        errorDetails = message.content;
+                    }
+                }
             }
+            // エラーチェック（FallbackAIProviderが検出したエラー）
+            if (hasError) {
+                const errorMsg = errorDetails?.error || errorDetails?.errors?.join('; ') || 'Unknown error';
+                throw new Error(errorMsg);
+            }
+            // Parse AI response
+            return parseAnalysisResult(aiResponseText);
+        };
+        // Query AI provider with retry
+        console.log('🤖 AI分析を実行中...');
+        const primaryProvider = (config.provider || 'claude');
+        // Execute analysis with FallbackAIProvider (automatic fallback handled by provider layer)
+        // RetryManager handles temporary errors with exponential backoff
+        let primaryResult;
+        const analysisResult = await RetryManager.executeWithRetry(async () => executeAnalysis(primaryProvider), {
+            maxRetries: 3,
+            initialDelayMs: 2000,
+            maxDelayMs: 30000,
+            backoffMultiplier: 2,
+            retryableErrors: ['ETIMEDOUT', 'ECONNRESET', 'timeout', 'network'],
+        });
+        if (!analysisResult.success) {
+            // AI実行失敗 - 保守的に詳細設計を実行
+            const fallbackReason = `AI判定エラーが発生したため、保守的に詳細設計フェーズを実行します。エラー: ${analysisResult.error?.message || 'Unknown error'}`;
+            console.warn('⚠️ エラー発生により詳細設計フェーズを実行します（保守的判定）');
+            return {
+                metadata: {
+                    requiresDetailedDesign: true,
+                    complexityReason: fallbackReason,
+                },
+                logs: [
+                    {
+                        timestamp: new Date(),
+                        level: 'warn',
+                        source: 'AnalyzeComplexityNode',
+                        message: '複雑度判定エラー: 保守的に詳細設計フェーズを実行',
+                        data: {
+                            error: analysisResult.error?.message || 'Unknown error',
+                            attempts: analysisResult.attempts,
+                            fallbackReason,
+                        },
+                    },
+                ],
+                failedProviders: AIProviderFactory.getFailedProviders(),
+            };
         }
-        handler.complete(true, '複雑度分析が完了しました');
-        // Parse AI response
-        const result = parseAnalysisResult(aiResponseText);
+        primaryResult = analysisResult.data;
+        if (!primaryResult) {
+            throw new Error('Unexpected error: analysis result is undefined');
+        }
+        const result = primaryResult;
         console.log(`✅ 複雑度判定完了: ${result.requiresDetailedDesign ? '高（詳細設計実行）' : '低（詳細設計スキップ）'}`);
         console.log(`📄 判定理由: ${result.reason}`);
         // Return state update
@@ -131,6 +186,7 @@ DO NOT include any other text, only the JSON object.
                     },
                 },
             ],
+            failedProviders: AIProviderFactory.getFailedProviders(),
         };
     }
     catch (error) {
@@ -155,6 +211,7 @@ DO NOT include any other text, only the JSON object.
                     },
                 },
             ],
+            failedProviders: AIProviderFactory.getFailedProviders(),
         };
     }
 }
@@ -166,10 +223,12 @@ DO NOT include any other text, only the JSON object.
  */
 function parseAnalysisResult(text) {
     try {
-        // Extract JSON from response (handle markdown code blocks)
-        const jsonMatch = text.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
-        const jsonText = jsonMatch ? jsonMatch[1] : text;
-        const parsed = JSON.parse(jsonText.trim());
+        // Extract JSON from response using JSONExtractor
+        const extractionResult = JSONExtractor.extractFromCodeBlock(text);
+        if (!extractionResult.success) {
+            throw new Error(`JSON抽出に失敗: ${extractionResult.error}`);
+        }
+        const parsed = extractionResult.data;
         // Validate required fields
         if (typeof parsed.requiresDetailedDesign !== 'boolean') {
             throw new Error('Missing or invalid "requiresDetailedDesign" field');

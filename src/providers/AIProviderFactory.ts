@@ -179,89 +179,226 @@ export class AIProviderFactory {
   /**
    * Create a pre-configured Mock provider for LangGraph workflow testing
    *
-   * This configures mock responses for all workflow stages:
-   * - Technology stack analysis
-   * - Requirements analysis
-   * - Task generation
-   * - Code implementation
-   * - Code review
+   * This configures mock responses using MockScenarioBuilder for realistic
+   * file creation and State updates during workflow execution.
    *
-   * @returns Configured MockAIProvider instance
+   * @returns Configured MockAIProvider instance with ProductOwner scenario
    */
   private static createMockProvider(): MockAIProvider {
     const mockProvider = new MockAIProvider();
 
-    // 1. Technology Stack Analysis Response
-    mockProvider.setMockResponse(/Technology Stack Analysis/i, {
-      messages: [{
-        type: 'assistant',
-        content: JSON.stringify({
-          languages: ['TypeScript', 'JavaScript'],
-          frameworks: ['Electron', 'React', 'LangGraph'],
-          tools: ['npm', 'electron-vite'],
-          buildSystem: 'npm'
-        })
-      }]
-    });
+    // Import MockScenarioBuilder dynamically (lazy loading for runtime)
+    // Note: This assumes the module is available at runtime
+    try {
+      // Try to load MockScenarioBuilder if available
+      const { MockScenarioBuilder } = require('../../tests/helpers/MockScenarioBuilder.js');
+      const scenarioBuilder = new MockScenarioBuilder();
 
-    // 2. Requirements Analysis Response
-    mockProvider.setMockResponse(/Requirements Analysis/i, {
-      messages: [{
-        type: 'assistant',
-        content: `要求分析結果:
-- ユーザーの要求を理解しました
-- 実装可能なタスクに分割します
-- 依存関係を考慮した実装順序を決定します`
-      }]
-    });
+      // Setup ProductOwner scenario (3 tasks, with dependencies)
+      const productOwnerScenario = scenarioBuilder.buildProductOwnerScenario({
+        taskCount: 3,
+        includeDependencies: true,
+      });
 
-    // 3. Task Generation Response
-    mockProvider.setMockResponse(/Task Generation/i, {
-      messages: [{
-        type: 'assistant',
-        content: JSON.stringify([
+      mockProvider.setupScenario(productOwnerScenario);
+      mockProvider.activateScenario(productOwnerScenario.name);
+
+      // Setup Engineer scenario
+      const engineerScenario = scenarioBuilder.buildEngineerScenario();
+      mockProvider.setupScenario(engineerScenario);
+
+      // Setup Review scenario
+      const reviewScenario = scenarioBuilder.buildReviewScenario();
+      mockProvider.setupScenario(reviewScenario);
+
+      console.log('✅ MockAIProvider initialized with MockScenarioBuilder scenarios');
+    } catch (error) {
+      // Fallback to pattern-based responses with file creation if MockScenarioBuilder not available
+      console.warn(`⚠️  MockScenarioBuilder not available (${error}), using fallback responses with file creation`);
+
+      // Fallback: Pattern-based responses with actual file creation (backward compatibility)
+      // This creates realistic scenarios similar to MockScenarioBuilder but without the dependency
+
+      // Scenario 1: Requirements Analysis (matching ProductOwnerNode prompt)
+      mockProvider.setDefaultResponse({
+        messages: [
           {
-            id: 'task-1',
-            title: 'モックタスク1: 基本実装',
-            description: 'テスト用の基本機能を実装します',
-            priority: 1,
-            dependencies: [],
-            estimatedTime: 30
+            type: 'assistant',
+            content: `
+要求分析を完了しました。以下の内容で requirements.json を作成します。
+
+\`\`\`json
+{
+  "functional": [
+    "ユーザー登録機能",
+    "ログイン機能",
+    "タスク管理機能"
+  ],
+  "nonFunctional": [
+    "レスポンスタイム2秒以内",
+    "99.9%の可用性",
+    "HTTPS通信の必須化"
+  ],
+  "constraints": [
+    "TypeScript必須",
+    "既存APIとの互換性維持",
+    "テストカバレッジ80%以上"
+  ]
+}
+\`\`\`
+            `,
           },
           {
-            id: 'task-2',
-            title: 'モックタスク2: UI改善',
-            description: 'ユーザーインターフェースを改善します',
-            priority: 2,
-            dependencies: ['task-1'],
-            estimatedTime: 20
-          }
-        ])
-      }]
-    });
+            type: 'system',
+            content: {
+              toolUse: {
+                tool: 'Write',
+                arguments: {
+                  file_path: '.kugutsu/requirements.json',
+                  content: JSON.stringify({
+                    functional: [
+                      'ユーザー登録機能',
+                      'ログイン機能',
+                      'タスク管理機能'
+                    ],
+                    nonFunctional: [
+                      'レスポンスタイム2秒以内',
+                      '99.9%の可用性',
+                      'HTTPS通信の必須化'
+                    ],
+                    constraints: [
+                      'TypeScript必須',
+                      '既存APIとの互換性維持',
+                      'テストカバレッジ80%以上'
+                    ]
+                  }, null, 2)
+                }
+              }
+            }
+          },
+          {
+            type: 'result',
+            content: { success: true },
+          },
+          {
+            type: 'assistant',
+            content: `
+タスク分解を完了しました。3個のタスクを生成し、product-backlog.json に保存します。
 
-    // 4. Code Implementation Response (Engineer)
-    mockProvider.setMockResponse(/実装|implementation|code/i, {
-      messages: [{
-        type: 'assistant',
-        content: `実装完了:
+\`\`\`json
+{
+  "tasks": [
+    {
+      "id": "task-001",
+      "title": "ユーザーモデルの作成",
+      "description": "TypeScript型定義とスキーマを作成",
+      "priority": 1,
+      "dependencies": [],
+      "estimatedHours": 2,
+      "tags": ["backend", "model"]
+    },
+    {
+      "id": "task-002",
+      "title": "ユーザー登録API実装",
+      "description": "POST /api/users エンドポイントの実装",
+      "priority": 2,
+      "dependencies": ["task-001"],
+      "estimatedHours": 3,
+      "tags": ["backend", "api"]
+    },
+    {
+      "id": "task-003",
+      "title": "ログイン機能実装",
+      "description": "POST /api/auth/login エンドポイントの実装",
+      "priority": 3,
+      "dependencies": ["task-001"],
+      "estimatedHours": 2,
+      "tags": ["backend", "auth"]
+    }
+  ],
+  "metadata": {
+    "totalTasks": 3,
+    "generatedAt": "${new Date().toISOString()}"
+  }
+}
+\`\`\`
+            `,
+          },
+          {
+            type: 'system',
+            content: {
+              toolUse: {
+                tool: 'Write',
+                arguments: {
+                  file_path: '.kugutsu/product-backlog/backlog.json',
+                  content: JSON.stringify({
+                    tasks: [
+                      {
+                        id: 'task-001',
+                        title: 'ユーザーモデルの作成',
+                        description: 'TypeScript型定義とスキーマを作成',
+                        priority: 1,
+                        dependencies: [],
+                        estimatedHours: 2,
+                        tags: ['backend', 'model']
+                      },
+                      {
+                        id: 'task-002',
+                        title: 'ユーザー登録API実装',
+                        description: 'POST /api/users エンドポイントの実装',
+                        priority: 2,
+                        dependencies: ['task-001'],
+                        estimatedHours: 3,
+                        tags: ['backend', 'api']
+                      },
+                      {
+                        id: 'task-003',
+                        title: 'ログイン機能実装',
+                        description: 'POST /api/auth/login エンドポイントの実装',
+                        priority: 3,
+                        dependencies: ['task-001'],
+                        estimatedHours: 2,
+                        tags: ['backend', 'auth']
+                      }
+                    ],
+                    metadata: {
+                      totalTasks: 3,
+                      generatedAt: new Date().toISOString()
+                    }
+                  }, null, 2)
+                }
+              }
+            }
+          },
+          {
+            type: 'result',
+            content: { success: true },
+          }
+        ],
+        simulateTools: true, // 重要: Writeツールを実際に実行
+      });
+
+      mockProvider.setMockResponse(/実装|implementation|code/i, {
+        messages: [{
+          type: 'assistant',
+          content: `実装完了:
 - ファイル作成: src/mock-feature.ts
 - テストコード追加: tests/mock-feature.test.ts
 - 正常に動作することを確認しました`
-      }]
-    });
+        }]
+      });
 
-    // 5. Code Review Response
-    mockProvider.setMockResponse(/review|レビュー/i, {
-      messages: [{
-        type: 'assistant',
-        content: JSON.stringify({
-          status: 'approved',
-          comments: '実装内容を確認しました。問題ありません。',
-          suggestions: []
-        })
-      }]
-    });
+      mockProvider.setMockResponse(/review|レビュー/i, {
+        messages: [{
+          type: 'assistant',
+          content: JSON.stringify({
+            status: 'approved',
+            comments: '実装内容を確認しました。問題ありません。',
+            suggestions: []
+          })
+        }]
+      });
+    }
 
     return mockProvider;
   }

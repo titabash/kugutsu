@@ -47,6 +47,8 @@ export class MessageHandler {
      * 開始ログを表示
      */
     logStart() {
+        if (this.options.silent)
+            return;
         console.log(`\n${'='.repeat(60)}`);
         console.log(`🚀 ${this.options.nodeName} 開始`);
         if (this.options.taskId) {
@@ -62,6 +64,28 @@ export class MessageHandler {
         switch (message.type) {
             case 'assistant':
                 this.handleAssistant(message);
+                // Check if assistant message contains error messages (e.g., "Weekly limit reached")
+                if (typeof message.content === 'string') {
+                    const contentLower = message.content.toLowerCase();
+                    if (contentLower.includes('weekly limit') ||
+                        contentLower.includes('monthly limit') ||
+                        contentLower.includes('usage limit') ||
+                        contentLower.includes('usage_limit') ||
+                        contentLower.includes('upgrade to pro') ||
+                        contentLower.includes('quota') ||
+                        contentLower.includes('limit reached') ||
+                        contentLower.includes('subscription') ||
+                        contentLower.includes('billing') ||
+                        contentLower.includes('hit your usage limit') ||
+                        contentLower.includes('purchase more credits')) {
+                        this.hasError = true;
+                        this.errorDetails = {
+                            subtype: 'rate_limit',
+                            message: message.content.trim(),
+                            errors: [message.content.trim()],
+                        };
+                    }
+                }
                 break;
             case 'partial':
                 this.handlePartial(message);
@@ -87,23 +111,33 @@ export class MessageHandler {
                         ? allErrors.join('; ')
                         : `エラーが発生しました (subtype: ${message.content.subtype || 'unknown'})`;
                     // エラー詳細をログ出力（デバッグ用）
-                    if (allErrors.length === 0 && !message.content.subtype) {
+                    if (allErrors.length === 0 && !message.content.subtype && !this.options.silent) {
                         console.warn(`⚠️  エラー詳細が不明です。message.content:`, JSON.stringify(message.content, null, 2));
                     }
                     // Check if error message contains permanent error patterns
+                    // This check should take priority over subtype (turn_failed, exception, etc.)
                     const errorMessageLower = errorMessage.toLowerCase();
-                    const isPermanentError = (
-                        errorMessageLower.includes('weekly limit') ||
+                    const isPermanentError = (errorMessageLower.includes('weekly limit') ||
                         errorMessageLower.includes('monthly limit') ||
+                        errorMessageLower.includes('usage limit') ||
+                        errorMessageLower.includes('usage_limit') ||
+                        errorMessageLower.includes('upgrade to pro') ||
+                        errorMessageLower.includes('upgrade to pro') ||
                         errorMessageLower.includes('quota') ||
                         errorMessageLower.includes('limit reached') ||
                         errorMessageLower.includes('subscription') ||
                         errorMessageLower.includes('billing') ||
                         errorMessageLower.includes('rate limit') ||
-                        errorMessageLower.includes('rate_limit')
-                    );
+                        errorMessageLower.includes('rate_limit') ||
+                        errorMessageLower.includes('hit your usage limit') ||
+                        errorMessageLower.includes('purchase more credits'));
+                    // If error message contains usage limit patterns, always classify as rate_limit
+                    // This overrides subtype like turn_failed or exception
+                    const finalSubtype = isPermanentError
+                        ? 'rate_limit'
+                        : (message.content.subtype || 'unknown');
                     this.errorDetails = {
-                        subtype: isPermanentError ? 'rate_limit' : (message.content.subtype || 'unknown'),
+                        subtype: finalSubtype,
                         message: errorMessage,
                         errors: allErrors,
                     };
@@ -125,6 +159,9 @@ export class MessageHandler {
     handleAssistant(message) {
         if (!message.content)
             return;
+        // サイレントモードではログをスキップ
+        if (this.options.silent)
+            return;
         // ドット表示中なら改行
         if (this.dotCounter > 0) {
             console.log(''); // 改行
@@ -143,6 +180,9 @@ export class MessageHandler {
      * Partialメッセージ（ストリーミング中）を処理
      */
     handlePartial(message) {
+        // サイレントモードではログをスキップ
+        if (this.options.silent)
+            return;
         if (!this.options.verbose) {
             // 非詳細モード: ドットで進行表示
             process.stdout.write('.');
@@ -167,6 +207,9 @@ export class MessageHandler {
      */
     handleSystem(message) {
         const content = message.content;
+        // サイレントモードではログをスキップ
+        if (this.options.silent)
+            return;
         // ドット表示中なら改行
         if (this.dotCounter > 0) {
             console.log(''); // 改行
@@ -194,16 +237,22 @@ export class MessageHandler {
         this.lastToolName = null;
         // コマンド実行（OpenAI Codex）
         if (content?.commandExecution) {
-            const { command, output, status } = content.commandExecution;
+            const { command, output, exitCode, status } = content.commandExecution;
             console.log(`⚙️  コマンド実行: ${command}`);
             if (status && status !== 'in_progress') {
                 console.log(`   ステータス: ${status}`);
             }
-            if (this.options.verbose && output) {
-                const preview = output.length > 200
-                    ? output.substring(0, 200) + '...'
+            // 非ゼロの終了コードを表示（診断情報として重要）
+            if (exitCode !== undefined && exitCode !== 0) {
+                console.log(`   終了コード: ${exitCode}`);
+            }
+            // failedステータスの時は常にoutput（stderr含む）を表示
+            // verboseモードの時も表示
+            if (output && (status === 'failed' || this.options.verbose)) {
+                const preview = output.length > 500
+                    ? output.substring(0, 500) + '...'
                     : output;
-                console.log(`   出力: ${preview}`);
+                console.log(`   出力:\n${preview}`);
             }
             return;
         }
@@ -234,6 +283,9 @@ export class MessageHandler {
     handleResult(message) {
         // ターン数をインクリメント（各ターンの終わりでResultメッセージが送信される）
         this.incrementTurnCount();
+        // サイレントモードではログをスキップ（ただしエラー検出は継続）
+        if (this.options.silent)
+            return;
         // ドット表示中なら改行
         if (this.dotCounter > 0) {
             console.log(''); // 改行
@@ -258,13 +310,28 @@ export class MessageHandler {
         }
         else {
             console.log(`❌ ${this.options.nodeName} 失敗`);
-            // Claude Agent SDK の errors フィールド（配列）から表示
-            const errors = message.content?.errors || [];
+            // エラー情報を詳細に表示
+            const content = message.content || {};
+            // 1. errors配列（複数エラー）
+            const errors = content.errors || [];
             if (errors.length > 0) {
                 console.error(`   エラー: ${errors.join('; ')}`);
             }
-            else if (message.content?.subtype) {
-                console.error(`   エラーサブタイプ: ${message.content.subtype}`);
+            // 2. error文字列（単一エラー）
+            if (content.error && errors.length === 0) {
+                console.error(`   エラー: ${content.error}`);
+            }
+            // 3. subtype（エラー種別）
+            if (content.subtype) {
+                console.error(`   エラー種別: ${content.subtype}`);
+            }
+            // 4. エラー詳細がない場合、content全体を表示
+            if (errors.length === 0 && !content.error && !content.subtype) {
+                console.error(`   詳細情報:`, JSON.stringify(content, null, 2));
+            }
+            // 5. 追加情報（あれば）
+            if (content.message) {
+                console.error(`   メッセージ: ${content.message}`);
             }
         }
         console.log(`${'='.repeat(60)}\n`);
@@ -273,6 +340,8 @@ export class MessageHandler {
      * 進捗状況をログ出力
      */
     logProgress(current, total, status) {
+        if (this.options.silent)
+            return;
         console.log(`📊 進捗: [${current}/${total}] ${status}`);
     }
     /**
@@ -283,6 +352,9 @@ export class MessageHandler {
      *       これにより「❌ 失敗」と「✅ 正常完了」が両方表示される問題を防ぎます。
      */
     complete(success, summary) {
+        // サイレントモードではログをスキップ
+        if (this.options.silent)
+            return;
         // エラーが検出されていたらスキップ
         // （handleResult()で既に「❌ ... 失敗」が表示されているため）
         if (this.hasError) {
@@ -313,6 +385,57 @@ export class MessageHandler {
         console.log('');
     }
     /**
+     * エラーチェックして完了処理を実行
+     *
+     * エラーがある場合は詳細なエラーメッセージを構築して例外をスロー。
+     * エラーがない場合は完了メッセージを表示。
+     *
+     * このメソッドは以下の既存パターンを1行で置き換えます：
+     * ```typescript
+     * if (handler.getHasError()) {
+     *   const details = handler.getErrorDetails();
+     *   // 22行のエラーメッセージ構築
+     *   throw new Error(errorMsg);
+     * }
+     * handler.complete(true, successMessage);
+     * ```
+     *
+     * @param successMessage 成功時のメッセージ
+     * @param nodeName ノード名（エラーメッセージ用、オプション）
+     * @throws {Error} エラーが検出された場合
+     *
+     * @example
+     * ```typescript
+     * handler.completeWithErrorCheck('要求分析が完了しました');
+     * handler.completeWithErrorCheck('タスク生成が完了しました', 'ProductOwner');
+     * ```
+     */
+    completeWithErrorCheck(successMessage, nodeName) {
+        if (this.hasError) {
+            const details = this.getErrorDetails();
+            // エラーメッセージの構築（既存パターンと同じロジック）
+            let errorMsg;
+            if (details?.message) {
+                errorMsg =
+                    details.subtype === 'error_max_turns'
+                        ? `AI実行がmaxTurns制限に到達しました: ${details.message}`
+                        : `AI実行中にエラーが発生しました: ${details.message}`;
+            }
+            else if (details?.errors && details.errors.length > 0) {
+                errorMsg = `AI実行中にエラーが発生しました: ${details.errors.join('; ')}`;
+            }
+            else {
+                errorMsg = `AI実行中にエラーが発生しました (subtype: ${details?.subtype || 'unknown'})`;
+                console.warn(`⚠️  エラー詳細が取得できませんでした。ErrorDetails:`, JSON.stringify(details, null, 2));
+            }
+            // ノード名をプレフィックスとして追加（オプション）
+            const prefix = nodeName ? `${nodeName}エラー: ` : '';
+            throw new Error(`${prefix}${errorMsg}`);
+        }
+        // エラーがない場合は通常のcomplete処理
+        this.complete(true, successMessage);
+    }
+    /**
      * エラーが検出されているかどうかを取得
      *
      * @returns エラーが検出されている場合は true
@@ -332,6 +455,9 @@ export class MessageHandler {
      * エラーログを表示
      */
     error(errorMessage, error) {
+        // サイレントモードではログをスキップ
+        if (this.options.silent)
+            return;
         // ドット表示中なら改行
         if (this.dotCounter > 0) {
             console.log(''); // 改行

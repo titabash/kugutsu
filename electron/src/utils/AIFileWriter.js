@@ -1,3 +1,4 @@
+import { MessageHandler } from './MessageHandler.js';
 /**
  * AIFileWriter
  *
@@ -35,100 +36,25 @@ ${jsonContent}
 - 上記のJSONをそのまま正確に書き込んでください
 - 他のファイルには一切触れないでください
 `;
+        const handler = new MessageHandler({
+            maxTurns,
+            nodeName: `AIFileWriter - ${filePath}`,
+        });
         for await (const message of provider.execute(prompt, {
             maxTurns,
             cwd,
             allowedTools: ['Write'],
             permissionMode: 'acceptEdits',
+            includePartialMessages: true,
         })) {
-            // AIがファイルを書き込むのを待つ
+            await handler.handleMessage(message);
         }
-    }
-    /**
-     * AIを使用してtasks.jsonの特定タスクを更新する
-     *
-     * tasks.jsonは複数のノードが更新するため、Read→Update→Write のフローをAIに指示する。
-     *
-     * @param provider AIプロバイダー
-     * @param tasksPath tasks.jsonのパス（cwd からの相対パス）
-     * @param taskId 更新対象のタスクID
-     * @param updates 更新するフィールド（部分更新）
-     * @param cwd 作業ディレクトリ
-     * @param maxTurns 最大ターン数（デフォルト: 5）
-     */
-    static async updateTaskInTasksJson(provider, tasksPath, taskId, updates, cwd, maxTurns = 5) {
-        const prompt = `
-tasks.jsonファイル内の特定タスクを更新してください。
-
-**ファイルパス**: ${tasksPath}
-
-**タスクID**: ${taskId}
-
-**更新内容**:
-${JSON.stringify(updates, null, 2)}
-
-**手順**:
-1. Readツールで ${tasksPath} を読み込む
-2. JSON配列から id="${taskId}" のタスクを見つける
-3. 見つけたタスクの以下のフィールドを更新する：
-${Object.keys(updates).map(key => `   - ${key}: ${JSON.stringify(updates[key])}`).join('\n')}
-4. Writeツールで ${tasksPath} に更新後のJSON配列全体を書き戻す
-
-**重要**:
-- 他のタスクは一切変更しないでください
-- JSON配列の構造を保持してください
-- 必ずWriteツールを使用してください
-`;
-        for await (const message of provider.execute(prompt, {
-            maxTurns,
-            cwd,
-            allowedTools: ['Read', 'Write'],
-            permissionMode: 'acceptEdits',
-        })) {
-            // AIがファイルを更新するのを待つ
+        // エラーチェック
+        if (handler.getHasError()) {
+            const details = handler.getErrorDetails();
+            throw new Error(`ファイル書き込みに失敗: ${filePath} - ${details?.message || 'Unknown error'}`);
         }
-    }
-    /**
-     * AIを使用してtasks.json内の複数タスクを一括更新する
-     *
-     * @param provider AIプロバイダー
-     * @param tasksPath tasks.jsonのパス
-     * @param taskUpdates タスクID → 更新内容のマップ
-     * @param cwd 作業ディレクトリ
-     * @param maxTurns 最大ターン数（デフォルト: 5）
-     */
-    static async updateMultipleTasksInTasksJson(provider, tasksPath, taskUpdates, cwd, maxTurns = 5) {
-        const updatesList = Array.from(taskUpdates.entries()).map(([taskId, updates]) => ({
-            taskId,
-            updates,
-        }));
-        const prompt = `
-tasks.jsonファイル内の複数タスクを一括更新してください。
-
-**ファイルパス**: ${tasksPath}
-
-**更新対象タスク**:
-${JSON.stringify(updatesList, null, 2)}
-
-**手順**:
-1. Readツールで ${tasksPath} を読み込む
-2. JSON配列から各taskIdのタスクを見つける
-3. 各タスクに対応するupdatesの内容でフィールドを更新する
-4. Writeツールで ${tasksPath} に更新後のJSON配列全体を書き戻す
-
-**重要**:
-- 更新対象以外のタスクは一切変更しないでください
-- JSON配列の構造を保持してください
-- 必ずWriteツールを使用してください
-`;
-        for await (const message of provider.execute(prompt, {
-            maxTurns,
-            cwd,
-            allowedTools: ['Read', 'Write'],
-            permissionMode: 'acceptEdits',
-        })) {
-            // AIがファイルを更新するのを待つ
-        }
+        handler.complete(true, `ファイル書き込み完了: ${filePath}`);
     }
 }
 //# sourceMappingURL=AIFileWriter.js.map

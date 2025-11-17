@@ -84,6 +84,7 @@ export class MockAIProvider implements IAIProvider {
   private executionCallbacks: ExecutionCallback[] = [];
   private allPrompts: string[] = [];
   private allOptions: ExecuteOptions[] = [];
+  private currentCwd: string | undefined;
 
   constructor() {}
 
@@ -187,6 +188,9 @@ export class MockAIProvider implements IAIProvider {
     this.lastOptions = options;
     this.allPrompts.push(prompt);
     this.allOptions.push(options);
+
+    // Save cwd for file path resolution in simulateTool
+    this.currentCwd = options.cwd;
 
     // Execute callbacks
     for (const callback of this.executionCallbacks) {
@@ -332,26 +336,40 @@ export class MockAIProvider implements IAIProvider {
    */
   private async simulateTool(toolUse: any): Promise<void> {
     const { tool, arguments: args } = toolUse;
+    const path = await import('path');
 
     if (tool === 'Write') {
       // Simulate Write tool: actually create the file
       const fs = await import('fs/promises');
-      const path = await import('path');
 
       const { file_path, content } = args;
-      const dir = path.dirname(file_path);
+
+      // Resolve file path relative to cwd if provided
+      const resolvedPath = this.currentCwd && !path.isAbsolute(file_path)
+        ? path.join(this.currentCwd, file_path)
+        : file_path;
+
+      const dir = path.dirname(resolvedPath);
 
       // Create directory if it doesn't exist
       await fs.mkdir(dir, { recursive: true });
 
       // Write file
-      await fs.writeFile(file_path, content, 'utf-8');
+      await fs.writeFile(resolvedPath, content, 'utf-8');
+      console.log(`[MockAIProvider] File written: ${resolvedPath}`);
     } else if (tool === 'Read') {
       // Simulate Read tool: actually read the file
       const fs = await import('fs/promises');
 
       const { file_path } = args;
-      await fs.readFile(file_path, 'utf-8');
+
+      // Resolve file path relative to cwd if provided
+      const resolvedPath = this.currentCwd && !path.isAbsolute(file_path)
+        ? path.join(this.currentCwd, file_path)
+        : file_path;
+
+      await fs.readFile(resolvedPath, 'utf-8');
+      console.log(`[MockAIProvider] File read: ${resolvedPath}`);
     }
     // Add more tool simulations as needed (Bash, Edit, etc.)
   }

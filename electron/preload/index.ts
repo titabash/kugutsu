@@ -56,6 +56,74 @@ const electronAPI = {
     ipcRenderer.invoke('log-error', { message, details }),
 
   // ==========================================
+  // File System Events
+  // ==========================================
+
+  /**
+   * Listen for initial data loaded events
+   * @param fileType - Type of file (e.g., 'tasks', 'dependency-graph', 'story-map')
+   */
+  onInitialDataLoaded: (fileType: string, callback: (data: any) => void) => {
+    const eventName = `initial-data-loaded:${fileType}`;
+    const listener = (_event: IpcRendererEvent, data: any) => {
+      callback(data);
+    };
+    ipcRenderer.on(eventName, listener);
+    // Return cleanup function
+    return () => {
+      ipcRenderer.removeListener(eventName, listener);
+    };
+  },
+
+  /**
+   * Listen for file changed events
+   * @param fileType - Type of file (e.g., 'tasks', 'dependency-graph', 'story-map')
+   */
+  onFileChanged: (fileType: string, callback: (data: any) => void) => {
+    const eventName = `file-changed:${fileType}`;
+    const listener = (_event: IpcRendererEvent, data: any) => {
+      callback(data);
+    };
+    ipcRenderer.on(eventName, listener);
+    // Return cleanup function
+    return () => {
+      ipcRenderer.removeListener(eventName, listener);
+    };
+  },
+
+  // ==========================================
+  // Node Flow Events
+  // ==========================================
+
+  /**
+   * Listen for node flow initialization
+   */
+  onNodeFlowInit: (callback: (flowData: any) => void) => {
+    const listener = (_event: IpcRendererEvent, flowData: any) => {
+      callback(flowData);
+    };
+    ipcRenderer.on('node-flow-init', listener);
+    // Return cleanup function
+    return () => {
+      ipcRenderer.removeListener('node-flow-init', listener);
+    };
+  },
+
+  /**
+   * Listen for node status changes
+   */
+  onNodeStatusChange: (callback: (data: { nodeId: string; status: string; timestamp: number }) => void) => {
+    const listener = (_event: IpcRendererEvent, data: { nodeId: string; status: string; timestamp: number }) => {
+      callback(data);
+    };
+    ipcRenderer.on('node-status-change', listener);
+    // Return cleanup function
+    return () => {
+      ipcRenderer.removeListener('node-status-change', listener);
+    };
+  },
+
+  // ==========================================
   // Legacy API (Backward Compatibility)
   // ==========================================
 
@@ -136,21 +204,18 @@ console.log('[Preload] Running preload script');
 console.log('[Preload] electronAPI methods:', Object.keys(electronAPI));
 
 try {
-  // contextIsolationが無効なので、windowオブジェクトに直接追加
-  console.log('[Preload] Adding electronAPI to window directly');
-  (window as any).electronAPI = electronAPI;
-  
-  // globalThisにも追加（念のため）
-  (globalThis as any).electronAPI = electronAPI;
-  
-  // デバッグ: 追加されたことを確認
-  console.log('[Preload] electronAPI added to window:', !!(window as any).electronAPI);
-  console.log('[Preload] electronAPI added to globalThis:', !!(globalThis as any).electronAPI);
-  
-  // テスト呼び出し
-  console.log('[Preload] Testing getWorkingDirectory function existence:', typeof (window as any).electronAPI.getWorkingDirectory);
+  // セキュリティ改善: contextBridge.exposeInMainWorld を使用
+  console.log('[Preload] Exposing electronAPI via contextBridge');
+  contextBridge.exposeInMainWorld('electronAPI', electronAPI);
+
+  console.log('[Preload] electronAPI successfully exposed to renderer');
 } catch (error) {
-  console.error('[Preload] Error setting up electronAPI:', error);
+  console.error('[Preload] Error exposing electronAPI:', error);
+  // フォールバック: contextIsolationが無効の場合は直接追加
+  if (!process.contextIsolated) {
+    console.warn('[Preload] contextIsolation is disabled, adding to window directly');
+    (window as any).electronAPI = electronAPI;
+  }
 }
 
 // ESMとしてexport

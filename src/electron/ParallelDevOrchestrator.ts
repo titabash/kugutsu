@@ -162,7 +162,10 @@ export class ParallelDevOrchestrator {
 
       const stream = await graph.stream(initialState, {
         streamMode: ["values", "debug", "tasks"] as const,
-      });
+        configurable: {
+          thread_id: `exec-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+        },
+      } as any);
 
       for await (const event of stream) {
         // Handle different stream modes

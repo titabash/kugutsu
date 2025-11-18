@@ -19,6 +19,6 @@
       "@/*": ["./renderer/*"]
     }
   },
-  "include": ["**/*.ts", "../src/graph/**/*.ts", "../src/types/**/*.ts", "../src/managers/**/*.ts", "../src/utils/**/*.ts"],
+  "include": ["**/*.ts", "../src/graph/**/*.ts", "../src/types/**/*.ts", "../src/managers/**/*.ts", "../src/utils/**/*.ts", "../src/electron/**/*.ts", "../src/providers/**/*.ts"],
   "exclude": ["node_modules", "preload/**/*.ts", "vite.config.ts", "renderer/**/*.ts", "renderer/**/*.tsx"]
 }

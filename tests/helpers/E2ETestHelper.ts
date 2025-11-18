@@ -252,7 +252,10 @@ export class E2ETestHelper {
     try {
       const stream = await graph.stream(initialState, {
         streamMode: 'values' as const,
-      });
+        configurable: {
+          thread_id: `test-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+        },
+      } as any);
 
       let finalState: ParallelDevStateType = initialState;
 

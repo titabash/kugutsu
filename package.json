@@ -11,6 +11,7 @@
     "kugutsu": "node dist/parallel-dev-cli.js",
     "dev": "tsx src/index.ts",
     "parallel-dev-cli": "tsx src/parallel-dev-cli.ts",
+    "electron": "npm run electron:build && electron ./out/main/index.js",
     "electron:dev": "electron-vite dev",
     "electron:build": "electron-vite build",
     "electron:preview": "electron-vite preview",
@@ -30,7 +31,8 @@
     "test:e2e:ui": "npm run electron:build && playwright test --ui",
     "test:e2e:debug": "npm run electron:build && PWDEBUG=1 playwright test",
     "verify:e2e-minimal": "tsx tests/manual/e2e-minimal-verification.ts",
-    "verify:e2e-realistic": "tsx tests/manual/e2e-realistic-verification.ts"
+    "verify:e2e-realistic": "tsx tests/manual/e2e-realistic-verification.ts",
+    "electron:test-repo": "tsx tests/manual/launch-electron-with-test-repo.ts"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.1.30",

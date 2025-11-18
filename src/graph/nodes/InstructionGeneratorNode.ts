@@ -22,6 +22,20 @@ import { DataPersistence } from '../../utils/DataPersistence.js';
 export async function instructionGeneratorNode(
   state: ParallelDevStateType
 ): Promise<ParallelDevStateUpdate> {
+  // Check for cancellation early
+  if (state.metadata?.cancelled) {
+    console.log('🛑 [InstructionGeneratorNode] Workflow cancelled, skipping execution');
+    return {
+      logs: [{
+        timestamp: new Date(),
+        level: 'info',
+        source: 'InstructionGenerator',
+        message: 'Workflow cancelled, skipping instruction generation',
+      }],
+      failedProviders: AIProviderFactory.getFailedProviders(),
+    };
+  }
+
   // Sync failed providers from state
   AIProviderFactory.syncWithState(state.failedProviders || []);
 
@@ -184,6 +198,11 @@ ${context}
     verbose: false,
   });
 
+  // Check for abort before starting AI execution
+  if (config.abortSignal?.aborted) {
+    throw new Error('Execution aborted');
+  }
+
   for await (const message of provider.execute(prompt, {
     maxTurns: config.maxTurns || 10,
     cwd: config.baseRepoPath,
@@ -191,6 +210,12 @@ ${context}
     permissionMode: 'acceptEdits',
     includePartialMessages: true,
   })) {
+    // Check for abort in message loop
+    if (config.abortSignal?.aborted) {
+      console.log('🛑 [InstructionGeneratorNode] Abort detected in message loop, stopping iteration');
+      throw new Error('Execution aborted');
+    }
+
     // MessageHandlerでメッセージを処理
     await messageHandler.handleMessage(message);
   }

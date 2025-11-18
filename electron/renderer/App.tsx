@@ -7,6 +7,8 @@ import { TaskKanbanBoard } from '@/components/TaskKanbanBoard'
 import { LogViewer } from '@/components/LogViewer'
 import { WelcomeScreen } from '@/components/WelcomeScreen'
 import { PromptPanel } from '@/components/PromptPanel'
+import { StatusBar } from '@/components/StatusBar'
+import { Toaster } from '@/components/ui/toaster'
 import { useElectronSync } from './hooks/useElectronSync'
 import { useAppStore } from './store/appStore'
 
@@ -42,11 +44,17 @@ export default function App() {
           <BottomPanel>
             <LogViewer />
           </BottomPanel>
+
+          {/* Status Bar */}
+          <StatusBar />
         </>
       ) : (
         /* Welcome Screen */
         <WelcomeScreen />
       )}
+
+      {/* Toast Notifications */}
+      <Toaster />
     </div>
   )
 }

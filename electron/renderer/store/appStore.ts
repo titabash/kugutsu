@@ -3,6 +3,7 @@ import { devtools } from 'zustand/middleware'
 import type {
   Task,
   LogEntry,
+  ChatMessage,
   AppMetadata,
   DependencyGraph,
   Sprint,
@@ -26,8 +27,16 @@ interface AppState {
   logs: LogEntry[]
   maxLogs: number
 
+  // Chat Messages
+  chatMessages: ChatMessage[]
+  maxChatMessages: number
+
   // Metadata
   metadata: AppMetadata
+
+  // Execution State
+  executionStartTime: number | null
+  currentPhase: string | null
 
   // Graph
   dependencyGraph: DependencyGraph | null
@@ -73,6 +82,14 @@ interface AppState {
   clearLogs: () => void
   setLogFilter: (filter: Partial<AppState['logFilter']>) => void
 
+  // Actions - Chat Messages
+  addChatMessage: (message: ChatMessage) => void
+  addChatMessages: (messages: ChatMessage[]) => void
+  clearChatMessages: () => void
+  updateChatMessage: (id: string, updates: Partial<ChatMessage>) => void
+  setThinkingMessage: (nodeId: string, label: string, content: string) => void
+  clearThinkingMessage: (nodeId: string) => void
+
   // Actions - Metadata
   setMetadata: (metadata: Partial<AppMetadata>) => void
 
@@ -85,9 +102,10 @@ interface AppState {
   // Actions - UI
   setSelectedTaskId: (taskId: string | null) => void
 
-  // Actions - Control
-  pause: () => void
-  resume: () => void
+  // Actions - Execution State
+  startExecution: () => void
+  stopExecution: () => void
+  setCurrentPhase: (phase: string | null) => void
 
   // Actions - Sprints
   setSprints: (sprints: Sprint[]) => void
@@ -145,6 +163,11 @@ interface AppState {
 
   // Selectors - Node Flow
   getFlowNode: (nodeId: string) => FlowNode | undefined
+
+  // Selectors - Execution State
+  getExecutionDuration: () => number | null
+  getExecutionStatus: () => 'idle' | 'running' | 'paused' | 'error'
+  getProgressPercentage: () => number
 }
 
 /**
@@ -158,6 +181,8 @@ export const useAppStore = create<AppState>()(
       tasksById: new Map(),
       logs: [],
       maxLogs: 1000, // Keep last 1000 logs for performance
+      chatMessages: [],
+      maxChatMessages: 100, // Keep last 100 chat messages
       metadata: {
         totalTasks: 0,
         tasksCompleted: 0,
@@ -166,7 +191,6 @@ export const useAppStore = create<AppState>()(
         tasksFailed: 0,
         activeEngineers: 0,
         isRunning: false,
-        isPaused: false,
       },
       dependencyGraph: null,
       projectPath: null,
@@ -184,6 +208,8 @@ export const useAppStore = create<AppState>()(
       activeNodes: new Map(),
       nodeFlowData: null,
       currentExecutingNode: null,
+      executionStartTime: null,
+      currentPhase: null,
 
       // Task Actions
       setTasks: (tasks) => {
@@ -204,7 +230,6 @@ export const useAppStore = create<AppState>()(
               .map((t) => t.assignedEngineer)
           ).size,
           isRunning: get().metadata.isRunning,
-          isPaused: get().metadata.isPaused,
         }
 
         set({ tasks, tasksById, metadata })
@@ -282,6 +307,88 @@ export const useAppStore = create<AppState>()(
           logFilter: { ...state.logFilter, ...filter },
         })),
 
+      // Chat Message Actions
+      addChatMessage: (message) =>
+        set((state) => {
+          const chatMessages = [...state.chatMessages, message]
+
+          // Keep only the last maxChatMessages entries for performance
+          if (chatMessages.length > state.maxChatMessages) {
+            chatMessages.splice(0, chatMessages.length - state.maxChatMessages)
+          }
+
+          return { chatMessages }
+        }),
+
+      addChatMessages: (newMessages) =>
+        set((state) => {
+          const chatMessages = [...state.chatMessages, ...newMessages]
+
+          // Keep only the last maxChatMessages entries for performance
+          if (chatMessages.length > state.maxChatMessages) {
+            chatMessages.splice(0, chatMessages.length - state.maxChatMessages)
+          }
+
+          return { chatMessages }
+        }),
+
+      clearChatMessages: () => set({ chatMessages: [] }),
+
+      updateChatMessage: (id, updates) =>
+        set((state) => {
+          const chatMessages = [...state.chatMessages]
+          const index = chatMessages.findIndex((msg) => msg.id === id)
+
+          if (index !== -1) {
+            chatMessages[index] = { ...chatMessages[index], ...updates }
+          }
+
+          return { chatMessages }
+        }),
+
+      setThinkingMessage: (nodeId, label, content) =>
+        set((state) => {
+          const chatMessages = [...state.chatMessages]
+
+          // Format message with label
+          const formattedContent = `${label}: ${content}`
+
+          // Find existing thinking message for this node
+          const existingIndex = chatMessages.findIndex(
+            (msg) => msg.nodeId === nodeId && msg.isThinking
+          )
+
+          if (existingIndex !== -1) {
+            // Update existing thinking message
+            chatMessages[existingIndex] = {
+              ...chatMessages[existingIndex],
+              content: formattedContent,
+              timestamp: new Date(),
+            }
+          } else {
+            // Add new thinking message
+            chatMessages.push({
+              id: `thinking-${nodeId}-${Date.now()}`,
+              type: 'ai',
+              content: formattedContent,
+              timestamp: new Date(),
+              nodeId,
+              isThinking: true,
+            })
+          }
+
+          return { chatMessages }
+        }),
+
+      clearThinkingMessage: (nodeId) =>
+        set((state) => {
+          const chatMessages = state.chatMessages.filter(
+            (msg) => !(msg.nodeId === nodeId && msg.isThinking)
+          )
+
+          return { chatMessages }
+        }),
+
       // Metadata Actions
       setMetadata: (metadata) =>
         set((state) => ({
@@ -297,16 +404,22 @@ export const useAppStore = create<AppState>()(
       // UI Actions
       setSelectedTaskId: (taskId) => set({ selectedTaskId: taskId }),
 
-      // Control Actions
-      pause: () =>
+      // Execution State Actions
+      startExecution: () =>
         set((state) => ({
-          metadata: { ...state.metadata, isPaused: true },
+          metadata: { ...state.metadata, isRunning: true },
+          executionStartTime: Date.now(),
+          currentPhase: 'initializing',
         })),
 
-      resume: () =>
+      stopExecution: () =>
         set((state) => ({
-          metadata: { ...state.metadata, isPaused: false },
+          metadata: { ...state.metadata, isRunning: false },
+          executionStartTime: null,
+          currentPhase: null,
         })),
+
+      setCurrentPhase: (phase) => set({ currentPhase: phase }),
 
       // Sprint Actions
       setSprints: (sprints) => set({ sprints }),
@@ -544,6 +657,31 @@ export const useAppStore = create<AppState>()(
         const state = get()
         if (!state.nodeFlowData) return undefined
         return state.nodeFlowData.nodes.find((node) => node.id === nodeId)
+      },
+
+      // Execution State Selectors
+      getExecutionDuration: () => {
+        const state = get()
+        if (!state.executionStartTime) return null
+        return Date.now() - state.executionStartTime
+      },
+
+      getExecutionStatus: () => {
+        const state = get()
+        if (state.metadata.tasksFailed > 0 && !state.metadata.isRunning) {
+          return 'error'
+        }
+        if (state.metadata.isRunning) {
+          return 'running'
+        }
+        return 'idle'
+      },
+
+      getProgressPercentage: () => {
+        const state = get()
+        const { totalTasks, tasksCompleted } = state.metadata
+        if (totalTasks === 0) return 0
+        return Math.round((tasksCompleted / totalTasks) * 100)
       },
     }),
     { name: 'KugutsuAppStore' }

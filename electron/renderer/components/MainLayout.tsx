@@ -19,11 +19,17 @@ export function MainLayout({ leftPanel, taskPanel }: MainLayoutProps) {
         {leftPanel}
       </div>
 
-      {/* Right Panel: Tabs (Graph / Tasks / Sprints) */}
+      {/* Right Panel: Tabs (Agents / Tasks / Graph / Sprints) */}
       <div className="flex w-3/5 flex-col bg-muted/20">
-        <Tabs defaultValue="tasks" className="flex h-full flex-col">
+        <Tabs defaultValue="agents" className="flex h-full flex-col">
           <div className="border-b border-border bg-background">
             <TabsList className="h-12 w-full justify-start rounded-none border-0 bg-transparent p-0">
+              <TabsTrigger
+                value="agents"
+                className="h-12 rounded-none border-b-2 border-transparent px-6 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+              >
+                🤖 AIエージェント
+              </TabsTrigger>
               <TabsTrigger
                 value="tasks"
                 className="h-12 rounded-none border-b-2 border-transparent px-6 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
@@ -41,12 +47,6 @@ export function MainLayout({ leftPanel, taskPanel }: MainLayoutProps) {
                 className="h-12 rounded-none border-b-2 border-transparent px-6 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
               >
                 🏃 スプリント
-              </TabsTrigger>
-              <TabsTrigger
-                value="agents"
-                className="h-12 rounded-none border-b-2 border-transparent px-6 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
-              >
-                🤖 AIエージェント
               </TabsTrigger>
             </TabsList>
           </div>

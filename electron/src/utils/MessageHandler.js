@@ -1,0 +1,490 @@
+/**
+ * MessageHandler
+ *
+ * AI Provider からのストリーミングメッセージを処理し、
+ * ユーザーフレンドリーな進捗表示を提供します。
+ */
+/**
+ * MessageHandler
+ *
+ * AI実行中のメッセージを処理し、進捗状況を表示します。
+ *
+ * 使用例:
+ * ```typescript
+ * const handler = new MessageHandler({
+ *   maxTurns: 30,
+ *   nodeName: 'ProductOwner',
+ *   taskId: 'task-001'
+ * });
+ *
+ * for await (const message of provider.execute(prompt, {
+ *   maxTurns,
+ *   includePartialMessages: true,
+ * })) {
+ *   await handler.handleMessage(message);
+ * }
+ *
+ * // エラーチェック（重要）
+ * if (handler.getHasError()) {
+ *   throw new Error('AI実行がエラーで終了しました');
+ * }
+ *
+ * handler.complete(true, '完了しました');
+ * ```
+ */
+export class MessageHandler {
+    turnCount = 0;
+    options;
+    lastToolName = null;
+    dotCounter = 0;
+    hasError = false;
+    errorDetails;
+    constructor(options) {
+        this.options = options;
+        this.logStart();
+    }
+    /**
+     * 開始ログを表示
+     */
+    logStart() {
+        if (this.options.silent)
+            return;
+        console.log(`\n${'='.repeat(60)}`);
+        console.log(`🚀 ${this.options.nodeName} 開始`);
+        if (this.options.taskId) {
+            console.log(`   Task ID: ${this.options.taskId}`);
+        }
+        console.log(`   最大ターン数: ${this.options.maxTurns}`);
+        console.log(`${'='.repeat(60)}\n`);
+    }
+    /**
+     * メッセージを処理
+     */
+    async handleMessage(message) {
+        switch (message.type) {
+            case 'assistant':
+                this.handleAssistant(message);
+                // Check if assistant message contains error messages (e.g., "Weekly limit reached")
+                if (typeof message.content === 'string') {
+                    const contentLower = message.content.toLowerCase();
+                    if (contentLower.includes('weekly limit') ||
+                        contentLower.includes('monthly limit') ||
+                        contentLower.includes('usage limit') ||
+                        contentLower.includes('usage_limit') ||
+                        contentLower.includes('upgrade to pro') ||
+                        contentLower.includes('quota') ||
+                        contentLower.includes('limit reached') ||
+                        contentLower.includes('subscription') ||
+                        contentLower.includes('billing') ||
+                        contentLower.includes('hit your usage limit') ||
+                        contentLower.includes('purchase more credits')) {
+                        this.hasError = true;
+                        this.errorDetails = {
+                            subtype: 'rate_limit',
+                            message: message.content.trim(),
+                            errors: [message.content.trim()],
+                        };
+                    }
+                }
+                break;
+            case 'partial':
+                this.handlePartial(message);
+                break;
+            case 'system':
+                this.handleSystem(message);
+                break;
+            case 'result':
+                this.handleResult(message);
+                // resultメッセージでエラーを検出（Claude Agent SDK / Codex SDK仕様準拠）
+                if (message.content && !message.content.success) {
+                    this.hasError = true;
+                    // Claude Agent SDK / Codex SDK の errors フィールド（配列）から取得
+                    const errors = message.content.errors || [];
+                    // Codex SDK の error フィールドもチェック（errors配列がない場合）
+                    const errorField = message.content.error;
+                    const allErrors = errors.length > 0
+                        ? errors
+                        : errorField
+                            ? [errorField]
+                            : [];
+                    const errorMessage = allErrors.length > 0
+                        ? allErrors.join('; ')
+                        : `エラーが発生しました (subtype: ${message.content.subtype || 'unknown'})`;
+                    // エラー詳細をログ出力（デバッグ用）
+                    if (allErrors.length === 0 && !message.content.subtype && !this.options.silent) {
+                        console.warn(`⚠️  エラー詳細が不明です。message.content:`, JSON.stringify(message.content, null, 2));
+                    }
+                    // Check if error message contains permanent error patterns
+                    // This check should take priority over subtype (turn_failed, exception, etc.)
+                    const errorMessageLower = errorMessage.toLowerCase();
+                    const isPermanentError = (errorMessageLower.includes('weekly limit') ||
+                        errorMessageLower.includes('monthly limit') ||
+                        errorMessageLower.includes('usage limit') ||
+                        errorMessageLower.includes('usage_limit') ||
+                        errorMessageLower.includes('upgrade to pro') ||
+                        errorMessageLower.includes('upgrade to pro') ||
+                        errorMessageLower.includes('quota') ||
+                        errorMessageLower.includes('limit reached') ||
+                        errorMessageLower.includes('subscription') ||
+                        errorMessageLower.includes('billing') ||
+                        errorMessageLower.includes('rate limit') ||
+                        errorMessageLower.includes('rate_limit') ||
+                        errorMessageLower.includes('hit your usage limit') ||
+                        errorMessageLower.includes('purchase more credits'));
+                    // If error message contains usage limit patterns, always classify as rate_limit
+                    // This overrides subtype like turn_failed or exception
+                    const finalSubtype = isPermanentError
+                        ? 'rate_limit'
+                        : (message.content.subtype || 'unknown');
+                    this.errorDetails = {
+                        subtype: finalSubtype,
+                        message: errorMessage,
+                        errors: allErrors,
+                    };
+                }
+                break;
+            case 'user':
+                // ユーザーメッセージは通常表示不要
+                break;
+            default:
+                // 未知のメッセージタイプ
+                if (this.options.verbose) {
+                    console.log(`⚠️  未知のメッセージタイプ: ${message.type}`);
+                }
+        }
+    }
+    /**
+     * Assistantメッセージを処理
+     */
+    handleAssistant(message) {
+        if (!message.content)
+            return;
+        // サイレントモードではログをスキップ
+        if (this.options.silent)
+            return;
+        // ドット表示中なら改行
+        if (this.dotCounter > 0) {
+            console.log(''); // 改行
+            this.dotCounter = 0;
+        }
+        const text = typeof message.content === 'string'
+            ? message.content
+            : JSON.stringify(message.content);
+        // 最初の150文字のみ表示
+        const preview = text.length > 150
+            ? text.substring(0, 150) + '...'
+            : text;
+        console.log(`💬 AI: ${preview}`);
+    }
+    /**
+     * Partialメッセージ（ストリーミング中）を処理
+     */
+    handlePartial(message) {
+        // サイレントモードではログをスキップ
+        if (this.options.silent)
+            return;
+        if (!this.options.verbose) {
+            // 非詳細モード: ドットで進行表示
+            process.stdout.write('.');
+            this.dotCounter++;
+            // 60ドットごとに改行
+            if (this.dotCounter >= 60) {
+                console.log('');
+                this.dotCounter = 0;
+            }
+            return;
+        }
+        // 詳細モード: ストリーミングテキスト表示
+        if (message.content?.type === 'content_block_delta') {
+            const delta = message.content.delta;
+            if (delta?.text) {
+                process.stdout.write(delta.text);
+            }
+        }
+    }
+    /**
+     * Systemメッセージを処理
+     */
+    handleSystem(message) {
+        const content = message.content;
+        // サイレントモードではログをスキップ
+        if (this.options.silent)
+            return;
+        // ドット表示中なら改行
+        if (this.dotCounter > 0) {
+            console.log(''); // 改行
+            this.dotCounter = 0;
+        }
+        // ツール実行進捗（Claude Agent SDK）
+        if (content?.toolProgress) {
+            const { tool_name, elapsed_time_seconds } = content.toolProgress;
+            // 同じツールの進捗更新は行単位で更新
+            if (this.lastToolName === tool_name) {
+                // 前の行を上書き（ANSI escape code）
+                process.stdout.write(`\r🔧 ${tool_name} 実行中... (${elapsed_time_seconds}秒経過)`);
+            }
+            else {
+                // 新しいツール
+                if (this.lastToolName) {
+                    console.log(''); // 前のツールの改行
+                }
+                console.log(`🔧 ${tool_name} 実行中... (${elapsed_time_seconds}秒経過)`);
+                this.lastToolName = tool_name;
+            }
+            return;
+        }
+        // ツール名が変わったらリセット
+        this.lastToolName = null;
+        // コマンド実行（OpenAI Codex）
+        if (content?.commandExecution) {
+            const { command, output, exitCode, status } = content.commandExecution;
+            console.log(`⚙️  コマンド実行: ${command}`);
+            if (status && status !== 'in_progress') {
+                console.log(`   ステータス: ${status}`);
+            }
+            // 非ゼロの終了コードを表示（診断情報として重要）
+            if (exitCode !== undefined && exitCode !== 0) {
+                console.log(`   終了コード: ${exitCode}`);
+            }
+            // failedステータスの時は常にoutput（stderr含む）を表示
+            // verboseモードの時も表示
+            if (output && (status === 'failed' || this.options.verbose)) {
+                const preview = output.length > 500
+                    ? output.substring(0, 500) + '...'
+                    : output;
+                console.log(`   出力:\n${preview}`);
+            }
+            return;
+        }
+        // ファイル変更（OpenAI Codex）
+        if (content?.fileChange) {
+            const changeCount = content.fileChange.changes?.length || 0;
+            const status = content.fileChange.status;
+            const statusSuffix = status ? ` (${status})` : '';
+            console.log(`📝 ファイル変更: ${changeCount}件${statusSuffix}`);
+            return;
+        }
+        // MCP Tool Call（OpenAI Codex）
+        if (content?.mcpToolCall) {
+            const toolName = content.mcpToolCall.tool ?? content.mcpToolCall.tool_name ?? 'unknown';
+            const server = content.mcpToolCall.server ? `${content.mcpToolCall.server}/` : '';
+            const status = content.mcpToolCall.status ? ` (${content.mcpToolCall.status})` : '';
+            console.log(`🔌 MCP Tool: ${server}${toolName}${status}`);
+            return;
+        }
+        // その他のSystemメッセージ
+        if (this.options.verbose) {
+            console.log(`ℹ️  System: ${JSON.stringify(content).substring(0, 100)}`);
+        }
+    }
+    /**
+     * Resultメッセージ（完了）を処理
+     */
+    handleResult(message) {
+        // ターン数をインクリメント（各ターンの終わりでResultメッセージが送信される）
+        this.incrementTurnCount();
+        // サイレントモードではログをスキップ（ただしエラー検出は継続）
+        if (this.options.silent)
+            return;
+        // ドット表示中なら改行
+        if (this.dotCounter > 0) {
+            console.log(''); // 改行
+            this.dotCounter = 0;
+        }
+        // ツール進捗表示中なら改行
+        if (this.lastToolName) {
+            console.log('');
+            this.lastToolName = null;
+        }
+        console.log(`\n${'='.repeat(60)}`);
+        if (message.content?.success) {
+            console.log(`✅ ${this.options.nodeName} 完了`);
+            const tokenUsage = message.content.tokenUsage;
+            if (tokenUsage) {
+                console.log(`   トークン使用: ${tokenUsage.total || 0}`);
+            }
+            const duration = message.content.duration;
+            if (duration) {
+                console.log(`   所要時間: ${(duration / 1000).toFixed(2)}秒`);
+            }
+        }
+        else {
+            console.log(`❌ ${this.options.nodeName} 失敗`);
+            // エラー情報を詳細に表示
+            const content = message.content || {};
+            // 1. errors配列（複数エラー）
+            const errors = content.errors || [];
+            if (errors.length > 0) {
+                console.error(`   エラー: ${errors.join('; ')}`);
+            }
+            // 2. error文字列（単一エラー）
+            if (content.error && errors.length === 0) {
+                console.error(`   エラー: ${content.error}`);
+            }
+            // 3. subtype（エラー種別）
+            if (content.subtype) {
+                console.error(`   エラー種別: ${content.subtype}`);
+            }
+            // 4. エラー詳細がない場合、content全体を表示
+            if (errors.length === 0 && !content.error && !content.subtype) {
+                console.error(`   詳細情報:`, JSON.stringify(content, null, 2));
+            }
+            // 5. 追加情報（あれば）
+            if (content.message) {
+                console.error(`   メッセージ: ${content.message}`);
+            }
+        }
+        console.log(`${'='.repeat(60)}\n`);
+    }
+    /**
+     * 進捗状況をログ出力
+     */
+    logProgress(current, total, status) {
+        if (this.options.silent)
+            return;
+        console.log(`📊 進捗: [${current}/${total}] ${status}`);
+    }
+    /**
+     * 完了ログを表示
+     *
+     * 注意: handleResult()でエラーが検出されていた場合は、
+     *       このメソッドは何も表示せずにスキップされます。
+     *       これにより「❌ 失敗」と「✅ 正常完了」が両方表示される問題を防ぎます。
+     */
+    complete(success, summary) {
+        // サイレントモードではログをスキップ
+        if (this.options.silent)
+            return;
+        // エラーが検出されていたらスキップ
+        // （handleResult()で既に「❌ ... 失敗」が表示されているため）
+        if (this.hasError) {
+            if (this.options.verbose) {
+                console.log(`⚠️  [MessageHandler] complete()をスキップ: エラーが検出されています`);
+            }
+            return;
+        }
+        // ドット表示中なら改行
+        if (this.dotCounter > 0) {
+            console.log(''); // 改行
+            this.dotCounter = 0;
+        }
+        // ツール進捗表示中なら改行
+        if (this.lastToolName) {
+            console.log('');
+            this.lastToolName = null;
+        }
+        if (success) {
+            console.log(`✅ ${this.options.nodeName} 正常完了`);
+        }
+        else {
+            console.log(`❌ ${this.options.nodeName} エラー終了`);
+        }
+        if (summary) {
+            console.log(`   ${summary}`);
+        }
+        console.log('');
+    }
+    /**
+     * エラーチェックして完了処理を実行
+     *
+     * エラーがある場合は詳細なエラーメッセージを構築して例外をスロー。
+     * エラーがない場合は完了メッセージを表示。
+     *
+     * このメソッドは以下の既存パターンを1行で置き換えます：
+     * ```typescript
+     * if (handler.getHasError()) {
+     *   const details = handler.getErrorDetails();
+     *   // 22行のエラーメッセージ構築
+     *   throw new Error(errorMsg);
+     * }
+     * handler.complete(true, successMessage);
+     * ```
+     *
+     * @param successMessage 成功時のメッセージ
+     * @param nodeName ノード名（エラーメッセージ用、オプション）
+     * @throws {Error} エラーが検出された場合
+     *
+     * @example
+     * ```typescript
+     * handler.completeWithErrorCheck('要求分析が完了しました');
+     * handler.completeWithErrorCheck('タスク生成が完了しました', 'ProductOwner');
+     * ```
+     */
+    completeWithErrorCheck(successMessage, nodeName) {
+        if (this.hasError) {
+            const details = this.getErrorDetails();
+            // エラーメッセージの構築（既存パターンと同じロジック）
+            let errorMsg;
+            if (details?.message) {
+                errorMsg =
+                    details.subtype === 'error_max_turns'
+                        ? `AI実行がmaxTurns制限に到達しました: ${details.message}`
+                        : `AI実行中にエラーが発生しました: ${details.message}`;
+            }
+            else if (details?.errors && details.errors.length > 0) {
+                errorMsg = `AI実行中にエラーが発生しました: ${details.errors.join('; ')}`;
+            }
+            else {
+                errorMsg = `AI実行中にエラーが発生しました (subtype: ${details?.subtype || 'unknown'})`;
+                console.warn(`⚠️  エラー詳細が取得できませんでした。ErrorDetails:`, JSON.stringify(details, null, 2));
+            }
+            // ノード名をプレフィックスとして追加（オプション）
+            const prefix = nodeName ? `${nodeName}エラー: ` : '';
+            throw new Error(`${prefix}${errorMsg}`);
+        }
+        // エラーがない場合は通常のcomplete処理
+        this.complete(true, successMessage);
+    }
+    /**
+     * エラーが検出されているかどうかを取得
+     *
+     * @returns エラーが検出されている場合は true
+     */
+    getHasError() {
+        return this.hasError;
+    }
+    /**
+     * エラー詳細情報を取得
+     *
+     * @returns エラー詳細情報（エラーがない場合は undefined）
+     */
+    getErrorDetails() {
+        return this.errorDetails;
+    }
+    /**
+     * エラーログを表示
+     */
+    error(errorMessage, error) {
+        // サイレントモードではログをスキップ
+        if (this.options.silent)
+            return;
+        // ドット表示中なら改行
+        if (this.dotCounter > 0) {
+            console.log(''); // 改行
+            this.dotCounter = 0;
+        }
+        console.error(`\n❌ エラー: ${errorMessage}`);
+        if (error && this.options.verbose) {
+            console.error(`   詳細: ${error.message}`);
+            if (error.stack) {
+                console.error(`   Stack: ${error.stack}`);
+            }
+        }
+        console.log('');
+    }
+    /**
+     * 現在のターン数を取得
+     * @returns 現在のターン数
+     */
+    getTurnCount() {
+        return this.turnCount;
+    }
+    /**
+     * ターン数をインクリメント（内部使用）
+     * Result メッセージを受信したときに呼び出されます
+     */
+    incrementTurnCount() {
+        this.turnCount++;
+    }
+}
+//# sourceMappingURL=MessageHandler.js.map

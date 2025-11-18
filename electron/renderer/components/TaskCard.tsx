@@ -32,11 +32,14 @@ export function TaskCard({ task, onTaskClick }: TaskCardProps) {
     })
   }
 
+  const isActive = task.status === 'in_progress' || task.status === 'in_review'
+
   return (
     <Card
       className={cn(
         'cursor-pointer transition-all hover:shadow-lg hover:scale-[1.02]',
-        task.isConflictResolution && 'border-red-500 bg-red-50 dark:bg-red-950/20'
+        task.isConflictResolution && 'border-red-500 bg-red-50 dark:bg-red-950/20',
+        isActive && 'ring-2 ring-blue-400 shadow-lg animate-pulse'
       )}
       onClick={() => onTaskClick?.(task.id)}
     >

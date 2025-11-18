@@ -16,6 +16,147 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 All operations must be completed using only the local git repository. This is a hard requirement that must never be violated.
 
+## MANDATORY: Test-Driven Development (TDD)
+
+**ABSOLUTE REQUIREMENT**: You MUST follow Test-Driven Development (TDD) principles for ALL code changes. Writing implementation code before tests is STRICTLY PROHIBITED.
+
+### Non-Negotiable TDD Workflow
+
+**EVERY code change MUST follow this exact sequence:**
+
+```
+Step 1: Receive implementation request
+    ↓
+Step 2: 🚫 STOP - DO NOT write implementation code
+    ↓
+Step 3: ✅ Write test cases that define expected behavior
+    ↓
+Step 4: ✅ Run tests and VERIFY they fail (Red phase)
+    ↓
+Step 5: ✅ Commit the failing tests
+    ↓
+Step 6: ✅ Write MINIMAL implementation to pass tests (Green phase)
+    ↓
+Step 7: ✅ Run tests and VERIFY they pass
+    ↓
+Step 8: ✅ Refactor if needed (Refactor phase)
+    ↓
+Step 9: ✅ Run tests again to ensure refactoring didn't break anything
+    ↓
+Step 10: ✅ Commit the implementation
+```
+
+### Mandatory Rules
+
+1. **NEVER write implementation code before tests**
+   - Tests MUST be written first
+   - Tests MUST fail initially (proving they test real behavior)
+   - Implementation follows ONLY after tests are in place
+
+2. **Test completeness requirements**
+   - All new functions/methods MUST have tests
+   - All edge cases MUST be covered
+   - All error paths MUST be tested
+   - Integration points MUST have integration tests
+
+3. **Verification requirements**
+   - Tests MUST be run and shown to fail before implementation
+   - Tests MUST be run and shown to pass after implementation
+   - Test output MUST be shared with the user
+
+4. **No exceptions allowed**
+   - "Quick fixes" require tests
+   - "Trivial changes" require tests
+   - "Obvious implementations" require tests
+   - Bug fixes require regression tests FIRST
+
+### Test Framework Requirements
+
+**For this project, use:**
+
+- **Main codebase**: Vitest or Jest for Node.js/TypeScript
+- **Electron UI**: Vitest + @testing-library/react for React components
+- **Integration tests**: Full workflow testing with mocked dependencies
+
+### Examples
+
+#### ❌ PROHIBITED - Implementation First
+```typescript
+// Writing implementation without tests first
+export function calculateTotal(items: Item[]): number {
+  return items.reduce((sum, item) => sum + item.price, 0)
+}
+```
+
+#### ✅ REQUIRED - Tests First
+```typescript
+// Step 1: Write test FIRST
+import { describe, it, expect } from 'vitest'
+import { calculateTotal } from './calculator'
+
+describe('calculateTotal', () => {
+  it('should return 0 for empty array', () => {
+    expect(calculateTotal([])).toBe(0)
+  })
+
+  it('should sum item prices correctly', () => {
+    const items = [
+      { price: 100 },
+      { price: 200 },
+      { price: 300 },
+    ]
+    expect(calculateTotal(items)).toBe(600)
+  })
+
+  it('should handle negative prices', () => {
+    const items = [{ price: -50 }]
+    expect(calculateTotal(items)).toBe(-50)
+  })
+})
+
+// Step 2: Run tests - VERIFY they fail
+// Step 3: Commit failing tests
+// Step 4: NOW write implementation
+// Step 5: Run tests - VERIFY they pass
+// Step 6: Commit implementation
+```
+
+### Violation Protocol
+
+**If you realize you wrote implementation code before tests:**
+
+1. 🚫 **STOP immediately** - Do not continue implementation
+2. ⚠️ **Acknowledge the violation** - Inform the user explicitly
+3. 🔄 **Ask for direction** - Give user two options:
+   - **Option A**: Delete implementation and start over with TDD
+   - **Option B**: Write comprehensive tests now to cover existing implementation
+4. ✅ **Follow user's choice** and complete testing properly
+
+### Why This Is Non-Negotiable
+
+- **Quality Assurance**: Tests catch bugs before they reach production
+- **Design Improvement**: Writing tests first leads to better API design
+- **Documentation**: Tests serve as living documentation
+- **Regression Prevention**: Tests prevent future changes from breaking existing functionality
+- **Confidence**: Comprehensive tests enable fearless refactoring
+- **Professional Standard**: TDD is the industry best practice
+
+### Consequences of Violation
+
+**If you implement without TDD:**
+- ❌ Code quality is not verified
+- ❌ Edge cases are likely missed
+- ❌ Future refactoring becomes risky
+- ❌ Regression bugs become likely
+- ❌ User trust is damaged
+- ❌ Professional standards are violated
+
+### Golden Rule
+
+> **"RED → GREEN → REFACTOR. NO EXCEPTIONS. NO SHORTCUTS. TDD ALWAYS."**
+
+**This is not optional. This is not negotiable. This is MANDATORY.**
+
 ## AI-First Development Principles
 
 ### No Hardcoded Logic Rule

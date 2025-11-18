@@ -319,6 +319,12 @@ export interface ParallelDevConfig {
    * AI provider configuration
    */
   provider?: 'claude' | 'codex' | 'mock';
+
+  /**
+   * Abort signal for cancelling execution
+   * When this signal is aborted, all AI operations should terminate immediately
+   */
+  abortSignal?: AbortSignal;
 }
 
 /**

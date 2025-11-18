@@ -43,9 +43,24 @@ import { MessageHandler } from '../../utils/MessageHandler.js';
 export async function reviewNode(
   state: ParallelDevStateType
 ): Promise<ParallelDevStateUpdate> {
-  const { config, tasks, tasksPath, activeSprint, globalTasks, currentTaskId } = state;
+  const { config, tasks, tasksPath, activeSprint, globalTasks, currentTaskId, metadata } = state;
   const maxTurns = config.maxTurns || 50;
   const startTime = Date.now();
+
+  // Check for cancellation early
+  if (metadata?.cancelled) {
+    console.log('🛑 [ReviewNode] Workflow cancelled, skipping execution');
+    return {
+      logs: [
+        {
+          timestamp: new Date(),
+          level: 'info',
+          source: 'ReviewNode',
+          message: 'Workflow cancelled, skipping review',
+        },
+      ],
+    };
+  }
 
   // Retrieve task ID from state (Send API pattern)
   // LangGraph Send API sets currentTaskId in state when calling this node
@@ -287,6 +302,11 @@ REVIEW_STATUS: APPROVED または CHANGES_REQUESTED
           taskId,
         });
 
+        // Check for abort before starting AI execution
+        if (state.config.abortSignal?.aborted) {
+          throw new Error('Execution aborted');
+        }
+
         for await (const message of provider.execute(reviewPrompt, {
           maxTurns,
           cwd: taskArtifact.worktreePath,
@@ -294,6 +314,12 @@ REVIEW_STATUS: APPROVED または CHANGES_REQUESTED
           permissionMode: 'acceptEdits',
           includePartialMessages: true,
         })) {
+          // Check for abort in message loop
+          if (state.config.abortSignal?.aborted) {
+            console.log('🛑 [ReviewNode] Abort detected in message loop, stopping iteration');
+            throw new Error('Execution aborted');
+          }
+
           // Handle message for progress display
           await handler.handleMessage(message);
 

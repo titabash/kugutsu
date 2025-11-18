@@ -46,8 +46,23 @@ import { execSync } from 'child_process';
 export async function engineerNode(
   state: ParallelDevStateType
 ): Promise<ParallelDevStateUpdate> {
-  const { config, tasks, tasksPath, activeSprint, currentTaskId } = state;
+  const { config, tasks, tasksPath, activeSprint, currentTaskId, metadata } = state;
   const startTime = Date.now();
+
+  // Check for cancellation early
+  if (metadata?.cancelled) {
+    console.log('🛑 [EngineerNode] Workflow cancelled, skipping execution');
+    return {
+      logs: [
+        {
+          timestamp: new Date(),
+          level: 'info',
+          source: 'EngineerNode',
+          message: 'Workflow cancelled, skipping task execution',
+        },
+      ],
+    };
+  }
 
   // Retrieve task ID from state (Send API pattern)
   // LangGraph Send API sets currentTaskId in state when calling this node
@@ -699,6 +714,11 @@ ${dependenciesSection}
           taskId,
         });
 
+        // Check for abort before starting AI execution
+        if (state.config.abortSignal?.aborted) {
+          throw new Error('Execution aborted');
+        }
+
         for await (const message of provider.execute(implementationPrompt, {
           maxTurns: state.config.maxTurns,
           cwd: taskArtifact.worktreePath,
@@ -715,6 +735,12 @@ This is a MANDATORY step. Failure to set up the environment will cause implement
           resume: taskArtifact.sessionId,
           includePartialMessages: true,
         })) {
+          // Check for abort in message loop
+          if (state.config.abortSignal?.aborted) {
+            console.log('🛑 [EngineerNode] Abort detected in message loop, stopping iteration');
+            throw new Error('Execution aborted');
+          }
+
           collectedMessages.push(message);
 
           // Capture session ID for potential conflict resolution

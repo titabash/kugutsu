@@ -25,16 +25,6 @@ const electronAPI = {
   },
 
   /**
-   * Pause execution
-   */
-  pauseExecution: () => ipcRenderer.invoke('pause-execution'),
-
-  /**
-   * Resume execution
-   */
-  resumeExecution: () => ipcRenderer.invoke('resume-execution'),
-
-  /**
    * Cancel execution
    */
   cancelExecution: () => ipcRenderer.invoke('cancel-execution'),

@@ -330,7 +330,13 @@ export const ParallelDevState = Annotation.Root({
     /**
      * Current workflow phase
      */
-    phase?: 'analysis' | 'development' | 'review' | 'merge' | 'complete';
+    phase?: 'analysis' | 'development' | 'review' | 'merge' | 'complete' | 'cancelled';
+
+    /**
+     * Whether the workflow has been cancelled
+     * This flag is checked by all nodes to abort execution early
+     */
+    cancelled?: boolean;
 
     /**
      * Total number of tasks generated

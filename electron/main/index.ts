@@ -458,50 +458,24 @@ ipcMain.handle('open-project-dialog', async (event) => {
 // ==========================================
 
 /**
- * Pause execution (LangGraph workflow)
- */
-ipcMain.handle('pause-execution', async (event) => {
-  try {
-    // Request pause to parent process
-    if (process.send) {
-      process.send({ type: 'pause-execution' });
-      return { success: true };
-    }
-    return { success: false, message: 'No parent process available' };
-  } catch (error) {
-    console.error('[Electron Main] Failed to pause execution:', error);
-    return { success: false, message: error instanceof Error ? error.message : 'Unknown error' };
-  }
-});
-
-/**
- * Resume execution (LangGraph workflow)
- */
-ipcMain.handle('resume-execution', async (event) => {
-  try {
-    // Request resume to parent process
-    if (process.send) {
-      process.send({ type: 'resume-execution' });
-      return { success: true };
-    }
-    return { success: false, message: 'No parent process available' };
-  } catch (error) {
-    console.error('[Electron Main] Failed to resume execution:', error);
-    return { success: false, message: error instanceof Error ? error.message : 'Unknown error' };
-  }
-});
-
-/**
  * Cancel execution (LangGraph workflow)
  */
 ipcMain.handle('cancel-execution', async (event) => {
   try {
-    // Request cancellation to parent process
-    if (process.send) {
-      process.send({ type: 'cancel-execution' });
-      return { success: true, message: 'Execution cancelled' };
+    console.log('[Electron Main] ===== cancel-execution handler called =====');
+    console.log('[Electron Main] orchestrator exists:', !!orchestrator);
+
+    if (!orchestrator) {
+      console.warn('[Electron Main] No orchestrator instance found');
+      return { success: false, message: 'No execution in progress' };
     }
-    return { success: false, message: 'No parent process available' };
+
+    console.log('[Electron Main] Calling orchestrator.cancel()...');
+    // Cancel the orchestrator
+    orchestrator.cancel();
+    console.log('[Electron Main] orchestrator.cancel() completed');
+
+    return { success: true, message: 'Execution cancelled' };
   } catch (error) {
     console.error('[Electron Main] Failed to cancel execution:', error);
     return { success: false, message: error instanceof Error ? error.message : 'Unknown error' };
@@ -579,12 +553,18 @@ ipcMain.handle('execute-prompt', async (event, { prompt, options }: {
   }
 
   try {
-    // Initialize Orchestrator if needed
-    if (!orchestrator) {
-      orchestrator = new ParallelDevOrchestrator();
-      orchestrator.setWindow(mainWindow);
-      console.log('[Electron Main] Orchestrator initialized');
+    // Initialize Orchestrator (always create new instance for each execution)
+    console.log('[Electron Main] Cleaning up previous orchestrator if exists...');
+    if (orchestrator) {
+      console.log('[Electron Main] Destroying previous orchestrator...');
+      orchestrator.destroy();
+      orchestrator = null;
     }
+
+    console.log('[Electron Main] Creating new orchestrator instance...');
+    orchestrator = new ParallelDevOrchestrator();
+    orchestrator.setWindow(mainWindow);
+    console.log('[Electron Main] New orchestrator initialized');
 
     // Build ParallelDevConfig
     const config: ParallelDevConfig = {
@@ -598,13 +578,18 @@ ipcMain.handle('execute-prompt', async (event, { prompt, options }: {
     };
 
     console.log('[Electron Main] Starting workflow execution...');
+    console.log('[Electron Main] orchestrator instance ID:', (orchestrator as any).__id || 'no-id');
 
     // Execute workflow (non-blocking - runs in background)
-    orchestrator.execute({
+    const executionPromise = orchestrator.execute({
       userRequest: prompt,
       config,
       window: mainWindow,
-    }).then(finalState => {
+    });
+
+    console.log('[Electron Main] execute() called, running in background...');
+
+    executionPromise.then(finalState => {
       console.log('[Electron Main] Workflow completed successfully');
       console.log(`[Electron Main] Tasks completed: ${finalState.completedTasks.length}/${finalState.tasks.length}`);
 
@@ -615,6 +600,9 @@ ipcMain.handle('execute-prompt', async (event, { prompt, options }: {
           tasksTotal: finalState.tasks.length,
         });
       }
+
+      // Keep orchestrator instance alive for debugging
+      console.log('[Electron Main] Orchestrator still available for inspection');
     }).catch(error => {
       console.error('[Electron Main] Workflow execution failed:', error);
 

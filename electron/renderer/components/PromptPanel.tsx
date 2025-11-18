@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { Send, Settings, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -7,6 +7,7 @@ import { Separator } from '@/components/ui/separator'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Label } from '@/components/ui/label'
 import { useAppStore } from '../store/appStore'
+import type { ChatMessage } from '../types'
 
 type AIProvider = 'claude' | 'codex' | 'mock'
 
@@ -18,69 +19,45 @@ declare const electronAPI: {
   }) => Promise<void>
 }
 
-interface Message {
-  id: string
-  type: 'user' | 'system' | 'ai'
-  content: string
-  timestamp: Date
-}
-
 export const PromptPanel: React.FC = () => {
   const [prompt, setPrompt] = useState('')
-  const [messages, setMessages] = useState<Message[]>([])
   const [isExecuting, setIsExecuting] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [provider, setProvider] = useState<AIProvider>('mock')
   const [maxEngineers, setMaxEngineers] = useState(3)
   const [maxTurns, setMaxTurns] = useState(30)
 
-  const { metadata } = useAppStore()
+  const { metadata, chatMessages, addChatMessage } = useAppStore()
+  const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const handleSubmit = async () => {
     if (!prompt.trim() || isExecuting) return
 
-    const userMessage: Message = {
-      id: Date.now().toString(),
+    // Add user message to chat
+    addChatMessage({
+      id: `${Date.now()}-${Math.random()}`,
       type: 'user',
       content: prompt,
-      timestamp: new Date()
-    }
+      timestamp: new Date(),
+    })
 
-    setMessages((prev) => [...prev, userMessage])
+    const currentPrompt = prompt
     setPrompt('')
     setIsExecuting(true)
 
-    const providerLabel = provider === 'claude' ? 'Claude' : provider === 'codex' ? 'Codex' : 'Mock'
-    const systemMessage: Message = {
-      id: (Date.now() + 1).toString(),
-      type: 'system',
-      content: `実行中... (Provider: ${providerLabel}, 最大${maxEngineers}エンジニア, ${maxTurns}ターン)`,
-      timestamp: new Date()
-    }
-    setMessages((prev) => [...prev, systemMessage])
-
     try {
-      await electronAPI.executePrompt(prompt, {
+      await electronAPI.executePrompt(currentPrompt, {
         provider,
         maxEngineers,
         maxTurns
       })
-
-      const successMessage: Message = {
-        id: (Date.now() + 2).toString(),
-        type: 'ai',
-        content: 'タスクの実行を開始しました。進捗は右側のビューで確認できます。',
-        timestamp: new Date()
-      }
-      setMessages((prev) => [...prev, successMessage])
     } catch (error) {
-      const errorMessage: Message = {
-        id: (Date.now() + 3).toString(),
+      addChatMessage({
+        id: `${Date.now()}-${Math.random()}`,
         type: 'system',
         content: `エラー: ${error instanceof Error ? error.message : '不明なエラー'}`,
-        timestamp: new Date()
-      }
-      setMessages((prev) => [...prev, errorMessage])
+        timestamp: new Date(),
+      })
     } finally {
       setIsExecuting(false)
     }
@@ -92,6 +69,11 @@ export const PromptPanel: React.FC = () => {
       handleSubmit()
     }
   }
+
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [chatMessages])
 
   return (
     <div className="flex h-full flex-col">
@@ -173,7 +155,7 @@ export const PromptPanel: React.FC = () => {
       {/* Messages */}
       <ScrollArea className="flex-1 p-4">
         <div className="space-y-4">
-          {messages.length === 0 ? (
+          {chatMessages.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center py-12 text-center text-muted-foreground">
               <p className="mb-2 text-sm">
                 AIエンジニアに指示を送信してください
@@ -183,37 +165,68 @@ export const PromptPanel: React.FC = () => {
               </p>
             </div>
           ) : (
-            messages.map((message) => (
-              <div
-                key={message.id}
-                className={`rounded-lg p-3 ${
-                  message.type === 'user'
-                    ? 'bg-blue-500/10 border border-blue-500/20'
-                    : message.type === 'system'
-                    ? 'bg-yellow-500/10 border border-yellow-500/20'
-                    : 'bg-muted'
-                }`}
-              >
-                <div className="mb-1 flex items-center justify-between">
-                  <span className="text-xs font-medium text-muted-foreground">
-                    {message.type === 'user'
-                      ? 'あなた'
+            <>
+              {chatMessages.map((message) => (
+                <div
+                  key={message.id}
+                  data-thinking={message.isThinking ? 'true' : undefined}
+                  data-streaming={message.isStreaming ? 'true' : undefined}
+                  className={`rounded-lg p-3 ${
+                    message.type === 'user'
+                      ? 'bg-blue-500/10 border border-blue-500/20'
                       : message.type === 'system'
-                      ? 'システム'
-                      : 'AI'}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {message.timestamp.toLocaleTimeString()}
-                  </span>
+                      ? 'bg-yellow-500/10 border border-yellow-500/20'
+                      : 'bg-green-500/10 border border-green-500/20'
+                  } ${message.isThinking ? 'animate-pulse border-purple-500/50' : ''}`}
+                >
+                  <div className="mb-1 flex items-center justify-between">
+                    <span className="text-xs font-medium text-muted-foreground">
+                      {message.type === 'user'
+                        ? 'あなた'
+                        : message.type === 'system'
+                        ? 'システム'
+                        : 'Product Owner AI'}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {message.timestamp.toLocaleTimeString()}
+                    </span>
+                  </div>
+                  <p className="text-sm whitespace-pre-wrap">
+                    {message.content}
+                    {message.isStreaming && (
+                      <span className="inline-block ml-1 animate-pulse">▋</span>
+                    )}
+                  </p>
                 </div>
-                <p className="text-sm">{message.content}</p>
-              </div>
-            ))
+              ))}
+              <div ref={messagesEndRef} />
+            </>
           )}
         </div>
       </ScrollArea>
 
       <Separator />
+
+      {/* Loading Spinner */}
+      {metadata.isRunning && (
+        <div
+          className="border-t border-border bg-muted/10 p-3"
+          data-loading-spinner="true"
+        >
+          <div className="flex items-center gap-3">
+            <Loader2 className="h-4 w-4 animate-spin text-primary" />
+            <div className="flex-1">
+              <p className="text-sm font-medium">実行中...</p>
+              {/* Show current thinking nodes */}
+              {chatMessages.filter(msg => msg.isThinking).map(msg => (
+                <p key={msg.id} className="text-xs text-muted-foreground">
+                  {msg.content}
+                </p>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Input Area */}
       <div className="p-4">

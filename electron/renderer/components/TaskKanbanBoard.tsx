@@ -113,10 +113,15 @@ export function TaskKanbanBoard() {
           return (
             <div key={column.status} className="flex min-w-0 flex-col" data-column={column.status}>
               {/* Column Header */}
-              <div className={cn('mb-3 rounded-lg p-3', column.bgColor)}>
+              <div className={cn('mb-3 rounded-lg p-3', column.bgColor, {
+                'ring-2 ring-blue-400 animate-pulse': column.status === 'in_progress' && taskCount > 0,
+                'ring-2 ring-orange-400 animate-pulse': column.status === 'in_review' && taskCount > 0,
+              })}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <span className="text-lg">{column.icon}</span>
+                    <span className={cn('text-lg', {
+                      'animate-bounce': column.status === 'in_progress' && taskCount > 0,
+                    })}>{column.icon}</span>
                     <h3 className={cn('text-sm font-semibold', column.color)}>{column.label}</h3>
                   </div>
                   <Badge variant="secondary" className={cn('text-xs', column.color)}>

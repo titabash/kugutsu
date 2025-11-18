@@ -95,6 +95,20 @@ export interface LogEntry {
 }
 
 /**
+ * Chat message
+ */
+export interface ChatMessage {
+  id: string
+  type: 'user' | 'system' | 'ai'
+  content: string
+  timestamp: Date
+  nodeId?: string
+  data?: Record<string, unknown>
+  isThinking?: boolean    // AIが思考中かどうか
+  isStreaming?: boolean   // メッセージがストリーミング中かどうか
+}
+
+/**
  * Application metadata
  */
 export interface AppMetadata {
@@ -105,7 +119,6 @@ export interface AppMetadata {
   tasksFailed: number
   activeEngineers: number
   isRunning: boolean
-  isPaused: boolean
   startedAt?: Date
   completedAt?: Date
 }

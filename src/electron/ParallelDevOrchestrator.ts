@@ -42,6 +42,8 @@ export class ParallelDevOrchestrator {
   private window: BrowserWindow | null = null;
   private stateStreamManager: StateStreamManager | null = null;
   private progressManager: UnifiedProgressManager | null = null;
+  private isCancelled: boolean = false;
+  private abortController: AbortController | null = null;
 
   constructor() {
     // Initialize StateStreamManager
@@ -57,6 +59,25 @@ export class ParallelDevOrchestrator {
 
     // Connect UnifiedProgressManager to StateStreamManager
     this.setupProgressCallbacks();
+  }
+
+  /**
+   * Cancel the current execution
+   */
+  public cancel(): void {
+    console.log('🛑 [ParallelDevOrchestrator] cancel() called');
+    console.log('🛑 [ParallelDevOrchestrator] Setting isCancelled flag to true');
+    this.isCancelled = true;
+    console.log('🛑 [ParallelDevOrchestrator] isCancelled =', this.isCancelled);
+
+    // Also abort via AbortController if available
+    if (this.abortController) {
+      console.log('🛑 [ParallelDevOrchestrator] Calling abortController.abort()');
+      this.abortController.abort();
+      console.log('🛑 [ParallelDevOrchestrator] AbortController aborted');
+    } else {
+      console.log('⚠️ [ParallelDevOrchestrator] No AbortController available');
+    }
   }
 
   /**
@@ -115,6 +136,22 @@ export class ParallelDevOrchestrator {
   async execute(orchestratorConfig: OrchestratorConfig): Promise<ParallelDevStateType> {
     const { userRequest, config, window } = orchestratorConfig;
 
+    // Reset cancellation flag
+    this.isCancelled = false;
+    console.log('🔄 [ParallelDevOrchestrator] isCancelled flag reset to false');
+
+    // Create new AbortController for this execution
+    this.abortController = new AbortController();
+    console.log('🔄 [ParallelDevOrchestrator] New AbortController created');
+
+    // Inject abortSignal into config
+    const configWithAbort: ParallelDevConfig = {
+      ...config,
+      abortSignal: this.abortController.signal,
+    };
+
+    console.log('🔄 [ParallelDevOrchestrator] AbortSignal injected into config');
+
     // Set window if provided
     if (window) {
       this.setWindow(window);
@@ -135,8 +172,8 @@ export class ParallelDevOrchestrator {
     let currentState: ParallelDevStateType | null = null;
 
     try {
-      // Create initial state
-      const initialState = createInitialState(userRequest, config);
+      // Create initial state with abortSignal in config
+      const initialState = createInitialState(userRequest, configWithAbort);
       currentState = initialState;
 
       // Compile Unified Scrum Workflow Graph
@@ -167,7 +204,44 @@ export class ParallelDevOrchestrator {
         },
       } as any);
 
+      console.log('▶️ [ParallelDevOrchestrator] Stream started, entering event loop...');
+
       for await (const event of stream) {
+        // Check for cancellation at the beginning of each iteration
+        if (this.isCancelled || this.abortController?.signal.aborted) {
+          console.log('🛑 [ParallelDevOrchestrator] Cancellation detected at loop start');
+          console.log('🛑 [ParallelDevOrchestrator] isCancelled =', this.isCancelled);
+          console.log('🛑 [ParallelDevOrchestrator] aborted =', this.abortController?.signal.aborted);
+          console.log('🛑 Execution cancelled by user');
+
+          // Update finalState with cancelled flag
+          finalState = {
+            ...finalState,
+            metadata: {
+              ...finalState.metadata,
+              cancelled: true,
+              phase: 'cancelled',
+              completedAt: new Date(),
+            },
+          };
+
+          // Send cancellation event to UI
+          if (this.stateStreamManager) {
+            console.log('🛑 [ParallelDevOrchestrator] Sending cancelled state to UI...');
+            await this.stateStreamManager.processStateUpdate(finalState);
+            console.log('🛑 [ParallelDevOrchestrator] Cancelled state sent to UI');
+          }
+
+          // Update currentState for error handling
+          currentState = finalState;
+
+          // Break out of the stream loop
+          console.log('🛑 [ParallelDevOrchestrator] Breaking out of stream loop');
+          break;
+        }
+
+        console.log('📨 [ParallelDevOrchestrator] Processing stream event...');
+
         // Handle different stream modes
         // When multiple streamModes are specified, LangGraph may return events in different formats
         // We need to detect the event type and route to appropriate handlers
@@ -217,6 +291,30 @@ export class ParallelDevOrchestrator {
 
       return completionState;
     } catch (error) {
+      // Check if this is an abort error (cancellation)
+      if (error instanceof Error && (error.name === 'AbortError' || this.isCancelled)) {
+        console.log('🛑 [ParallelDevOrchestrator] Execution aborted/cancelled');
+
+        // Send cancellation state to UI
+        if (this.stateStreamManager && currentState) {
+          const cancelledState: ParallelDevStateType = {
+            ...currentState,
+            metadata: {
+              ...currentState.metadata,
+              phase: 'cancelled',
+              completedAt: new Date(),
+            },
+          };
+          await this.stateStreamManager.processStateUpdate(cancelledState);
+
+          // Return cancelled state
+          return cancelledState;
+        }
+
+        // If no currentState, return initial state with cancelled phase
+        throw new Error('Execution cancelled by user');
+      }
+
       console.error('❌ Orchestrator エラー:', error);
       // Send error via StateStreamManager
       if (this.stateStreamManager && currentState) {

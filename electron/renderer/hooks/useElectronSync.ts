@@ -1,6 +1,20 @@
 import { useEffect } from 'react'
 import { useAppStore } from '../store/appStore'
 import type { Task, LogEntry } from '../types'
+import { toast } from '@/hooks/use-toast'
+
+/**
+ * Important nodes that should show thinking messages in the chat
+ */
+const IMPORTANT_NODES: Record<string, { label: string; message: string }> = {
+  ProductOwnerNode: { label: 'Product Owner', message: 'タスクを分析中...' },
+  EngineerNode: { label: 'Engineer', message: 'コードを実装中...' },
+  ReviewNode: { label: 'Tech Lead', message: 'コードをレビュー中...' },
+  DirectorNode: { label: 'Director', message: 'ストーリーマッピングを作成中...' },
+  SprintPlanningNode: { label: 'Sprint Planning', message: 'スプリント計画中...' },
+  MergeCoordinatorNode: { label: 'Merge Coordinator', message: 'マージを調整中...' },
+  TechLeadDesignNode: { label: 'Tech Lead', message: '設計をレビュー中...' },
+}
 
 /**
  * Synchronize Electron IPC events with Zustand store
@@ -24,6 +38,14 @@ export function useElectronSync() {
     setNodeFlowData,
     setCurrentExecutingNode,
     updateNodeFlowStatus,
+    startExecution,
+    stopExecution,
+    setCurrentPhase,
+    addChatMessage,
+    addChatMessages,
+    updateChatMessage,
+    setThinkingMessage,
+    clearThinkingMessage,
   } = useAppStore()
 
   useEffect(() => {
@@ -47,6 +69,8 @@ export function useElectronSync() {
         switch (event.type) {
           case 'state-init':
             // Initial state - set all data
+            startExecution()
+
             if (event.data.tasks) {
               setTasks(event.data.tasks)
             }
@@ -64,7 +88,24 @@ export function useElectronSync() {
                   ? new Date(event.data.metadata.startedAt)
                   : undefined,
               })
+
+              if (event.data.metadata.phase) {
+                setCurrentPhase(event.data.metadata.phase)
+              }
             }
+
+            // Add system message to chat
+            addChatMessage({
+              id: `${Date.now()}-${Math.random()}`,
+              type: 'system',
+              content: 'AIエージェントの実行を開始しました',
+              timestamp: new Date(event.timestamp),
+            })
+
+            toast({
+              title: 'AI実行開始',
+              description: 'AIエージェントの実行を開始しました',
+            })
             break
 
           case 'node-started':
@@ -83,6 +124,12 @@ export function useElectronSync() {
                 source: event.data.nodeId,
                 message: `🚀 ノード開始: ${event.data.nodeId}`,
               })
+
+              // Show thinking message for important nodes
+              const nodeInfo = IMPORTANT_NODES[event.data.nodeId]
+              if (nodeInfo) {
+                setThinkingMessage(event.data.nodeId, nodeInfo.label, nodeInfo.message)
+              }
             }
             break
 
@@ -112,6 +159,58 @@ export function useElectronSync() {
                   duration ? ` (${(duration / 1000).toFixed(1)}s)` : ''
                 }`,
               })
+
+              // Add chat message for important node completion
+              const nodeInfo = IMPORTANT_NODES[event.data.nodeId]
+              if (nodeInfo && event.data.result) {
+                // Clear thinking message first
+                clearThinkingMessage(event.data.nodeId)
+
+                const result = event.data.result
+                let message = ''
+
+                // ProductOwner has special formatting for tasks
+                if (event.data.nodeId === 'ProductOwnerNode') {
+                  message = 'タスクの分析が完了しました。'
+
+                  // Extract tasks information from result
+                  if (result.tasks && Array.isArray(result.tasks)) {
+                    message = `タスクの分析が完了しました。${result.tasks.length}個のタスクを作成しました。`
+
+                    // Add task titles to message
+                    if (result.tasks.length > 0) {
+                      const taskTitles = result.tasks.slice(0, 3).map((t: any) => `・${t.title}`).join('\n')
+                      message += `\n\n主なタスク:\n${taskTitles}`
+                      if (result.tasks.length > 3) {
+                        message += `\n...他${result.tasks.length - 3}個`
+                      }
+                    }
+                  } else if (result.message) {
+                    message = result.message
+                  }
+                } else {
+                  // For other nodes, use result.message or default completion message
+                  const defaultMessages: Record<string, string> = {
+                    EngineerNode: 'コードの実装が完了しました。',
+                    ReviewNode: 'コードレビューが完了しました。',
+                    DirectorNode: 'ストーリーマッピングが完了しました。',
+                    SprintPlanningNode: 'スプリント計画が完了しました。',
+                    MergeCoordinatorNode: 'マージが完了しました。',
+                    TechLeadDesignNode: '設計レビューが完了しました。',
+                  }
+
+                  message = result.message || defaultMessages[event.data.nodeId] || `${nodeInfo.label}の処理が完了しました。`
+                }
+
+                addChatMessage({
+                  id: `${Date.now()}-${Math.random()}`,
+                  type: 'ai',
+                  content: message,
+                  timestamp: completedAt,
+                  nodeId: event.data.nodeId,
+                  data: result,
+                })
+              }
             }
             break
 
@@ -140,12 +239,18 @@ export function useElectronSync() {
           case 'phase-change':
             // Phase change
             setMetadata({ phase: event.data.to })
+            setCurrentPhase(event.data.to)
             addLog({
               id: `${Date.now()}-${Math.random()}`,
               timestamp: new Date(event.timestamp),
               level: 'info',
               source: 'System',
               message: `🔄 フェーズ変更: ${event.data.from} → ${event.data.to}`,
+            })
+
+            toast({
+              title: 'フェーズ変更',
+              description: `${event.data.from} → ${event.data.to}`,
             })
             break
 
@@ -162,10 +267,19 @@ export function useElectronSync() {
                 message: `❌ エラー: ${err}`,
               })
             })
+
+            toast({
+              variant: 'destructive',
+              title: 'エラーが発生しました',
+              description: Array.isArray(event.data) ? event.data.join(', ') : event.data,
+            })
             break
 
           case 'complete':
             // Workflow completed
+            stopExecution()
+            setCurrentPhase(null)
+
             setMetadata({
               phase: 'complete',
               completedAt: new Date(event.timestamp),
@@ -180,6 +294,11 @@ export function useElectronSync() {
               level: 'success',
               source: 'System',
               message: `🎉 ワークフロー完了! (成功: ${event.data.tasksCompleted}, 失敗: ${event.data.tasksFailed})`,
+            })
+
+            toast({
+              title: '完了しました！',
+              description: `タスク完了: ${event.data.tasksCompleted}件 / 失敗: ${event.data.tasksFailed}件`,
             })
             break
 
@@ -513,33 +632,18 @@ export function useElectronSync() {
     setNodeFlowData,
     setCurrentExecutingNode,
     updateNodeFlowStatus,
+    startExecution,
+    stopExecution,
+    setCurrentPhase,
+    addChatMessage,
+    addChatMessages,
   ])
 }
 
 /**
- * Hook for executing control actions (pause, resume, cancel)
+ * Hook for executing control actions (cancel)
  */
 export function useElectronControl() {
-  const { pause, resume } = useAppStore()
-
-  const handlePause = async () => {
-    if (window.electronAPI.pauseExecution) {
-      const result = await window.electronAPI.pauseExecution()
-      if (result.success) {
-        pause()
-      }
-    }
-  }
-
-  const handleResume = async () => {
-    if (window.electronAPI.resumeExecution) {
-      const result = await window.electronAPI.resumeExecution()
-      if (result.success) {
-        resume()
-      }
-    }
-  }
-
   const handleCancel = async () => {
     if (window.electronAPI.cancelExecution) {
       await window.electronAPI.cancelExecution()
@@ -547,8 +651,6 @@ export function useElectronControl() {
   }
 
   return {
-    pause: handlePause,
-    resume: handleResume,
     cancel: handleCancel,
   }
 }

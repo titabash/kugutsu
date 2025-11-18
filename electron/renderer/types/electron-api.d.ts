@@ -15,16 +15,6 @@ export interface ElectronAPI {
   onGraphEventsBatch: (callback: (events: GraphEvent[]) => void) => () => void;
 
   /**
-   * 実行を一時停止
-   */
-  pauseExecution: () => Promise<{ success: boolean; message?: string }>;
-
-  /**
-   * 実行を再開
-   */
-  resumeExecution: () => Promise<{ success: boolean; message?: string }>;
-
-  /**
    * 実行をキャンセル
    */
   cancelExecution: () => Promise<{ success: boolean; message: string }>;

@@ -2,24 +2,17 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
-import { Play, Pause, Square, Users } from 'lucide-react'
+import { Square, Users } from 'lucide-react'
 import { useAppStore } from '../store/appStore'
 import { useElectronControl } from '../hooks/useElectronSync'
+import { ExecutionIndicator } from './ExecutionIndicator'
 
 export function Header() {
   const { metadata } = useAppStore()
-  const { pause, resume, cancel } = useElectronControl()
+  const { cancel } = useElectronControl()
 
   const progress =
     metadata.totalTasks > 0 ? (metadata.tasksCompleted / metadata.totalTasks) * 100 : 0
-
-  const handleTogglePause = () => {
-    if (metadata.isPaused) {
-      resume()
-    } else {
-      pause()
-    }
-  }
 
   return (
     <header className="h-16 border-b border-border bg-card px-6">
@@ -35,6 +28,11 @@ export function Header() {
 
         {/* Center: Progress */}
         <div className="flex flex-1 items-center justify-center gap-6 px-12">
+          {/* Execution Status Indicator */}
+          <ExecutionIndicator />
+
+          <Separator orientation="vertical" className="h-6" />
+
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Users className="h-4 w-4" />
             <span>{metadata.activeEngineers} エンジニア</span>
@@ -77,32 +75,13 @@ export function Header() {
         {/* Right: Controls */}
         <div className="flex items-center gap-2">
           <Button
-            variant={metadata.isPaused ? 'default' : 'outline'}
-            size="sm"
-            onClick={handleTogglePause}
-            disabled={!metadata.isRunning}
-          >
-            {metadata.isPaused ? (
-              <>
-                <Play className="mr-2 h-4 w-4" />
-                再開
-              </>
-            ) : (
-              <>
-                <Pause className="mr-2 h-4 w-4" />
-                一時停止
-              </>
-            )}
-          </Button>
-
-          <Button
             variant="destructive"
             size="sm"
             onClick={cancel}
             disabled={!metadata.isRunning}
           >
             <Square className="mr-2 h-4 w-4" />
-            停止
+            実行を停止
           </Button>
         </div>
       </div>

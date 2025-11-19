@@ -11,6 +11,10 @@ export default {
     '^react-dom$': '<rootDir>/node_modules/react-dom',
     '^react/(.*)$': '<rootDir>/node_modules/react/$1',
     '^react-dom/(.*)$': '<rootDir>/node_modules/react-dom/$1',
+    // Electron renderer alias (must be before other mappings)
+    '^@/(.*)$': '<rootDir>/electron/renderer/$1',
+    // uuid ESM workaround
+    '^uuid$': '<rootDir>/tests/mocks/uuidMock.ts',
     // CSS files (must be before .js mapping)
     '\\.module\\.css$': 'identity-obj-proxy',
     '\\.css$': 'identity-obj-proxy',
@@ -40,6 +44,11 @@ export default {
     '**/tests/**/*.test.ts',
     '**/tests/**/*.test.tsx',
   ],
+  testPathIgnorePatterns: [
+    '/node_modules/',
+    '/dist/',
+    '/electron/tests/', // Vitest tests
+  ],
   collectCoverageFrom: [
     'src/**/*.ts',
     '!src/**/*.d.ts',
@@ -53,6 +62,6 @@ export default {
   ],
   setupFilesAfterEnv: ['<rootDir>/tests/setup.ts'],
   transformIgnorePatterns: [
-    'node_modules/(?!(@langchain|@anthropic-ai|@xyflow)/)',
+    'node_modules/(?!(@langchain|@anthropic-ai|@xyflow))',
   ],
 };

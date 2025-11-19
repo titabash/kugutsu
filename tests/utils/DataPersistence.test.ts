@@ -42,12 +42,18 @@ describe('DataPersistence', () => {
 
       const expectedDirs = [
         path.join(baseRepoPath, '.kugutsu'),
+        path.join(baseRepoPath, '.kugutsu', 'repository'),
+        path.join(baseRepoPath, '.kugutsu', 'repository', 'architecture'),
+        path.join(baseRepoPath, '.kugutsu', 'repository', 'standards'),
+        path.join(baseRepoPath, '.kugutsu', 'repository', 'database'),
+        path.join(baseRepoPath, '.kugutsu', 'repository', 'api'),
+        path.join(baseRepoPath, '.kugutsu', 'repository', 'deployment'),
         path.join(baseRepoPath, '.kugutsu', 'tasks'),
         path.join(baseRepoPath, '.kugutsu', 'sprints'),
         path.join(baseRepoPath, '.kugutsu', 'projects'),
       ];
 
-      expect(mockEnsureDirectory).toHaveBeenCalledTimes(4);
+      expect(mockEnsureDirectory).toHaveBeenCalledTimes(10);
       expectedDirs.forEach((dir) => {
         expect(mockEnsureDirectory).toHaveBeenCalledWith(dir);
       });

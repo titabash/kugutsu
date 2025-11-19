@@ -307,3 +307,71 @@ export function resetNodeFlow(flowData: NodeFlowData): NodeFlowData {
   });
   return reset;
 }
+
+/**
+ * Scrum Team Dashboard用のノードフロー情報を生成
+ * スクラムメンバー（Product Owner, Director, Tech Lead, Engineer, Merge Coordinator）のみを表示
+ */
+export function buildScrumTeamDashboardFlow(): NodeFlowData {
+  // スクラムメンバーのみのノード
+  const nodes: FlowNode[] = [
+    // Product Owner
+    {
+      id: 'product_owner',
+      type: 'process',
+      label: 'Product Owner',
+      status: 'pending',
+    },
+
+    // Director (Story Mapping)
+    {
+      id: 'director_ai',
+      type: 'process',
+      label: 'Director',
+      status: 'pending',
+    },
+
+    // Tech Lead (Design)
+    {
+      id: 'tech_lead_design',
+      type: 'process',
+      label: 'Tech Lead (Design)',
+      status: 'pending',
+    },
+
+    // Tech Lead (Review)
+    {
+      id: 'review',
+      type: 'process',
+      label: 'Tech Lead (Review)',
+      status: 'pending',
+    },
+
+    // Engineer (実装)
+    {
+      id: 'engineer',
+      type: 'process',
+      label: 'Engineer',
+      status: 'pending',
+    },
+
+    // Merge Coordinator
+    {
+      id: 'merge_coordinator',
+      type: 'process',
+      label: 'Merge Coordinator',
+      status: 'pending',
+    },
+  ];
+
+  // スクラムメンバー間のエッジ（簡略化された水平フロー）
+  const edges: FlowEdge[] = [
+    { id: 'e1', source: 'product_owner', target: 'director_ai' },
+    { id: 'e2', source: 'director_ai', target: 'tech_lead_design' },
+    { id: 'e3', source: 'tech_lead_design', target: 'engineer' },
+    { id: 'e4', source: 'engineer', target: 'review' },
+    { id: 'e5', source: 'review', target: 'merge_coordinator' },
+  ];
+
+  return { nodes, edges };
+}

@@ -11,7 +11,7 @@ import { createInitialState, type ParallelDevStateType } from '../graph/state.js
 import type { ParallelDevConfig } from '../graph/types.js';
 import { StateStreamManager } from './StateStreamManager.js';
 import { UnifiedProgressManager } from '../utils/UnifiedProgressManager.js';
-import { buildUnifiedScrumWorkflowFlow } from '../utils/NodeFlowBuilder.js';
+import { buildScrumTeamDashboardFlow } from '../utils/NodeFlowBuilder.js';
 
 /**
  * Orchestrator configuration
@@ -161,11 +161,11 @@ export class ParallelDevOrchestrator {
     console.log(`📝 ユーザー要求: ${userRequest}`);
     console.log(`🔄 ワークフロー: 統合Scrumワークフロー（複雑度判定による自動分岐）`);
 
-    // Initialize node flow for Electron UI
+    // Initialize node flow for Electron UI (Scrum Team Dashboard)
     if (this.stateStreamManager) {
-      const nodeFlowData = buildUnifiedScrumWorkflowFlow();
+      const nodeFlowData = buildScrumTeamDashboardFlow();
       this.stateStreamManager.initNodeFlow(nodeFlowData);
-      console.log(`📊 ノードフロー初期化完了: ${nodeFlowData.nodes.length} ノード, ${nodeFlowData.edges.length} エッジ`);
+      console.log(`📊 Scrumチームダッシュボード初期化完了: ${nodeFlowData.nodes.length} メンバー, ${nodeFlowData.edges.length} フロー`);
     }
 
     // Track current state for error handling
@@ -186,10 +186,10 @@ export class ParallelDevOrchestrator {
       if (this.stateStreamManager) {
         await this.stateStreamManager.processStateUpdate(initialState);
 
-        // Initialize node flow visualization
-        const nodeFlowData = buildUnifiedScrumWorkflowFlow();
+        // Initialize node flow visualization (Scrum Team Dashboard)
+        const nodeFlowData = buildScrumTeamDashboardFlow();
         this.stateStreamManager.initializeNodeFlow(nodeFlowData);
-        console.log('🎨 ノードフロー可視化を初期化しました');
+        console.log('🎨 Scrumチームダッシュボードを初期化しました');
       }
 
       // Execute graph with streaming

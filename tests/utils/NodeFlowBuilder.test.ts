@@ -7,6 +7,7 @@
 import { describe, test, expect } from '@jest/globals';
 import {
   buildUnifiedScrumWorkflowFlow,
+  buildScrumTeamDashboardFlow,
   cloneNodeFlowData,
   resetNodeFlow,
 } from '../../src/utils/NodeFlowBuilder.js';
@@ -259,6 +260,155 @@ describe('NodeFlowBuilder', () => {
       const uniqueIds = new Set(edgeIds);
 
       expect(edgeIds.length).toBe(uniqueIds.size);
+    });
+  });
+
+  describe('buildScrumTeamDashboardFlow', () => {
+    test('スクラムメンバーのノードのみが含まれていること', () => {
+      const flowData = buildScrumTeamDashboardFlow();
+
+      // スクラムメンバーのノードID
+      const scrumMemberNodes = [
+        'product_owner',
+        'director_ai',
+        'tech_lead_design',
+        'review',
+        'engineer',
+        'merge_coordinator',
+      ];
+
+      expect(flowData.nodes.length).toBe(6);
+
+      const nodeIds = flowData.nodes.map((n) => n.id);
+      scrumMemberNodes.forEach((nodeId) => {
+        expect(nodeIds).toContain(nodeId);
+      });
+    });
+
+    test('内部プロセスノードが含まれていないこと', () => {
+      const flowData = buildScrumTeamDashboardFlow();
+
+      // 含まれてはいけないノード
+      const internalNodes = [
+        '__start__',
+        '__end__',
+        'analyze_complexity',
+        'check_mode',
+        'instruction_generator',
+        'instruction_generator_dispatch',
+        'instruction_aggregator',
+        'engineer_dispatch',
+        'engineer_aggregator',
+        'review_dispatch',
+        'review_aggregator',
+        'conflict_resolver',
+        'sprint_planning',
+        'sprint_review',
+        'task_breakdown',
+        'review_story_mapping',
+        'review_design',
+      ];
+
+      const nodeIds = flowData.nodes.map((n) => n.id);
+      internalNodes.forEach((nodeId) => {
+        expect(nodeIds).not.toContain(nodeId);
+      });
+    });
+
+    test('すべてのノードの初期状態がpendingであること', () => {
+      const flowData = buildScrumTeamDashboardFlow();
+
+      flowData.nodes.forEach((node) => {
+        expect(node.status).toBe('pending');
+        expect(node.startedAt).toBeUndefined();
+        expect(node.completedAt).toBeUndefined();
+        expect(node.executionTime).toBeUndefined();
+      });
+    });
+
+    test('エッジが正しく定義されていること', () => {
+      const flowData = buildScrumTeamDashboardFlow();
+
+      // 5つのエッジ（6メンバー間の接続）
+      expect(flowData.edges.length).toBe(5);
+
+      // 各エッジがsourceとtargetを持つこと
+      flowData.edges.forEach((edge) => {
+        expect(edge.source).toBeTruthy();
+        expect(edge.target).toBeTruthy();
+        expect(edge.id).toBeTruthy();
+      });
+    });
+
+    test('水平フロー（左から右）になっていること', () => {
+      const flowData = buildScrumTeamDashboardFlow();
+
+      // 期待されるフロー順序
+      const expectedFlow = [
+        { source: 'product_owner', target: 'director_ai' },
+        { source: 'director_ai', target: 'tech_lead_design' },
+        { source: 'tech_lead_design', target: 'engineer' },
+        { source: 'engineer', target: 'review' },
+        { source: 'review', target: 'merge_coordinator' },
+      ];
+
+      expectedFlow.forEach((expected) => {
+        const edge = flowData.edges.find(
+          (e) => e.source === expected.source && e.target === expected.target
+        );
+        expect(edge).toBeDefined();
+      });
+    });
+
+    test('ノードラベルが適切に設定されていること', () => {
+      const flowData = buildScrumTeamDashboardFlow();
+
+      const expectedLabels: Record<string, string> = {
+        product_owner: 'Product Owner',
+        director_ai: 'Director',
+        tech_lead_design: 'Tech Lead (Design)',
+        review: 'Tech Lead (Review)',
+        engineer: 'Engineer',
+        merge_coordinator: 'Merge Coordinator',
+      };
+
+      flowData.nodes.forEach((node) => {
+        expect(node.label).toBe(expectedLabels[node.id]);
+      });
+    });
+
+    test('すべてのノードがprocessタイプであること', () => {
+      const flowData = buildScrumTeamDashboardFlow();
+
+      flowData.nodes.forEach((node) => {
+        expect(node.type).toBe('process');
+      });
+    });
+
+    test('エッジIDが重複していないこと', () => {
+      const flowData = buildScrumTeamDashboardFlow();
+      const edgeIds = flowData.edges.map((e) => e.id);
+      const uniqueIds = new Set(edgeIds);
+
+      expect(edgeIds.length).toBe(uniqueIds.size);
+    });
+
+    test('すべてのエッジのsourceノードが存在すること', () => {
+      const flowData = buildScrumTeamDashboardFlow();
+      const nodeIds = new Set(flowData.nodes.map((n) => n.id));
+
+      flowData.edges.forEach((edge) => {
+        expect(nodeIds.has(edge.source)).toBe(true);
+      });
+    });
+
+    test('すべてのエッジのtargetノードが存在すること', () => {
+      const flowData = buildScrumTeamDashboardFlow();
+      const nodeIds = new Set(flowData.nodes.map((n) => n.id));
+
+      flowData.edges.forEach((edge) => {
+        expect(nodeIds.has(edge.target)).toBe(true);
+      });
     });
   });
 });

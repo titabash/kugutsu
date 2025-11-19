@@ -237,8 +237,10 @@ describe('RetryManager', () => {
           'ECONNRESET',
           'ETIMEDOUT',
           'ENOTFOUND',
-          'rate_limit exceeded',
+          'ECONNREFUSED',
           'network timeout',
+          'temporary failure',
+          '503 Service Unavailable',
         ];
 
         for (const errorMsg of errors) {

@@ -85,10 +85,10 @@ describe('MemberNode', () => {
       if (nodeElement) {
         await user.hover(nodeElement);
 
-        // ツールチップが表示されることを確認
+        // ツールチップが表示されることを確認（Radix UIは複数のtooltip要素を生成するため、getAllByRoleを使用）
         await waitFor(() => {
-          const tooltip = screen.queryByRole('tooltip');
-          expect(tooltip).toBeInTheDocument();
+          const tooltips = screen.queryAllByRole('tooltip');
+          expect(tooltips.length).toBeGreaterThan(0);
         });
       }
     });
@@ -108,8 +108,9 @@ describe('MemberNode', () => {
         await user.hover(nodeElement);
 
         await waitFor(() => {
-          const tooltip = screen.queryByRole('tooltip');
-          expect(tooltip?.textContent).toMatch(/Product Owner/i);
+          const tooltips = screen.queryAllByRole('tooltip');
+          const tooltipText = tooltips.map(t => t.textContent).join(' ');
+          expect(tooltipText).toMatch(/Product Owner/i);
         });
       }
     });
@@ -129,8 +130,9 @@ describe('MemberNode', () => {
         await user.hover(nodeElement);
 
         await waitFor(() => {
-          const tooltip = screen.queryByRole('tooltip');
-          expect(tooltip?.textContent).toMatch(/実行中|executing/i);
+          const tooltips = screen.queryAllByRole('tooltip');
+          const tooltipText = tooltips.map(t => t.textContent).join(' ');
+          expect(tooltipText).toMatch(/実行中|executing/i);
         });
       }
     });
@@ -152,8 +154,9 @@ describe('MemberNode', () => {
         await user.hover(nodeElement);
 
         await waitFor(() => {
-          const tooltip = screen.queryByRole('tooltip');
-          expect(tooltip?.textContent).toMatch(/分|時間|経過/i);
+          const tooltips = screen.queryAllByRole('tooltip');
+          const tooltipText = tooltips.map(t => t.textContent).join(' ');
+          expect(tooltipText).toMatch(/分|時間|経過/i);
         });
       }
     });
@@ -175,8 +178,9 @@ describe('MemberNode', () => {
         await user.hover(nodeElement);
 
         await waitFor(() => {
-          const tooltip = screen.queryByRole('tooltip');
-          expect(tooltip?.textContent).toMatch(/API実装を進めています/);
+          const tooltips = screen.queryAllByRole('tooltip');
+          const tooltipText = tooltips.map(t => t.textContent).join(' ');
+          expect(tooltipText).toMatch(/API実装を進めています/);
         });
       }
     });
@@ -202,7 +206,7 @@ describe('MemberNode', () => {
 
         // モーダルが表示されることを確認
         await waitFor(() => {
-          const modal = screen.queryByRole('dialog');
+          const modal = screen.getByRole('dialog');
           expect(modal).toBeInTheDocument();
         });
       }
@@ -227,10 +231,10 @@ describe('MemberNode', () => {
         await user.click(nodeElement);
 
         await waitFor(() => {
-          const modal = screen.queryByRole('dialog');
-          expect(modal?.textContent).toMatch(/Tech Lead/);
-          expect(modal?.textContent).toMatch(/Design Review/);
-          expect(modal?.textContent).toMatch(/アーキテクチャを検討中/);
+          const modal = screen.getByRole('dialog');
+          expect(modal.textContent).toMatch(/Tech Lead/);
+          expect(modal.textContent).toMatch(/Design Review/);
+          expect(modal.textContent).toMatch(/アーキテクチャを検討中/);
         });
       }
     });
@@ -251,21 +255,19 @@ describe('MemberNode', () => {
 
         // モーダルが表示される
         await waitFor(() => {
-          const modal = screen.queryByRole('dialog');
+          const modal = screen.getByRole('dialog');
           expect(modal).toBeInTheDocument();
         });
 
         // 閉じるボタンをクリック
-        const closeButton = screen.queryByRole('button', { name: /close|閉じる/i });
-        if (closeButton) {
-          await user.click(closeButton);
+        const closeButton = screen.getByRole('button', { name: /close|閉じる/i });
+        await user.click(closeButton);
 
-          // モーダルが閉じる
-          await waitFor(() => {
-            const modal = screen.queryByRole('dialog');
-            expect(modal).not.toBeInTheDocument();
-          });
-        }
+        // モーダルが閉じる
+        await waitFor(() => {
+          const modal = screen.queryByRole('dialog');
+          expect(modal).not.toBeInTheDocument();
+        });
       }
     });
   });

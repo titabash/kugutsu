@@ -644,9 +644,42 @@ export function useElectronSync() {
  * Hook for executing control actions (cancel)
  */
 export function useElectronControl() {
+  const addChatMessage = useAppStore((state) => state.addChatMessage)
+
   const handleCancel = async () => {
-    if (window.electronAPI.cancelExecution) {
-      await window.electronAPI.cancelExecution()
+    // 確認ダイアログを表示
+    const confirmed = window.confirm(
+      '実行を停止しますか？\n\n進行中のタスクは中断され、変更は保存されません。'
+    )
+
+    if (!confirmed) {
+      return
+    }
+
+    try {
+      if (window.electronAPI.cancelExecution) {
+        await window.electronAPI.cancelExecution()
+
+        // 停止成功メッセージをチャットに追加
+        addChatMessage({
+          id: `cancel-${Date.now()}`,
+          type: 'system',
+          content: '🛑 実行を停止しました',
+          timestamp: new Date(),
+        })
+
+        console.log('[useElectronControl] Execution cancelled by user')
+      }
+    } catch (error) {
+      // エラーメッセージをチャットに追加
+      addChatMessage({
+        id: `cancel-error-${Date.now()}`,
+        type: 'system',
+        content: `❌ 停止エラー: ${error instanceof Error ? error.message : '不明なエラー'}`,
+        timestamp: new Date(),
+      })
+
+      console.error('[useElectronControl] Cancel error:', error)
     }
   }
 

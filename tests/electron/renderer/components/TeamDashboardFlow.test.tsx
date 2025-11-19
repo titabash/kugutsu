@@ -348,4 +348,69 @@ describe('TeamDashboardFlow', () => {
       expect(minimap).toBeTruthy();
     });
   });
+
+  describe('アクティブノード統計パネル（新機能）', () => {
+    test('アクティブノード統計パネルが表示される', () => {
+      const flowData = createTestTeamFlowDataWithParallelEngineers();
+
+      // Update mock state directly
+      useAppStore.setState({ nodeFlowData: flowData as any });
+
+      render(<TeamDashboardFlow />);
+
+      // アクティブノード統計パネルが存在することを確認
+      const statsPanel = screen.queryByTestId('active-nodes-stats');
+      expect(statsPanel).toBeTruthy();
+    });
+
+    test('アクティブノード数が正しく表示される', () => {
+      const flowData = createTestTeamFlowDataWithParallelEngineers();
+
+      // Update mock state directly
+      useAppStore.setState({ nodeFlowData: flowData as any });
+
+      render(<TeamDashboardFlow />);
+
+      // executingステータスのノードが3つ（Engineer #1, #2, #3）
+      const activeNodesCount = screen.queryByTestId('active-nodes-count');
+      expect(activeNodesCount).toBeTruthy();
+      expect(activeNodesCount?.textContent).toContain('3');
+    });
+
+    test('アクティブノードのタスク名リストが表示される', () => {
+      const flowData = createTestTeamFlowDataWithParallelEngineers();
+
+      // Update mock state directly
+      useAppStore.setState({ nodeFlowData: flowData as any });
+
+      render(<TeamDashboardFlow />);
+
+      // アクティブなタスク名が表示されることを確認
+      const tasksList = screen.queryByTestId('active-tasks-list');
+      expect(tasksList).toBeTruthy();
+
+      // 各タスク名が含まれることを確認
+      expect(tasksList?.textContent).toMatch(/login\.ts実装中/);
+      expect(tasksList?.textContent).toMatch(/auth-api\.ts実装中/);
+      expect(tasksList?.textContent).toMatch(/user-model\.ts実装中/);
+    });
+
+    test('アクティブノードがない場合は統計パネルに適切なメッセージが表示される', () => {
+      const flowData = createTestTeamFlowData();
+      // すべてのノードをpendingまたはcompletedに変更
+      flowData.nodes = flowData.nodes.map((node) => ({
+        ...node,
+        status: node.status === 'executing' ? 'pending' : node.status,
+      })) as any;
+
+      // Update mock state directly
+      useAppStore.setState({ nodeFlowData: flowData as any });
+
+      render(<TeamDashboardFlow />);
+
+      // アクティブノードが0の場合のメッセージ
+      const emptyMessage = screen.queryByText(/実行中のノードはありません|アクティブなタスクがありません/i);
+      expect(emptyMessage).toBeTruthy();
+    });
+  });
 });

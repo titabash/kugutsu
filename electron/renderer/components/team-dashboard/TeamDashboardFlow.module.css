@@ -1,0 +1,40 @@
+/**
+ * TeamDashboardFlow スタイル
+ */
+
+.container {
+  width: 100%;
+  height: 100%;
+  background: #f9fafb;
+}
+
+/* 空状態 */
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 48px;
+  text-align: center;
+}
+
+.emptyIcon {
+  font-size: 64px;
+  margin-bottom: 24px;
+  opacity: 0.5;
+}
+
+.emptyTitle {
+  font-size: 24px;
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 12px;
+}
+
+.emptyMessage {
+  font-size: 16px;
+  color: #6b7280;
+  max-width: 400px;
+  line-height: 1.6;
+}

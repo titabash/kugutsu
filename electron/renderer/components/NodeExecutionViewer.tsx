@@ -13,7 +13,7 @@ import { Separator } from './ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs'
 import type { NodeExecution } from '../types'
 import { getNodeRole, getCategoryColor, getCategoryLabel } from '../constants/nodeRoles'
-import NodeFlowVisualization from './NodeFlowVisualization'
+import TeamDashboardFlow from './team-dashboard/TeamDashboardFlow'
 
 export function NodeExecutionViewer() {
   const {
@@ -87,7 +87,7 @@ export function NodeExecutionViewer() {
         {/* Flowchart Tab */}
         <TabsContent value="flowchart" className="flex-1 overflow-hidden">
           <div className="h-full w-full">
-            <NodeFlowVisualization />
+            <TeamDashboardFlow />
           </div>
         </TabsContent>
       </Tabs>

@@ -106,8 +106,54 @@ const TeamDashboardFlow: React.FC = () => {
     );
   }
 
+  // アクティブノードを計算
+  const activeNodes = useMemo(() => {
+    if (!nodeFlowData) return [];
+    return nodeFlowData.nodes.filter((node: any) => node.status === 'executing');
+  }, [nodeFlowData]);
+
   return (
     <div className={styles.container}>
+      {/* アクティブノード統計パネル */}
+      {activeNodes.length > 0 ? (
+        <div
+          className={styles.activeNodesStats}
+          data-testid="active-nodes-stats"
+        >
+          <div className={styles.activeNodesHeader}>
+            <span className={styles.activeNodesIcon}>🔥</span>
+            <span className={styles.activeNodesTitle}>アクティブノード</span>
+            <span
+              className={styles.activeNodesCount}
+              data-testid="active-nodes-count"
+            >
+              {activeNodes.length}
+            </span>
+          </div>
+          <div
+            className={styles.activeTasksList}
+            data-testid="active-tasks-list"
+          >
+            {activeNodes.map((node: any, index: number) => (
+              <div key={node.id} className={styles.activeTaskItem}>
+                <span className={styles.activeTaskBullet}>•</span>
+                <span className={styles.activeTaskLabel}>{node.label}</span>
+                {node.taskName && (
+                  <span className={styles.activeTaskName}>: {node.taskName}</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div
+          className={styles.activeNodesStats}
+          data-testid="active-nodes-stats"
+        >
+          <p className={styles.emptyActiveNodes}>実行中のノードはありません</p>
+        </div>
+      )}
+
       <ReactFlow
         nodes={nodes}
         edges={edges}

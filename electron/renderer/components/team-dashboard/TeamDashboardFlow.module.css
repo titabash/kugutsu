@@ -38,3 +38,72 @@
   max-width: 400px;
   line-height: 1.6;
 }
+
+/* アクティブノード統計パネル */
+.activeNodesStats {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 12px;
+  padding: 16px 20px;
+  margin-bottom: 16px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  color: white;
+}
+
+.activeNodesHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.activeNodesIcon {
+  font-size: 20px;
+}
+
+.activeNodesTitle {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.activeNodesCount {
+  background: rgba(255, 255, 255, 0.2);
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.activeTasksList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.activeTaskItem {
+  display: flex;
+  align-items: center;
+  font-size: 14px;
+  opacity: 0.95;
+}
+
+.activeTaskBullet {
+  margin-right: 8px;
+  font-weight: bold;
+}
+
+.activeTaskLabel {
+  font-weight: 500;
+}
+
+.activeTaskName {
+  opacity: 0.85;
+  font-size: 13px;
+  margin-left: 4px;
+}
+
+.emptyActiveNodes {
+  font-size: 14px;
+  text-align: center;
+  opacity: 0.8;
+  margin: 0;
+}

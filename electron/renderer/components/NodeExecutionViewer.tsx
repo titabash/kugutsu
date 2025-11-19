@@ -31,35 +31,18 @@ export function NodeExecutionViewer() {
 
   return (
     <div className="h-full flex flex-col p-4 space-y-4">
-      <Tabs defaultValue="active" className="flex-1 flex flex-col">
+      <Tabs defaultValue="flowchart" className="flex-1 flex flex-col">
         <TabsList className="w-full justify-start">
-          <TabsTrigger value="active">
-            🔥 アクティブノード ({activeNodes.length})
-          </TabsTrigger>
+          <TabsTrigger value="flowchart">🔀 フローチャート</TabsTrigger>
           <TabsTrigger value="history">📜 実行履歴 ({executionHistory.length})</TabsTrigger>
           <TabsTrigger value="statistics">📊 統計情報</TabsTrigger>
-          <TabsTrigger value="flowchart">🔀 フローチャート</TabsTrigger>
         </TabsList>
 
-        {/* Active Nodes Tab */}
-        <TabsContent value="active" className="flex-1 overflow-hidden">
-          {activeNodes.length === 0 ? (
-            <Card>
-              <CardContent className="pt-6">
-                <p className="text-sm text-muted-foreground text-center">
-                  現在実行中のノードはありません
-                </p>
-              </CardContent>
-            </Card>
-          ) : (
-            <ScrollArea className="h-full">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {activeNodes.map((node) => (
-                  <ActiveNodeCard key={node.nodeName} node={node} />
-                ))}
-              </div>
-            </ScrollArea>
-          )}
+        {/* Flowchart Tab */}
+        <TabsContent value="flowchart" className="flex-1 overflow-hidden">
+          <div className="h-full w-full">
+            <TeamDashboardFlow />
+          </div>
         </TabsContent>
 
         {/* Execution History Tab */}
@@ -82,13 +65,6 @@ export function NodeExecutionViewer() {
           <ScrollArea className="h-full">
             <NodeStatisticsTable getNodeStatistics={getNodeStatistics} />
           </ScrollArea>
-        </TabsContent>
-
-        {/* Flowchart Tab */}
-        <TabsContent value="flowchart" className="flex-1 overflow-hidden">
-          <div className="h-full w-full">
-            <TeamDashboardFlow />
-          </div>
         </TabsContent>
       </Tabs>
     </div>

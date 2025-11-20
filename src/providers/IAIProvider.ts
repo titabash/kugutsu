@@ -96,6 +96,11 @@ export interface ExecuteOptions {
    * Additional provider-specific options
    */
   providerOptions?: Record<string, any>;
+
+  /**
+   * AbortController for cancelling execution
+   */
+  abortController?: AbortController;
 }
 
 /**

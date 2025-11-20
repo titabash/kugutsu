@@ -742,6 +742,29 @@ export const ParallelDevState = Annotation.Root({
     },
     default: () => [],
   }),
+
+  /**
+   * Node Execution Results (AI Messages)
+   *
+   * Stores AI provider messages for each node execution.
+   * Key: `${nodeId}-${taskId}` (e.g., "EngineerNode-TASK-001")
+   * Value: Array of AI messages (Claude Agent SDK messages, Codex SDK responses, etc.)
+   *
+   * This is used to display AI's actual responses in the UI (chat panel).
+   *
+   * Reducer: Merge by key, replacing existing results with updates
+   */
+  nodeExecutionResults: Annotation<Map<string, any[]>>({
+    reducer: (
+      state: Map<string, any[]>,
+      update: Map<string, any[]>
+    ) => {
+      if (!update || !(update instanceof Map)) return state || new Map<string, any[]>();
+      if (!state || !(state instanceof Map)) return update || new Map<string, any[]>();
+      return new Map([...state, ...update]);
+    },
+    default: () => new Map<string, any[]>(),
+  }),
 });
 
 /**
@@ -830,6 +853,8 @@ export function createInitialState(
     // Backlog Refinement fields
     taskSplitSuggestions: [],
     taskMergeSuggestions: [],
+    // Node execution results (AI messages)
+    nodeExecutionResults: new Map<string, any[]>(),
   };
 }
 

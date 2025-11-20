@@ -68,6 +68,7 @@ export class ClaudeAgentProvider implements IAIProvider {
       model,
       systemPrompt,
       includePartialMessages = false,
+      abortController,
       providerOptions = {},
     } = options;
 
@@ -102,6 +103,11 @@ export class ClaudeAgentProvider implements IAIProvider {
       // Include partial messages
       if (includePartialMessages) {
         queryOptions.includePartialMessages = true;
+      }
+
+      // Add abort controller
+      if (abortController) {
+        queryOptions.abortController = abortController;
       }
 
       // Execute query

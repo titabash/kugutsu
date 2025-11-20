@@ -1,7 +1,9 @@
 import { useEffect } from 'react'
 import { useAppStore } from '../store/appStore'
+import { useTabStore } from '../store/useTabStore'
 import type { Task, LogEntry } from '../types'
 import { toast } from '@/hooks/use-toast'
+import { generateTabTitle } from '../utils/logRouter'
 
 /**
  * Important nodes that should show thinking messages in the chat
@@ -48,6 +50,8 @@ export function useElectronSync() {
     clearThinkingMessage,
   } = useAppStore()
 
+  const { createTab, markTabCompleted } = useTabStore()
+
   useEffect(() => {
     if (!window.electronAPI) {
       console.warn('[useElectronSync] electronAPI not available')
@@ -70,6 +74,9 @@ export function useElectronSync() {
           case 'state-init':
             // Initial state - set all data
             startExecution()
+
+            // Create main tab for orchestration logs
+            createTab('main', undefined, 'メイン')
 
             if (event.data.tasks) {
               setTasks(event.data.tasks)
@@ -117,6 +124,13 @@ export function useElectronSync() {
                 startedAt: new Date(event.timestamp),
               })
 
+              // Create tab for task-specific nodes (EngineerNode, ReviewNode)
+              const taskId = event.data.taskId
+              if (taskId && (event.data.nodeId === 'EngineerNode' || event.data.nodeId === 'ReviewNode')) {
+                const title = generateTabTitle(event.data.nodeId, taskId)
+                createTab(event.data.nodeId, taskId, title)
+              }
+
               addLog({
                 id: `${Date.now()}-${Math.random()}`,
                 timestamp: new Date(event.timestamp),
@@ -150,6 +164,13 @@ export function useElectronSync() {
                 duration,
               })
 
+              // Mark tab as completed for task-specific nodes
+              const taskId = event.data.taskId
+              if (taskId && (event.data.nodeId === 'EngineerNode' || event.data.nodeId === 'ReviewNode')) {
+                const tabId = `${event.data.nodeId}-${taskId}`
+                markTabCompleted(tabId)
+              }
+
               addLog({
                 id: `${Date.now()}-${Math.random()}`,
                 timestamp: completedAt,
@@ -160,56 +181,119 @@ export function useElectronSync() {
                 }`,
               })
 
-              // Add chat message for important node completion
-              const nodeInfo = IMPORTANT_NODES[event.data.nodeId]
-              if (nodeInfo && event.data.result) {
+              // Process AI messages if available
+              if (event.data.aiMessages && Array.isArray(event.data.aiMessages)) {
                 // Clear thinking message first
                 clearThinkingMessage(event.data.nodeId)
 
-                const result = event.data.result
-                let message = ''
+                // Display each AI message in chat
+                event.data.aiMessages.forEach((msg: any) => {
+                  if (msg.type === 'assistant' && msg.content) {
+                    // Extract text content from assistant messages
+                    const textBlocks = msg.content
+                      .filter((block: any) => block.type === 'text')
+                      .map((block: any) => block.text)
+                      .join('\n\n')
 
-                // ProductOwner has special formatting for tasks
-                if (event.data.nodeId === 'ProductOwnerNode') {
-                  message = 'タスクの分析が完了しました。'
-
-                  // Extract tasks information from result
-                  if (result.tasks && Array.isArray(result.tasks)) {
-                    message = `タスクの分析が完了しました。${result.tasks.length}個のタスクを作成しました。`
-
-                    // Add task titles to message
-                    if (result.tasks.length > 0) {
-                      const taskTitles = result.tasks.slice(0, 3).map((t: any) => `・${t.title}`).join('\n')
-                      message += `\n\n主なタスク:\n${taskTitles}`
-                      if (result.tasks.length > 3) {
-                        message += `\n...他${result.tasks.length - 3}個`
-                      }
+                    if (textBlocks) {
+                      addChatMessage({
+                        id: `${Date.now()}-${Math.random()}`,
+                        type: 'ai',
+                        content: textBlocks,
+                        timestamp: completedAt,
+                        nodeId: event.data.nodeId,
+                      })
                     }
-                  } else if (result.message) {
-                    message = result.message
-                  }
-                } else {
-                  // For other nodes, use result.message or default completion message
-                  const defaultMessages: Record<string, string> = {
-                    EngineerNode: 'コードの実装が完了しました。',
-                    ReviewNode: 'コードレビューが完了しました。',
-                    DirectorNode: 'ストーリーマッピングが完了しました。',
-                    SprintPlanningNode: 'スプリント計画が完了しました。',
-                    MergeCoordinatorNode: 'マージが完了しました。',
-                    TechLeadDesignNode: '設計レビューが完了しました。',
-                  }
 
-                  message = result.message || defaultMessages[event.data.nodeId] || `${nodeInfo.label}の処理が完了しました。`
-                }
-
-                addChatMessage({
-                  id: `${Date.now()}-${Math.random()}`,
-                  type: 'ai',
-                  content: message,
-                  timestamp: completedAt,
-                  nodeId: event.data.nodeId,
-                  data: result,
+                    // Display tool use as separate messages
+                    const toolUses = msg.content.filter((block: any) => block.type === 'tool_use')
+                    toolUses.forEach((toolUse: any) => {
+                      addChatMessage({
+                        id: `${Date.now()}-${Math.random()}`,
+                        type: 'ai',
+                        content: `🔧 Tool: ${toolUse.name}\n${JSON.stringify(toolUse.input, null, 2)}`,
+                        timestamp: completedAt,
+                        nodeId: event.data.nodeId,
+                      })
+                    })
+                  } else if (msg.type === 'thinking') {
+                    // Display thinking messages
+                    const thinkingText = msg.content || msg.thinking || ''
+                    if (thinkingText) {
+                      addChatMessage({
+                        id: `${Date.now()}-${Math.random()}`,
+                        type: 'system',
+                        content: `💭 Thinking: ${thinkingText}`,
+                        timestamp: completedAt,
+                        nodeId: event.data.nodeId,
+                      })
+                    }
+                  } else if (msg.type === 'result') {
+                    // Display result messages
+                    const resultText = msg.finalResponse || JSON.stringify(msg.result, null, 2) || ''
+                    if (resultText) {
+                      addChatMessage({
+                        id: `${Date.now()}-${Math.random()}`,
+                        type: 'ai',
+                        content: `✅ Result: ${resultText}`,
+                        timestamp: completedAt,
+                        nodeId: event.data.nodeId,
+                      })
+                    }
+                  }
                 })
+              } else {
+                // Fallback to legacy result-based message
+                const nodeInfo = IMPORTANT_NODES[event.data.nodeId]
+                if (nodeInfo && event.data.result) {
+                  // Clear thinking message first
+                  clearThinkingMessage(event.data.nodeId)
+
+                  const result = event.data.result
+                  let message = ''
+
+                  // ProductOwner has special formatting for tasks
+                  if (event.data.nodeId === 'ProductOwnerNode') {
+                    message = 'タスクの分析が完了しました。'
+
+                    // Extract tasks information from result
+                    if (result.tasks && Array.isArray(result.tasks)) {
+                      message = `タスクの分析が完了しました。${result.tasks.length}個のタスクを作成しました。`
+
+                      // Add task titles to message
+                      if (result.tasks.length > 0) {
+                        const taskTitles = result.tasks.slice(0, 3).map((t: any) => `・${t.title}`).join('\n')
+                        message += `\n\n主なタスク:\n${taskTitles}`
+                        if (result.tasks.length > 3) {
+                          message += `\n...他${result.tasks.length - 3}個`
+                        }
+                      }
+                    } else if (result.message) {
+                      message = result.message
+                    }
+                  } else {
+                    // For other nodes, use result.message or default completion message
+                    const defaultMessages: Record<string, string> = {
+                      EngineerNode: 'コードの実装が完了しました。',
+                      ReviewNode: 'コードレビューが完了しました。',
+                      DirectorNode: 'ストーリーマッピングが完了しました。',
+                      SprintPlanningNode: 'スプリント計画が完了しました。',
+                      MergeCoordinatorNode: 'マージが完了しました。',
+                      TechLeadDesignNode: '設計レビューが完了しました。',
+                    }
+
+                    message = result.message || defaultMessages[event.data.nodeId] || `${nodeInfo.label}の処理が完了しました。`
+                  }
+
+                  addChatMessage({
+                    id: `${Date.now()}-${Math.random()}`,
+                    type: 'ai',
+                    content: message,
+                    timestamp: completedAt,
+                    nodeId: event.data.nodeId,
+                    data: result,
+                  })
+                }
               }
             }
             break
@@ -231,6 +315,11 @@ export function useElectronSync() {
                 source: log.source,
                 message: log.message,
                 data: log.data,
+                taskId: log.taskId,
+                sessionId: log.sessionId,
+                engineerId: log.engineerId,
+                nodeType: log.nodeType,
+                provider: log.provider,
               }))
               addLogs(logs)
             }

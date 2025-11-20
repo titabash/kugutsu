@@ -1,16 +1,17 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { ChevronDown, ChevronUp, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { useTabStore } from '../store/useTabStore'
+import { LogViewer } from './LogViewer'
 
 interface BottomPanelProps {
-  children: React.ReactNode
   defaultHeight?: number
   minHeight?: number
   maxHeight?: number
 }
 
 export function BottomPanel({
-  children,
   defaultHeight = 300,
   minHeight = 200,
   maxHeight = 600,
@@ -18,6 +19,18 @@ export function BottomPanel({
   const [isCollapsed, setIsCollapsed] = useState(true)
   const [height, setHeight] = useState(defaultHeight)
   const [isDragging, setIsDragging] = useState(false)
+
+  // Tab store
+  const { tabs, activeTabId, setActiveTab, closeTab } = useTabStore()
+
+  // Auto-close completed tabs after 30 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      useTabStore.getState().autoCloseCompletedTabs(30000) // 30 seconds
+    }, 5000) // Check every 5 seconds
+
+    return () => clearInterval(interval)
+  }, [])
 
   const handleMouseDown = (e: React.MouseEvent) => {
     e.preventDefault()
@@ -87,8 +100,65 @@ export function BottomPanel({
         </div>
       </div>
 
-      {/* Content */}
-      {!isCollapsed && <div className="flex-1 overflow-hidden">{children}</div>}
+      {/* Content with Tabs */}
+      {!isCollapsed && (
+        <div className="flex-1 overflow-hidden">
+          {tabs.length === 0 ? (
+            <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+              ログはまだありません
+            </div>
+          ) : (
+            <Tabs
+              value={activeTabId || tabs[0]?.id}
+              onValueChange={setActiveTab}
+              className="flex h-full flex-col"
+            >
+              <TabsList className="h-10 w-full justify-start rounded-none border-b bg-muted/50 px-2">
+                {tabs.map((tab) => (
+                  <div key={tab.id} className="relative flex items-center">
+                    <TabsTrigger
+                      value={tab.id}
+                      className={`relative h-8 px-3 ${
+                        tab.completedAt
+                          ? 'text-muted-foreground'
+                          : ''
+                      }`}
+                    >
+                      {tab.title}
+                      {tab.completedAt && (
+                        <span className="ml-1.5 text-xs">✓</span>
+                      )}
+                    </TabsTrigger>
+                    {tab.isClosable && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="ml-0.5 h-6 w-6"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          closeTab(tab.id)
+                        }}
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </TabsList>
+
+              {tabs.map((tab) => (
+                <TabsContent
+                  key={tab.id}
+                  value={tab.id}
+                  className="flex-1 overflow-hidden m-0 p-0"
+                >
+                  <LogViewer tabId={tab.id} />
+                </TabsContent>
+              ))}
+            </Tabs>
+          )}
+        </div>
+      )}
     </div>
   )
 }

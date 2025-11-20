@@ -252,11 +252,15 @@ export class StateStreamManager {
    * @param nodeName - Name of the node being executed
    * @param status - Execution status ('started' | 'completed' | 'failed')
    * @param state - Current state (optional, for additional context)
+   * @param taskId - Task ID (optional, for task-specific nodes)
+   * @param aiMessages - AI provider messages (optional, for displaying in UI)
    */
   public async notifyNodeExecution(
     nodeName: string,
     status: 'started' | 'completed' | 'failed',
-    state?: ParallelDevStateType
+    state?: ParallelDevStateType,
+    taskId?: string,
+    aiMessages?: any[]
   ): Promise<void> {
     if (!this.window || this.destroyed) return;
 
@@ -277,7 +281,8 @@ export class StateStreamManager {
       this.addToBuffer({
         type: 'node-started',
         data: {
-          nodeName,
+          nodeId: nodeName,
+          taskId,
           timestamp: now,
         },
         timestamp: now,
@@ -306,10 +311,14 @@ export class StateStreamManager {
       this.addToBuffer({
         type: 'node-completed',
         data: {
-          nodeName,
+          nodeId: nodeName,
+          taskId,
           status,
           timestamp: now,
+          startedAt: timing?.startedAt,
           executionTime,
+          result: state ? { message: `${nodeName}の処理が完了しました` } : undefined,
+          aiMessages, // Include AI messages for UI display
         },
         timestamp: now,
         priority: 'high',

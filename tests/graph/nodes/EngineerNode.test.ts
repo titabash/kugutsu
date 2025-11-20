@@ -26,6 +26,8 @@ jest.unstable_mockModule('../../../src/providers/AIProviderFactory.js', () => ({
       execute: mockExecute,
     }),
     buildProviderConfig: jest.fn().mockReturnValue({}),
+    syncWithState: jest.fn(),
+    getFailedProviders: jest.fn().mockReturnValue([]),
   },
 }));
 
@@ -40,6 +42,7 @@ jest.unstable_mockModule('../../../src/utils/DataPersistence.js', () => ({
   DataPersistence: jest.fn().mockImplementation(() => ({
     loadSprintBacklog: mockLoadSprintBacklog,
     saveSprintBacklog: mockSaveSprintBacklog,
+    updateSprintBacklogTask: jest.fn().mockResolvedValue(undefined),
   })),
 }));
 
@@ -585,5 +588,456 @@ describe.skip('EngineerNode - Review Comment Integration', () => {
       expect(capturedPrompt).not.toContain('🔍 前回のレビュー結果');
       expect(capturedPrompt).not.toContain('修正実装');
     });
+  });
+});
+
+/**
+ * EngineerNode - AI Message Storage Tests
+ *
+ * Tests for storing AI provider messages in nodeExecutionResults
+ */
+describe('EngineerNode - AI Message Storage', () => {
+  const baseRepoPath = '/test/repo';
+  const worktreePath = '/test/worktrees/task-001';
+  const sprintId = 'sprint-test-123';
+  const taskId = 'TASK-001';
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+
+    // Default mock responses
+    mockReadMarkdown.mockResolvedValue('# Task Implementation\n\nImplement the feature');
+    mockLoadSprintBacklog.mockResolvedValue({
+      id: sprintId,
+      name: 'Test Sprint',
+      goal: 'Test Goal',
+      taskIds: [taskId],
+      tasks: [
+        {
+          id: taskId,
+          title: 'Test Task',
+          description: 'Test Description',
+          status: 'in_progress',
+          worktreePath,
+          branchName: `feature/${taskId}`,
+          dependencies: [],
+        },
+      ],
+      startedAt: new Date().toISOString(),
+      status: 'active',
+      deployable: false,
+      metadata: {
+        estimatedHours: 8,
+        blockers: [],
+        completedTasksCount: 0,
+        failedTasksCount: 0,
+      },
+    });
+  });
+
+  test('should store AI messages in nodeExecutionResults on success', async () => {
+    const initialState = createInitialState('Implement feature', {
+      maxEngineers: 1,
+      maxTurns: 30,
+      baseBranch: 'main',
+      baseRepoPath,
+      worktreeBasePath: '/test/worktrees',
+    });
+
+    const task: Task = {
+      id: taskId,
+      title: 'Test Task',
+      description: 'Test Description',
+      status: 'in_progress',
+      priority: 100,
+      dependencies: [],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    const stateWithTask: ParallelDevStateType = {
+      ...initialState,
+      tasks: [task],
+      currentTaskId: taskId,
+      activeSprint: {
+        id: sprintId,
+        name: 'Test Sprint',
+        goal: 'Test Goal',
+        taskIds: [taskId],
+        startedAt: new Date(),
+        status: 'active',
+        deployable: false,
+        metadata: {
+          estimatedHours: 8,
+          blockers: [],
+          completedTasksCount: 0,
+          failedTasksCount: 0,
+        },
+      },
+    };
+
+    // Mock AI provider responses with multiple message types
+    const mockMessages = [
+      {
+        type: 'thinking',
+        thinking: 'Analyzing the task requirements...',
+      },
+      {
+        type: 'assistant',
+        content: [
+          {
+            type: 'text',
+            text: 'I will implement this feature by creating a new module.',
+          },
+        ],
+      },
+      {
+        type: 'assistant',
+        content: [
+          {
+            type: 'tool_use',
+            name: 'Write',
+            input: {
+              file_path: '/test/feature.ts',
+              content: 'export const feature = () => {}',
+            },
+          },
+        ],
+      },
+      {
+        type: 'result',
+        status: 'success',
+        finalResponse: 'Feature implemented successfully',
+      },
+    ];
+
+    mockExecute.mockReturnValue(
+      (async function* () {
+        for (const message of mockMessages) {
+          yield message;
+        }
+      })()
+    );
+
+    const result = await engineerNode(stateWithTask);
+
+    // Verify nodeExecutionResults contains the messages
+    expect(result.nodeExecutionResults).toBeDefined();
+    expect(result.nodeExecutionResults).toBeInstanceOf(Map);
+
+    const resultKey = `EngineerNode-${taskId}`;
+    const storedMessages = result.nodeExecutionResults?.get(resultKey);
+
+    expect(storedMessages).toBeDefined();
+    expect(storedMessages).toHaveLength(mockMessages.length);
+    expect(storedMessages).toEqual(mockMessages);
+  });
+
+  test('should store different message types correctly', async () => {
+    const initialState = createInitialState('Implement feature', {
+      maxEngineers: 1,
+      maxTurns: 30,
+      baseBranch: 'main',
+      baseRepoPath,
+      worktreeBasePath: '/test/worktrees',
+    });
+
+    const task: Task = {
+      id: taskId,
+      title: 'Test Task',
+      description: 'Test Description',
+      status: 'in_progress',
+      priority: 100,
+      dependencies: [],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    const stateWithTask: ParallelDevStateType = {
+      ...initialState,
+      tasks: [task],
+      currentTaskId: taskId,
+      activeSprint: {
+        id: sprintId,
+        name: 'Test Sprint',
+        goal: 'Test Goal',
+        taskIds: [taskId],
+        startedAt: new Date(),
+        status: 'active',
+        deployable: false,
+        metadata: {
+          estimatedHours: 8,
+          blockers: [],
+          completedTasksCount: 0,
+          failedTasksCount: 0,
+        },
+      },
+    };
+
+    // Mock with various message types
+    const mockMessages = [
+      // Thinking message
+      {
+        type: 'thinking',
+        thinking: 'Planning implementation...',
+      },
+      // Text message
+      {
+        type: 'assistant',
+        content: [
+          {
+            type: 'text',
+            text: 'Starting implementation',
+          },
+        ],
+      },
+      // Tool use message
+      {
+        type: 'assistant',
+        content: [
+          {
+            type: 'tool_use',
+            name: 'Read',
+            input: { file_path: '/existing/file.ts' },
+          },
+        ],
+      },
+      // Multiple content blocks
+      {
+        type: 'assistant',
+        content: [
+          {
+            type: 'text',
+            text: 'Creating new file',
+          },
+          {
+            type: 'tool_use',
+            name: 'Write',
+            input: { file_path: '/new/file.ts', content: 'code' },
+          },
+        ],
+      },
+      // Result message
+      {
+        type: 'result',
+        status: 'success',
+        finalResponse: 'Complete',
+      },
+    ];
+
+    mockExecute.mockReturnValue(
+      (async function* () {
+        for (const message of mockMessages) {
+          yield message;
+        }
+      })()
+    );
+
+    const result = await engineerNode(stateWithTask);
+
+    const resultKey = `EngineerNode-${taskId}`;
+    const storedMessages = result.nodeExecutionResults?.get(resultKey);
+
+    expect(storedMessages).toHaveLength(5);
+
+    // Verify thinking message
+    expect(storedMessages?.[0]).toHaveProperty('type', 'thinking');
+    expect(storedMessages?.[0]).toHaveProperty('thinking', 'Planning implementation...');
+
+    // Verify text message
+    expect(storedMessages?.[1].type).toBe('assistant');
+    expect(storedMessages?.[1].content[0].type).toBe('text');
+
+    // Verify tool use message
+    expect(storedMessages?.[2].content[0].type).toBe('tool_use');
+    expect(storedMessages?.[2].content[0].name).toBe('Read');
+
+    // Verify multiple content blocks
+    expect(storedMessages?.[3].content).toHaveLength(2);
+
+    // Verify result message
+    expect(storedMessages?.[4]).toHaveProperty('type', 'result');
+  });
+
+  test('should preserve existing nodeExecutionResults from state', async () => {
+    const initialState = createInitialState('Implement feature', {
+      maxEngineers: 1,
+      maxTurns: 30,
+      baseBranch: 'main',
+      baseRepoPath,
+      worktreeBasePath: '/test/worktrees',
+    });
+
+    const task: Task = {
+      id: taskId,
+      title: 'Test Task',
+      description: 'Test Description',
+      status: 'in_progress',
+      priority: 100,
+      dependencies: [],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    // Add existing result from another task
+    const existingResults = new Map();
+    existingResults.set('EngineerNode-TASK-000', [
+      { type: 'assistant', content: [{ type: 'text', text: 'Previous task' }] },
+    ]);
+
+    const stateWithTask: ParallelDevStateType = {
+      ...initialState,
+      tasks: [task],
+      currentTaskId: taskId,
+      nodeExecutionResults: existingResults,
+      activeSprint: {
+        id: sprintId,
+        name: 'Test Sprint',
+        goal: 'Test Goal',
+        taskIds: [taskId],
+        startedAt: new Date(),
+        status: 'active',
+        deployable: false,
+        metadata: {
+          estimatedHours: 8,
+          blockers: [],
+          completedTasksCount: 0,
+          failedTasksCount: 0,
+        },
+      },
+    };
+
+    const mockMessages = [
+      {
+        type: 'assistant',
+        content: [{ type: 'text', text: 'Current task' }],
+      },
+    ];
+
+    mockExecute.mockReturnValue(
+      (async function* () {
+        for (const message of mockMessages) {
+          yield message;
+        }
+      })()
+    );
+
+    const result = await engineerNode(stateWithTask);
+
+    // Verify both old and new results are preserved
+    expect(result.nodeExecutionResults?.size).toBe(2);
+    expect(result.nodeExecutionResults?.get('EngineerNode-TASK-000')).toBeDefined();
+    expect(result.nodeExecutionResults?.get(`EngineerNode-${taskId}`)).toBeDefined();
+    expect(result.nodeExecutionResults?.get(`EngineerNode-${taskId}`)).toEqual(mockMessages);
+  });
+
+  test('should handle empty message array', async () => {
+    const initialState = createInitialState('Implement feature', {
+      maxEngineers: 1,
+      maxTurns: 30,
+      baseBranch: 'main',
+      baseRepoPath,
+      worktreeBasePath: '/test/worktrees',
+    });
+
+    const task: Task = {
+      id: taskId,
+      title: 'Test Task',
+      description: 'Test Description',
+      status: 'in_progress',
+      priority: 100,
+      dependencies: [],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    const stateWithTask: ParallelDevStateType = {
+      ...initialState,
+      tasks: [task],
+      currentTaskId: taskId,
+      activeSprint: {
+        id: sprintId,
+        name: 'Test Sprint',
+        goal: 'Test Goal',
+        taskIds: [taskId],
+        startedAt: new Date(),
+        status: 'active',
+        deployable: false,
+        metadata: {
+          estimatedHours: 8,
+          blockers: [],
+          completedTasksCount: 0,
+          failedTasksCount: 0,
+        },
+      },
+    };
+
+    // Mock empty message stream
+    mockExecute.mockReturnValue(
+      (async function* () {
+        // No messages yielded
+      })()
+    );
+
+    const result = await engineerNode(stateWithTask);
+
+    const resultKey = `EngineerNode-${taskId}`;
+    const storedMessages = result.nodeExecutionResults?.get(resultKey);
+
+    // Should store empty array
+    expect(storedMessages).toBeDefined();
+    expect(storedMessages).toEqual([]);
+  });
+
+  test('should not store messages on task failure', async () => {
+    const initialState = createInitialState('Implement feature', {
+      maxEngineers: 1,
+      maxTurns: 30,
+      baseBranch: 'main',
+      baseRepoPath,
+      worktreeBasePath: '/test/worktrees',
+    });
+
+    const task: Task = {
+      id: taskId,
+      title: 'Test Task',
+      description: 'Test Description',
+      status: 'in_progress',
+      priority: 100,
+      dependencies: [],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    const stateWithTask: ParallelDevStateType = {
+      ...initialState,
+      tasks: [task],
+      currentTaskId: taskId,
+      activeSprint: {
+        id: sprintId,
+        name: 'Test Sprint',
+        goal: 'Test Goal',
+        taskIds: [taskId],
+        startedAt: new Date(),
+        status: 'active',
+        deployable: false,
+        metadata: {
+          estimatedHours: 8,
+          blockers: [],
+          completedTasksCount: 0,
+          failedTasksCount: 0,
+        },
+      },
+    };
+
+    // Mock AI provider error
+    mockExecute.mockImplementation(() => {
+      throw new Error('AI execution failed');
+    });
+
+    const result = await engineerNode(stateWithTask);
+
+    // Should not have stored messages on failure
+    expect(result.nodeExecutionResults).toBeUndefined();
   });
 });

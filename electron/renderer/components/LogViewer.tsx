@@ -12,17 +12,28 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Search, Filter, Trash2, ChevronsDown } from 'lucide-react'
 import { useAppStore } from '../store/appStore'
+import { useTabStore } from '../store/useTabStore'
 import { LogEntryComponent } from './LogEntry'
 import type { LogLevel } from '../types'
 
-export function LogViewer() {
+interface LogViewerProps {
+  tabId: string
+}
+
+export function LogViewer({ tabId }: LogViewerProps) {
   const { logs, logFilter, setLogFilter, clearLogs } = useAppStore()
+  const { getLogsForTab } = useTabStore()
   const parentRef = useRef<HTMLDivElement>(null)
   const autoScrollRef = useRef(true)
 
+  // Get logs for this specific tab
+  const tabLogs = useMemo(() => {
+    return getLogsForTab(tabId, logs)
+  }, [tabId, logs, getLogsForTab])
+
   // Filter logs based on current filter settings
   const filteredLogs = useMemo(() => {
-    return logs.filter((log) => {
+    return tabLogs.filter((log) => {
       // Level filter
       if (logFilter.level !== 'all' && log.level !== logFilter.level) {
         return false
@@ -39,7 +50,7 @@ export function LogViewer() {
 
       return true
     })
-  }, [logs, logFilter])
+  }, [tabLogs, logFilter])
 
   // Virtual scrolling
   const virtualizer = useVirtualizer({
@@ -67,22 +78,22 @@ export function LogViewer() {
   }
 
   const levelOptions: Array<{ value: LogLevel | 'all'; label: string; count: number }> = [
-    { value: 'all', label: 'すべて', count: logs.length },
-    { value: 'success', label: '成功', count: logs.filter((l) => l.level === 'success').length },
-    { value: 'info', label: '情報', count: logs.filter((l) => l.level === 'info').length },
-    { value: 'warn', label: '警告', count: logs.filter((l) => l.level === 'warn').length },
-    { value: 'error', label: 'エラー', count: logs.filter((l) => l.level === 'error').length },
-    { value: 'debug', label: 'デバッグ', count: logs.filter((l) => l.level === 'debug').length },
+    { value: 'all', label: 'すべて', count: tabLogs.length },
+    { value: 'success', label: '成功', count: tabLogs.filter((l) => l.level === 'success').length },
+    { value: 'info', label: '情報', count: tabLogs.filter((l) => l.level === 'info').length },
+    { value: 'warn', label: '警告', count: tabLogs.filter((l) => l.level === 'warn').length },
+    { value: 'error', label: 'エラー', count: tabLogs.filter((l) => l.level === 'error').length },
+    { value: 'debug', label: 'デバッグ', count: tabLogs.filter((l) => l.level === 'debug').length },
   ]
 
   // Calculate statistics
   const statistics = useMemo(() => {
-    const totalLogs = logs.length
-    const successLogs = logs.filter((l) => l.level === 'success').length
-    const errorLogs = logs.filter((l) => l.level === 'error').length
-    const warnLogs = logs.filter((l) => l.level === 'warn').length
-    const infoLogs = logs.filter((l) => l.level === 'info').length
-    const debugLogs = logs.filter((l) => l.level === 'debug').length
+    const totalLogs = tabLogs.length
+    const successLogs = tabLogs.filter((l) => l.level === 'success').length
+    const errorLogs = tabLogs.filter((l) => l.level === 'error').length
+    const warnLogs = tabLogs.filter((l) => l.level === 'warn').length
+    const infoLogs = tabLogs.filter((l) => l.level === 'info').length
+    const debugLogs = tabLogs.filter((l) => l.level === 'debug').length
 
     return {
       totalLogs,
@@ -92,7 +103,7 @@ export function LogViewer() {
       infoLogs,
       debugLogs,
     }
-  }, [logs])
+  }, [tabLogs])
 
   return (
     <div className="flex h-full flex-col p-4">

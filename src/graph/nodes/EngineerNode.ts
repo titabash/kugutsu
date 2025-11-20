@@ -985,11 +985,17 @@ ${instruction.split('\n').slice(0, 5).join('\n')}
           }]
         : [];
 
+      // Store AI messages for UI display
+      const resultKey = `EngineerNode-${taskId}`;
+      const nodeExecutionResults = new Map(state.nodeExecutionResults || new Map());
+      nodeExecutionResults.set(resultKey, messages);
+
       return {
         tasks: [inReviewTask],
         globalTasks: updatedGlobalTasks,
         failedProviders: AIProviderFactory.getFailedProviders(),
         feedbackRequest: null, // フィードバッククリア（成功）
+        nodeExecutionResults,
         logs: [
           {
             timestamp: new Date(),

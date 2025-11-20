@@ -82,17 +82,17 @@ jest.mock('../../src/graph/state.js', () => ({
 
 // Mock the graph compilation function
 // Note: mockGraph must be created inside the mock factory to ensure it's available during hoisting
+let mockStreamImplementation = async function* () {
+  // Yield no events - just a simple mock
+};
+
 jest.mock('../../src/graph/ParallelDevGraph.js', () => {
-  const mockStreamFn = jest.fn().mockImplementation(async function* () {
-    // Yield no events - just a simple mock
-  });
-
-  const mockGraph = {
-    stream: mockStreamFn,
-  };
-
   return {
-    compileUnifiedScrumWorkflowGraph: jest.fn(() => mockGraph),
+    compileUnifiedScrumWorkflowGraph: jest.fn(() => ({
+      stream: jest.fn(async function* (...args) {
+        yield* mockStreamImplementation(...args);
+      }),
+    })),
   };
 });
 
@@ -237,5 +237,125 @@ describe('ParallelDevOrchestrator - Cancellation', () => {
       // Assert - should be different instances
       expect(firstController).not.toBe(secondController);
     });
+
+    it('should pass AbortSignal to graph.stream()', async () => {
+      // Clear all mocks
+      jest.clearAllMocks();
+
+      // Get the mocked graph
+      const mockedCompile = compileUnifiedScrumWorkflowGraph as jest.MockedFunction<typeof compileUnifiedScrumWorkflowGraph>;
+      const mockGraph = mockedCompile();
+
+      // Start execution (don't await - we'll cancel it)
+      const executePromise = orchestrator.execute({
+        userRequest: 'test',
+        config: mockConfig,
+        window: null,
+      });
+
+      // Wait a bit for execute() to call graph.stream()
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // Assert - stream() should have been called with signal
+      expect(mockGraph.stream).toHaveBeenCalled();
+
+      // Get the call arguments
+      const streamCallArgs = (mockGraph.stream as jest.MockedFunction<any>).mock.calls[0];
+      expect(streamCallArgs).toBeDefined();
+      expect(streamCallArgs.length).toBeGreaterThan(1);
+
+      // Second argument should be the options object
+      const options = streamCallArgs[1];
+      expect(options).toBeDefined();
+
+      // CRITICAL: signal property must exist in options
+      expect(options.signal).toBeDefined();
+      expect(options.signal).toBeInstanceOf(AbortSignal);
+
+      // Cancel and wait for completion
+      orchestrator.cancel();
+      await executePromise.catch(() => {/* ignore errors */});
+    });
+
+    it('should stop stream execution when cancelled', async () => {
+      // Clear all mocks
+      jest.clearAllMocks();
+
+      // Create a mock stream that runs indefinitely until cancelled
+      let streamCancelled = false;
+
+      // Override mockStreamImplementation globally
+      mockStreamImplementation = async function* (state: any, options: any) {
+        // Simulate long-running stream
+        for (let i = 0; i < 1000; i++) {
+          // Check if signal is aborted
+          if (options?.signal?.aborted) {
+            streamCancelled = true;
+            return;
+          }
+
+          // Yield a fake event
+          yield { values: { ...state, metadata: { ...state.metadata, phase: 'development' } } };
+
+          // Small delay to simulate processing
+          await new Promise(resolve => setTimeout(resolve, 10));
+        }
+      };
+
+      // Start execution (don't await)
+      const executePromise = orchestrator.execute({
+        userRequest: 'test',
+        config: mockConfig,
+        window: null,
+      });
+
+      // Wait a bit to ensure stream has started
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // Cancel execution
+      orchestrator.cancel();
+
+      // Wait for execution to complete
+      await executePromise.catch(() => {/* ignore errors */});
+
+      // Assert - stream should have detected cancellation
+      expect(streamCancelled).toBe(true);
+    }, 10000); // 10 second timeout
+
+    it('should complete cancellation within reasonable time', async () => {
+      // Clear all mocks
+      jest.clearAllMocks();
+
+      // Override mockStreamImplementation
+      mockStreamImplementation = async function* (state: any, options: any) {
+        for (let i = 0; i < 100; i++) {
+          if (options?.signal?.aborted) {
+            return;
+          }
+          yield { values: state };
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+      };
+
+      // Start execution
+      const executePromise = orchestrator.execute({
+        userRequest: 'test',
+        config: mockConfig,
+        window: null,
+      });
+
+      // Wait for stream to start
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // Cancel and measure time
+      const cancelStartTime = Date.now();
+      orchestrator.cancel();
+
+      await executePromise.catch(() => {/* ignore errors */});
+      const cancelDuration = Date.now() - cancelStartTime;
+
+      // Assert - cancellation should complete within 3 seconds
+      expect(cancelDuration).toBeLessThan(3000);
+    }, 10000);
   });
 });

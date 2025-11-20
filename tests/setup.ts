@@ -30,6 +30,25 @@ if (typeof ReadableStream === 'undefined') {
   global.TransformStream = TransformStream as any;
 }
 
+// Polyfill AbortController and AbortSignal for tests
+// Add throwIfAborted method if it doesn't exist (required by LangGraph)
+if (typeof AbortController !== 'undefined') {
+  const OriginalAbortSignal = AbortSignal.prototype;
+  if (!('throwIfAborted' in OriginalAbortSignal)) {
+    Object.defineProperty(OriginalAbortSignal, 'throwIfAborted', {
+      value: function throwIfAborted() {
+        if (this.aborted) {
+          const error = new Error('signal is aborted without reason');
+          error.name = 'AbortError';
+          throw error;
+        }
+      },
+      writable: true,
+      configurable: true,
+    });
+  }
+}
+
 // Note: Due to Jest ESM bug (https://github.com/jestjs/jest/issues/13660),
 // jest method calls in setup files can break unstable_mockModule resolution.
 // Set timeout in individual test files instead.

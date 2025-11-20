@@ -144,13 +144,14 @@ export class ParallelDevOrchestrator {
     this.abortController = new AbortController();
     console.log('🔄 [ParallelDevOrchestrator] New AbortController created');
 
-    // Inject abortSignal into config
+    // Inject abortSignal and abortController into config
     const configWithAbort: ParallelDevConfig = {
       ...config,
       abortSignal: this.abortController.signal,
+      abortController: this.abortController,
     };
 
-    console.log('🔄 [ParallelDevOrchestrator] AbortSignal injected into config');
+    console.log('🔄 [ParallelDevOrchestrator] AbortSignal and AbortController injected into config');
 
     // Set window if provided
     if (window) {
@@ -199,6 +200,7 @@ export class ParallelDevOrchestrator {
 
       const stream = await graph.stream(initialState, {
         streamMode: ["values", "debug", "tasks"] as const,
+        signal: this.abortController.signal,
         configurable: {
           thread_id: `exec-${Date.now()}-${Math.random().toString(36).substring(7)}`,
         },
@@ -472,8 +474,12 @@ export class ParallelDevOrchestrator {
       if (this.stateStreamManager) {
         await this.stateStreamManager.processStateUpdate(finalState);
 
-        // Notify StateStreamManager about node completion
-        await this.stateStreamManager.notifyNodeExecution(nodeName, 'completed', finalState);
+        // Get AI messages for this node execution
+        const resultKey = `${nodeName}-${taskId}`;
+        const aiMessages = finalState.nodeExecutionResults?.get(resultKey) || [];
+
+        // Notify StateStreamManager about node completion with AI messages
+        await this.stateStreamManager.notifyNodeExecution(nodeName, 'completed', finalState, taskId, aiMessages);
       }
 
       console.log(`✅ ノード完了: ${nodeName}${taskId ? ` (task: ${taskId})` : ''}`);

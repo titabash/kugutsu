@@ -93,6 +93,12 @@ const TeamDashboardFlow: React.FC = () => {
   const [nodes, , onNodesChange] = useNodesState(initialNodes);
   const [edges, , onEdgesChange] = useEdgesState(initialEdges);
 
+  // アクティブノードを計算（フックは条件分岐の前に呼ぶ必要がある）
+  const activeNodes = useMemo(() => {
+    if (!nodeFlowData) return [];
+    return nodeFlowData.nodes.filter((node: any) => node.status === 'executing');
+  }, [nodeFlowData]);
+
   // データがない場合
   if (!nodeFlowData) {
     return (
@@ -105,12 +111,6 @@ const TeamDashboardFlow: React.FC = () => {
       </div>
     );
   }
-
-  // アクティブノードを計算
-  const activeNodes = useMemo(() => {
-    if (!nodeFlowData) return [];
-    return nodeFlowData.nodes.filter((node: any) => node.status === 'executing');
-  }, [nodeFlowData]);
 
   return (
     <div className={styles.container}>

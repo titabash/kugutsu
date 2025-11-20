@@ -370,4 +370,129 @@ describe('ClaudeAgentProvider', () => {
     expect(messages[0].content.subtype).toBeUndefined(); // Should not be rate_limit
     expect(messages[0].content.error).toBe('API connection failed');
   });
+
+  describe('AbortController support', () => {
+    test('should pass AbortController to query() when provided', async () => {
+      mockQuery.mockReturnValue({
+        async *[Symbol.asyncIterator]() {
+          yield {
+            type: 'assistant',
+            message: {
+              content: [
+                {
+                  type: 'text',
+                  text: 'Test response',
+                },
+              ],
+            },
+            session_id: 'test-session',
+          };
+        },
+      });
+
+      const abortController = new AbortController();
+
+      // Execute with abortController
+      const messages: any[] = [];
+      for await (const message of provider.execute('Test', { abortController })) {
+        messages.push(message);
+      }
+
+      // Verify query was called with abortController
+      expect(mockQuery).toHaveBeenCalledWith({
+        prompt: 'Test',
+        options: expect.objectContaining({
+          abortController,
+        }),
+      });
+    });
+
+    test('should stop execution when AbortController is aborted', async () => {
+      const abortController = new AbortController();
+      let yieldCount = 0;
+
+      // Mock query to yield multiple messages and respect abort signal
+      mockQuery.mockReturnValue({
+        async *[Symbol.asyncIterator]() {
+          for (let i = 0; i < 100; i++) {
+            // Check if aborted (simulate what Claude SDK does)
+            if (abortController.signal.aborted) {
+              return;
+            }
+
+            yieldCount++;
+            yield {
+              type: 'assistant',
+              message: {
+                content: [
+                  {
+                    type: 'text',
+                    text: `Message ${i}`,
+                  },
+                ],
+              },
+              session_id: 'test-session',
+            };
+
+            // Small delay to simulate async processing
+            await new Promise(resolve => setTimeout(resolve, 10));
+          }
+        },
+      });
+
+      // Start execution but abort after a short delay
+      const executePromise = (async () => {
+        const messages: any[] = [];
+        for await (const message of provider.execute('Test', { abortController })) {
+          messages.push(message);
+        }
+        return messages;
+      })();
+
+      // Abort after a short delay
+      await new Promise(resolve => setTimeout(resolve, 50));
+      abortController.abort();
+
+      const messages = await executePromise;
+
+      // Should have stopped before yielding all 100 messages
+      expect(messages.length).toBeLessThan(100);
+      expect(yieldCount).toBeLessThan(100);
+    });
+
+    test('should work without AbortController (backward compatibility)', async () => {
+      mockQuery.mockReturnValue({
+        async *[Symbol.asyncIterator]() {
+          yield {
+            type: 'assistant',
+            message: {
+              content: [
+                {
+                  type: 'text',
+                  text: 'Test',
+                },
+              ],
+            },
+            session_id: 'test',
+          };
+        },
+      });
+
+      // Execute without abortController
+      const messages: any[] = [];
+      for await (const message of provider.execute('Test')) {
+        messages.push(message);
+      }
+
+      expect(messages.length).toBe(1);
+
+      // Verify query was called without abortController
+      expect(mockQuery).toHaveBeenCalledWith({
+        prompt: 'Test',
+        options: expect.not.objectContaining({
+          abortController: expect.anything(),
+        }),
+      });
+    });
+  });
 });

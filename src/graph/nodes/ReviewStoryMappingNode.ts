@@ -17,6 +17,7 @@ import { DataPersistence } from '../../utils/DataPersistence.js';
 import type { StoryMapping } from '../../types/scrum.js';
 import { MessageHandler } from '../../utils/MessageHandler.js';
 import { JSONExtractor } from '../../utils/JSONExtractor.js';
+import { executeWithAbort, checkAborted } from '../../utils/NodeHelpers.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
@@ -128,6 +129,9 @@ export async function reviewStoryMappingNode(
 
   const reviewPrompt = buildReviewPrompt(storyMapping, iteration);
 
+  // キャンセルチェック
+  checkAborted(config, 'ReviewStoryMapping');
+
   console.log('🤖 AI: ストーリーマッピングレビュー実行中...');
 
   const handler1 = new MessageHandler({
@@ -136,13 +140,13 @@ export async function reviewStoryMappingNode(
   });
 
   let aiResponseText = '';
-  for await (const message of provider.execute(reviewPrompt, {
+  for await (const message of executeWithAbort(provider, reviewPrompt, {
     maxTurns,
     cwd: config.baseRepoPath,
     allowedTools: ['Read', 'Glob'],
     permissionMode: 'acceptEdits',
     includePartialMessages: true,
-  })) {
+  }, config)) {
     await handler1.handleMessage(message);
 
     if (message.type === 'assistant' && message.content) {

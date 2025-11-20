@@ -279,6 +279,23 @@ export interface LogEntry {
    * Associated session ID (if applicable)
    */
   sessionId?: string;
+
+  /**
+   * Engineer/Reviewer ID (e.g., "engineer-1", "reviewer-1")
+   * Used for tab routing and identification
+   */
+  engineerId?: string;
+
+  /**
+   * Node type that generated this log (e.g., "EngineerNode", "ReviewNode")
+   * Used for tab routing and filtering
+   */
+  nodeType?: string;
+
+  /**
+   * AI provider used to generate this log
+   */
+  provider?: 'claude' | 'codex' | 'system';
 }
 
 /**
@@ -325,6 +342,12 @@ export interface ParallelDevConfig {
    * When this signal is aborted, all AI operations should terminate immediately
    */
   abortSignal?: AbortSignal;
+
+  /**
+   * Abort controller for cancelling execution
+   * Nodes should pass this to provider.execute() to enable cancellation
+   */
+  abortController?: AbortController;
 }
 
 /**

@@ -16,6 +16,7 @@ import { AIFileWriter } from '../../utils/AIFileWriter.js';
 import { GitWorktreeManager } from '../../managers/GitWorktreeManager.js';
 import type { StoryMapping } from '../../types/scrum.js';
 import { MessageHandler } from '../../utils/MessageHandler.js';
+import { executeWithAbort, checkAborted } from '../../utils/NodeHelpers.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
@@ -176,18 +177,21 @@ export async function techLeadDesignNode(
   // ステップ1: 全体設計書を生成
   const designDocsPrompt = buildDesignDocsPrompt(storyMapping, designDocsPath);
 
+  // キャンセルチェック
+  checkAborted(config, 'TechLeadDesign');
+
   const handler1 = new MessageHandler({
     maxTurns: config.maxTurns || 50,
     nodeName: 'TechLeadDesign - Design Docs',
   });
 
-  for await (const message of provider.execute(designDocsPrompt, {
+  for await (const message of executeWithAbort(provider, designDocsPrompt, {
     maxTurns: config.maxTurns || 50,
     cwd: config.baseRepoPath,
     allowedTools: ['Write', 'Read', 'Glob'],
     permissionMode: 'acceptEdits',
     includePartialMessages: true,
-  })) {
+  }, config)) {
     await handler1.handleMessage(message);
   }
 
@@ -203,18 +207,21 @@ export async function techLeadDesignNode(
   await Promise.all([
     // UI/UX設計生成
     (async () => {
+      // キャンセルチェック
+      checkAborted(config, 'TechLeadDesign');
+
       const handler2 = new MessageHandler({
         maxTurns: config.maxTurns || 50,
         nodeName: 'TechLeadDesign - UI/UX Design',
       });
 
-      for await (const message of provider.execute(uiuxPrompt, {
+      for await (const message of executeWithAbort(provider, uiuxPrompt, {
         maxTurns: config.maxTurns || 50,
         cwd: config.baseRepoPath,
         allowedTools: ['Write'],
         permissionMode: 'acceptEdits',
         includePartialMessages: true,
-      })) {
+      }, config)) {
         await handler2.handleMessage(message);
       }
 
@@ -224,18 +231,21 @@ export async function techLeadDesignNode(
 
     // DB設計生成
     (async () => {
+      // キャンセルチェック
+      checkAborted(config, 'TechLeadDesign');
+
       const handler3 = new MessageHandler({
         maxTurns: config.maxTurns || 50,
         nodeName: 'TechLeadDesign - Database Design',
       });
 
-      for await (const message of provider.execute(dbPrompt, {
+      for await (const message of executeWithAbort(provider, dbPrompt, {
         maxTurns: config.maxTurns || 50,
         cwd: config.baseRepoPath,
         allowedTools: ['Write'],
         permissionMode: 'acceptEdits',
         includePartialMessages: true,
-      })) {
+      }, config)) {
         await handler3.handleMessage(message);
       }
 
@@ -260,18 +270,21 @@ export async function techLeadDesignNode(
   // ステップ4: API設計を生成
   const apiPrompt = buildAPIDesignPrompt(storyMapping, dbSchema, apiSpecJsonPath, apiSpecMdPath);
 
+  // キャンセルチェック
+  checkAborted(config, 'TechLeadDesign');
+
   const handler4 = new MessageHandler({
     maxTurns: config.maxTurns || 50,
     nodeName: 'TechLeadDesign - API Design',
   });
 
-  for await (const message of provider.execute(apiPrompt, {
+  for await (const message of executeWithAbort(provider, apiPrompt, {
     maxTurns: config.maxTurns || 50,
     cwd: config.baseRepoPath,
     allowedTools: ['Write'],
     permissionMode: 'acceptEdits',
     includePartialMessages: true,
-  })) {
+  }, config)) {
     await handler4.handleMessage(message);
   }
 

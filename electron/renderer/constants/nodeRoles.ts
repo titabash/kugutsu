@@ -6,6 +6,35 @@
 
 import type { NodeRole } from '../types'
 
+/**
+ * UI用ノード名（PascalCase + Node接尾辞）からLangGraphノード名（小文字_区切り）へのマッピング
+ * NodeNameMapperと同じマッピングを使用
+ */
+const UI_TO_LANGGRAPH_MAP: Record<string, string> = {
+  AnalyzeComplexityNode: 'analyze_complexity',
+  CheckModeNode: 'check_mode',
+  DirectorNode: 'director_ai',
+  ReviewStoryMappingNode: 'review_story_mapping',
+  TechLeadDesignNode: 'tech_lead_design',
+  ReviewDesignNode: 'review_design',
+  TaskBreakdownNode: 'task_breakdown',
+  ProductOwnerNode: 'product_owner',
+  SprintPlanningNode: 'sprint_planning',
+  SprintReviewNode: 'sprint_review',
+  InstructionGeneratorDispatchNode: 'instruction_generator_dispatch',
+  InstructionGeneratorNode: 'instruction_generator',
+  InstructionAggregatorNode: 'instruction_aggregator',
+  EngineerDispatchNode: 'engineer_dispatch',
+  EngineerNode: 'engineer',
+  EngineerAggregatorNode: 'engineer_aggregator',
+  ReviewDispatchNode: 'review_dispatch',
+  ReviewNode: 'review',
+  ReviewAggregatorNode: 'review_aggregator',
+  MergeCoordinatorNode: 'merge_coordinator',
+  ConflictResolverNode: 'conflict_resolver',
+  BacklogRefinementNode: 'backlog_refinement',
+};
+
 export const NODE_ROLES: Record<string, NodeRole> = {
   // ========================================
   // Planning (計画)
@@ -184,11 +213,18 @@ export const NODE_ROLES: Record<string, NodeRole> = {
 
 /**
  * Get node role information
+ * UI形式（PascalCase + Node接尾辞）とLangGraph形式（小文字_区切り）の両方を受け入れる
+ *
+ * @param nodeName - ノード名（UI形式またはLangGraph形式）
+ * @returns ノードロール情報
  */
 export function getNodeRole(nodeName: string): NodeRole {
+  // UI形式の場合はLangGraph形式に変換
+  const langGraphNodeName = UI_TO_LANGGRAPH_MAP[nodeName] || nodeName;
+
   return (
-    NODE_ROLES[nodeName] || {
-      nodeName,
+    NODE_ROLES[langGraphNodeName] || {
+      nodeName: langGraphNodeName,
       roleName: nodeName,
       roleIcon: '⚙️',
       description: 'Unknown node',

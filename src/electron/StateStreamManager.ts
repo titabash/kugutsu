@@ -14,6 +14,7 @@
 import type { BrowserWindow } from 'electron';
 import type { ParallelDevStateType } from '../graph/state.js';
 import type { Task, LogEntry } from '../graph/types.js';
+import { nodeNameMapper } from '../utils/NodeNameMapper.js';
 
 export interface StreamManagerOptions {
   /**
@@ -249,7 +250,7 @@ export class StateStreamManager {
    * Notify the StateStreamManager about node execution from LangGraph
    * This replaces the previous log-based inference approach
    *
-   * @param nodeName - Name of the node being executed
+   * @param nodeName - Name of the node being executed (LangGraph format: lowercase_with_underscores)
    * @param status - Execution status ('started' | 'completed' | 'failed')
    * @param state - Current state (optional, for additional context)
    * @param taskId - Task ID (optional, for task-specific nodes)
@@ -266,8 +267,11 @@ export class StateStreamManager {
 
     const now = Date.now();
 
+    // Convert LangGraph node name to UI format
+    const uiNodeName = nodeNameMapper.langGraphToUI(nodeName);
+
     if (status === 'started') {
-      this.currentNode = nodeName;
+      this.currentNode = nodeName; // Keep original for internal tracking
 
       // 実行時間の記録開始
       this.nodeExecutionTimes.set(nodeName, { startedAt: now });
@@ -277,11 +281,12 @@ export class StateStreamManager {
         this.updateNodeStatus(nodeName, 'executing', now);
       }
 
-      // Add node-started event to buffer
+      // Add node-started event to buffer (use UI node name)
       this.addToBuffer({
         type: 'node-started',
         data: {
-          nodeId: nodeName,
+          nodeId: uiNodeName, // Use UI format for consistency with UI expectations
+          langGraphNodeId: nodeName, // Include original for debugging
           taskId,
           timestamp: now,
         },
@@ -307,17 +312,18 @@ export class StateStreamManager {
         );
       }
 
-      // Add node-completed event to buffer
+      // Add node-completed event to buffer (use UI node name)
       this.addToBuffer({
         type: 'node-completed',
         data: {
-          nodeId: nodeName,
+          nodeId: uiNodeName, // Use UI format for consistency with UI expectations
+          langGraphNodeId: nodeName, // Include original for debugging
           taskId,
           status,
           timestamp: now,
           startedAt: timing?.startedAt,
           executionTime,
-          result: state ? { message: `${nodeName}の処理が完了しました` } : undefined,
+          result: state ? { message: `${uiNodeName}の処理が完了しました` } : undefined,
           aiMessages, // Include AI messages for UI display
         },
         timestamp: now,

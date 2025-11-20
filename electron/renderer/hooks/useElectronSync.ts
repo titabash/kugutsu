@@ -7,6 +7,8 @@ import { generateTabTitle } from '../utils/logRouter'
 
 /**
  * Important nodes that should show thinking messages in the chat
+ * ノード名はUI形式（PascalCase + Node接尾辞）を使用
+ * StateStreamManagerがLangGraphノード名からUI形式に変換して送信
  */
 const IMPORTANT_NODES: Record<string, { label: string; message: string }> = {
   ProductOwnerNode: { label: 'Product Owner', message: 'タスクを分析中...' },
@@ -16,6 +18,10 @@ const IMPORTANT_NODES: Record<string, { label: string; message: string }> = {
   SprintPlanningNode: { label: 'Sprint Planning', message: 'スプリント計画中...' },
   MergeCoordinatorNode: { label: 'Merge Coordinator', message: 'マージを調整中...' },
   TechLeadDesignNode: { label: 'Tech Lead', message: '設計をレビュー中...' },
+  AnalyzeComplexityNode: { label: 'Analyzer', message: '複雑度を分析中...' },
+  TaskBreakdownNode: { label: 'Task Planner', message: 'タスクを分解中...' },
+  ConflictResolverNode: { label: 'Conflict Resolver', message: '競合を解決中...' },
+  SprintReviewNode: { label: 'Sprint Review', message: 'スプリントをレビュー中...' },
 }
 
 /**

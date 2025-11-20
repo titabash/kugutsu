@@ -522,10 +522,13 @@ export class MessageHandler {
       // エラーメッセージの構築（既存パターンと同じロジック）
       let errorMsg: string;
       if (details?.message) {
+        // メッセージを正規化（SDK内部メッセージの変換と二重ネストの防止）
+        const normalizedMsg = this.normalizeErrorMessage(details.message);
+
         errorMsg =
           details.subtype === 'error_max_turns'
-            ? `AI実行がmaxTurns制限に到達しました: ${details.message}`
-            : `AI実行中にエラーが発生しました: ${details.message}`;
+            ? `AI実行がmaxTurns制限に到達しました: ${normalizedMsg}`
+            : `AI実行中にエラーが発生しました: ${normalizedMsg}`;
       } else if (details?.errors && details.errors.length > 0) {
         errorMsg = `AI実行中にエラーが発生しました: ${details.errors.join('; ')}`;
       } else {
@@ -543,6 +546,38 @@ export class MessageHandler {
 
     // エラーがない場合は通常のcomplete処理
     this.complete(true, successMessage);
+  }
+
+  /**
+   * エラーメッセージを正規化する
+   *
+   * - 既にラップされているメッセージは再ラップしない
+   * - SDK内部メッセージ（"Re-connecting..."等）をユーザーフレンドリーに変換
+   *
+   * @param message 元のエラーメッセージ
+   * @returns 正規化されたエラーメッセージ
+   */
+  private normalizeErrorMessage(message: string): string {
+    // 既にラップされているメッセージは元のままを返す（二重ネストを防止）
+    if (message.startsWith('AI実行中にエラーが発生しました:') ||
+        message.startsWith('AI実行がmaxTurns制限に到達しました:')) {
+      // プレフィックスを除去して本文だけを返す
+      return message.replace(/^AI実行中にエラーが発生しました:\s*/, '')
+                   .replace(/^AI実行がmaxTurns制限に到達しました:\s*/, '');
+    }
+
+    const lowerMsg = message.toLowerCase();
+
+    // SDK内部の再接続メッセージを検出して変換
+    if (lowerMsg.includes('re-connecting') ||
+        lowerMsg.includes('reconnecting') ||
+        lowerMsg.includes('connection failed') ||
+        lowerMsg.includes('failed to connect')) {
+      return 'APIサーバーへの接続に失敗しました。ネットワーク接続を確認するか、しばらく時間をおいて再試行してください';
+    }
+
+    // その他のメッセージはそのまま返す
+    return message;
   }
 
   /**

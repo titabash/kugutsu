@@ -52,6 +52,7 @@ export class ProviderFallbackManager {
     'rate_limit',
     'usage_limit',
     'error_max_turns',
+    'error', // Generic error subtype (e.g., from OpenAI Codex or connection errors)
   ];
 
   /**
@@ -124,6 +125,24 @@ export class ProviderFallbackManager {
       );
 
       if (isProviderCrash || isUsageLimit) {
+        return true;
+      }
+    }
+
+    // Special case: "error" subtype with reconnection messages
+    // SDK reconnection failures should trigger fallback
+    if (errorType === 'error') {
+      const errorMsg = (errorDetails.message || errorDetails.errors?.join(' ') || '').toLowerCase();
+
+      // Check for reconnection indicators
+      const isReconnectionError = (
+        errorMsg.includes('re-connecting') ||
+        errorMsg.includes('reconnecting') ||
+        errorMsg.includes('connection failed') ||
+        errorMsg.includes('failed to connect')
+      );
+
+      if (isReconnectionError) {
         return true;
       }
     }

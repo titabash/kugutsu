@@ -164,7 +164,7 @@ export interface AIProviderConfig {
   /**
    * Provider type
    */
-  provider: 'claude' | 'codex' | 'mock';
+  provider: 'claude' | 'codex' | 'mock' | 'gemini';
 
   /**
    * Claude-specific configuration
@@ -181,6 +181,15 @@ export interface AIProviderConfig {
     apiKey?: string;
     model?: string;
     baseUrl?: string;
+  };
+
+  /**
+   * Gemini-specific configuration
+   */
+  gemini?: {
+    apiKey?: string;
+    model?: string;
+    authType?: 'oauth-personal' | 'api-key';
   };
 }
 

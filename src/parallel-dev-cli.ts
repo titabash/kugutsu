@@ -28,7 +28,7 @@ interface CLIConfig {
   cleanup: boolean; // true = cleanup (default), false = keep worktrees
   showHelp: boolean;
   showVersion: boolean;
-  provider: 'claude' | 'codex' | 'mock';
+  provider: 'claude' | 'codex' | 'gemini' | 'mock';
   visualUI: boolean;
   useRemote: boolean;
 }
@@ -99,7 +99,7 @@ function parseArgs(args: string[]): CLIConfig {
 
       case '--provider':
         const provider = args[++i];
-        if (provider === 'claude' || provider === 'codex' || provider === 'mock') {
+        if (provider === 'claude' || provider === 'codex' || provider === 'gemini' || provider === 'mock') {
           config.provider = provider;
         }
         break;
@@ -159,15 +159,18 @@ function showUsage(): void {
   --keep-worktrees              実行後もWorktreeとブランチを保持（デバッグ用）
   --visual-ui                   ターミナル分割表示を使用
   --use-remote                  リモートリポジトリを使用 (未実装)
-  --provider <claude|codex|mock> AIプロバイダー (デフォルト: mock)
+  --provider <claude|codex|gemini|mock> AIプロバイダー (デフォルト: mock)
   --version, -v                 バージョン情報を表示
   --help, -h                    このヘルプを表示
 
 環境変数:
-  KUGUTSU_PROVIDER              AIプロバイダー (mock|claude|codex, デフォルト: mock)
+  KUGUTSU_PROVIDER              AIプロバイダー (mock|claude|codex|gemini, デフォルト: mock)
   ANTHROPIC_API_KEY             Claude API キー (provider=claude時に必須)
   OPENAI_API_KEY                OpenAI API キー (Codex利用時。ログイン済みなら省略可)
   OPENAI_CODEX_BASE_URL         Codex API Base URL (任意。デフォルトはローカルセッション)
+  GEMINI_API_KEY                Gemini API キー (provider=gemini & authType=api-key時)
+  GEMINI_AUTH_TYPE              Gemini認証方式 (oauth-personal|api-key, デフォルト: oauth-personal)
+  GEMINI_MODEL                  Geminiモデル (デフォルト: gemini-2.5-pro)
 
 例:
   # モックプロバイダーでテスト実行（デフォルト、APIコストなし）
@@ -297,7 +300,7 @@ async function main(): Promise<void> {
 
   // ===== Provider and API Key Validation =====
   // Override provider with environment variable if set
-  const envProvider = process.env.KUGUTSU_PROVIDER as 'claude' | 'codex' | 'mock' | undefined;
+  const envProvider = process.env.KUGUTSU_PROVIDER as 'claude' | 'codex' | 'gemini' | 'mock' | undefined;
   if (envProvider) {
     cliConfig.provider = envProvider;
   }

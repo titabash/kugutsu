@@ -92,7 +92,7 @@ async function runE2EMinimalVerification() {
     console.log('');
 
     // 初期状態作成
-    const provider = 'codex';
+    const provider = 'gemini';
     const initialState = createInitialState(taskRequest, {
       maxEngineers: 5,
       maxTurns: 50,

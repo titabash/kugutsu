@@ -295,7 +295,7 @@ export interface LogEntry {
   /**
    * AI provider used to generate this log
    */
-  provider?: 'claude' | 'codex' | 'system';
+  provider?: 'claude' | 'codex' | 'gemini' | 'system';
 }
 
 /**
@@ -335,7 +335,7 @@ export interface ParallelDevConfig {
   /**
    * AI provider configuration
    */
-  provider?: 'claude' | 'codex' | 'mock';
+  provider?: 'claude' | 'codex' | 'gemini' | 'mock';
 
   /**
    * Abort signal for cancelling execution

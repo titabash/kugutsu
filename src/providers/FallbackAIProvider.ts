@@ -154,8 +154,19 @@ export class FallbackAIProvider implements IAIProvider {
         return;
       }
 
-      // Fallback not possible - record failure and yield error to caller
-      AIProviderFactory.recordFailure(primaryProviderName);
+      // Fallback not possible
+      // Only record failure if this is a provider-level issue that would have triggered fallback
+      // (e.g., rate_limit, usage_limit, provider crash)
+      // Don't record failure for non-fallback errors (e.g., 404, validation errors)
+      const wouldHaveFallbacked = ProviderFallbackManager.shouldFallback(details, false);
+      if (wouldHaveFallbacked) {
+        // This is a provider-level failure, but fallback is not available/enabled
+        console.log(`[FallbackAIProvider] プロバイダーレベルのエラーだがフォールバック不可: ${primaryProviderName}を失敗記録`);
+        AIProviderFactory.recordFailure(primaryProviderName);
+      } else {
+        // This is not a provider failure, just a task-level error
+        console.log(`[FallbackAIProvider] タスクレベルのエラー (subtype: ${details?.subtype || 'undefined'}): プロバイダーは失敗記録しない`);
+      }
 
       let errorMsg: string;
       if (details?.message) {

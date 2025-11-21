@@ -8,6 +8,7 @@ import type { IAIProvider, AIProviderConfig } from './IAIProvider.js';
 import { ClaudeAgentProvider } from './ClaudeAgentProvider.js';
 import { MockAIProvider } from './MockAIProvider.js';
 import { OpenAICodexProvider } from './OpenAICodexProvider.js';
+import { GeminiCLIProvider } from './GeminiCLIProvider.js';
 import { FallbackAIProvider } from './FallbackAIProvider.js';
 
 /**
@@ -115,10 +116,20 @@ export class AIProviderFactory {
         break;
       }
 
+      case 'gemini': {
+        const geminiConfig = (config as AIProviderConfig).gemini ?? {};
+        baseProvider = new GeminiCLIProvider({
+          apiKey: geminiConfig.apiKey,
+          model: geminiConfig.model,
+          authType: geminiConfig.authType,
+        });
+        break;
+      }
+
       default:
         throw new Error(
           `Unknown AI provider: ${provider}. ` +
-            `Supported providers: claude, codex, mock`
+            `Supported providers: claude, codex, gemini, mock`
         );
     }
 
@@ -166,8 +177,8 @@ export class AIProviderFactory {
    */
   static createFromEnv(): IAIProvider {
     // Default to 'mock' for safety and cost efficiency
-    // Use 'claude' or 'codex' explicitly when needed
-    const provider = (process.env.KUGUTSU_PROVIDER || 'mock') as 'claude' | 'codex' | 'mock';
+    // Use 'claude', 'codex', or 'gemini' explicitly when needed
+    const provider = (process.env.KUGUTSU_PROVIDER || 'mock') as 'claude' | 'codex' | 'gemini' | 'mock';
 
     const config = AIProviderFactory.buildProviderConfig({
       provider,
@@ -409,7 +420,7 @@ export class AIProviderFactory {
    * @returns Array of provider names
    */
   static getSupportedProviders(): string[] {
-    return ['claude', 'codex', 'mock'];
+    return ['claude', 'codex', 'gemini', 'mock'];
   }
 
   /**
@@ -426,12 +437,15 @@ export class AIProviderFactory {
    * Build provider configuration with sensible defaults.
    */
   static buildProviderConfig(options?: {
-    provider?: 'claude' | 'codex' | 'mock';
+    provider?: 'claude' | 'codex' | 'gemini' | 'mock';
     claudeModel?: string;
     claudeApiKey?: string;
     codexModel?: string;
     codexApiKey?: string;
     codexBaseUrl?: string;
+    geminiModel?: string;
+    geminiApiKey?: string;
+    geminiAuthType?: 'oauth-personal' | 'api-key';
   }): AIProviderConfig {
     const provider = options?.provider ?? 'claude';
 
@@ -446,6 +460,14 @@ export class AIProviderFactory {
       options?.codexBaseUrl ??
       process.env.OPENAI_CODEX_BASE_URL ??
       process.env.OPENAI_BASE_URL;
+
+    const geminiModel =
+      options?.geminiModel ?? process.env.GEMINI_MODEL ?? 'gemini-2.5-pro';
+    const geminiApiKey = options?.geminiApiKey ?? process.env.GEMINI_API_KEY;
+    const geminiAuthType =
+      options?.geminiAuthType ??
+      (process.env.GEMINI_AUTH_TYPE as 'oauth-personal' | 'api-key' | undefined) ??
+      'oauth-personal';
 
     const config: AIProviderConfig = {
       provider,
@@ -466,6 +488,14 @@ export class AIProviderFactory {
       };
     }
 
+    if (provider === 'gemini') {
+      config.gemini = {
+        apiKey: geminiApiKey,
+        model: geminiModel,
+        authType: geminiAuthType,
+      };
+    }
+
     return config;
   }
 
@@ -475,6 +505,7 @@ export class AIProviderFactory {
    * Fallback chain:
    * - Claude → Codex
    * - Codex → Claude
+   * - Gemini → Claude
    * - Mock → null (no fallback for debug provider)
    *
    * @param currentConfig - Current provider configuration
@@ -497,6 +528,11 @@ export class AIProviderFactory {
 
     // Codex → Claude
     if (currentProvider === 'codex') {
+      return AIProviderFactory.buildProviderConfig({ provider: 'claude' });
+    }
+
+    // Gemini → Claude
+    if (currentProvider === 'gemini') {
       return AIProviderFactory.buildProviderConfig({ provider: 'claude' });
     }
 

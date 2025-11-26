@@ -54,6 +54,7 @@ export function useElectronSync() {
     updateChatMessage,
     setThinkingMessage,
     clearThinkingMessage,
+    setProjectPath,
   } = useAppStore()
 
   const { createTab, markTabCompleted } = useTabStore()
@@ -666,6 +667,40 @@ export function useElectronSync() {
       console.log('[useElectronSync] Node status change listener registered')
     }
 
+    // ==========================================
+    // Project Open/Close Event Listeners
+    // ==========================================
+
+    if (window.electronAPI.onProjectOpened) {
+      window.electronAPI.onProjectOpened((data) => {
+        console.log('[useElectronSync] Project opened:', data.projectPath)
+        setProjectPath(data.projectPath)
+      })
+      console.log('[useElectronSync] Project opened listener registered')
+    }
+
+    if (window.electronAPI.onProjectClosed) {
+      window.electronAPI.onProjectClosed(() => {
+        console.log('[useElectronSync] Project closed')
+        setProjectPath(null)
+      })
+      console.log('[useElectronSync] Project closed listener registered')
+    }
+
+    // Fetch current project path on initial load (in case project-opened event already fired)
+    if (window.electronAPI.getCurrentProjectPath) {
+      window.electronAPI.getCurrentProjectPath()
+        .then((path) => {
+          if (path) {
+            console.log('[useElectronSync] Initial project path loaded:', path)
+            setProjectPath(path)
+          }
+        })
+        .catch((error) => {
+          console.error('[useElectronSync] Failed to get current project path:', error)
+        })
+    }
+
     // Initial state fetch (if available)
     if (window.electronAPI.getGraphState) {
       window.electronAPI
@@ -732,6 +767,7 @@ export function useElectronSync() {
     setCurrentPhase,
     addChatMessage,
     addChatMessages,
+    setProjectPath,
   ])
 }
 

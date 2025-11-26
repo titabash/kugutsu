@@ -351,14 +351,17 @@ export class GeminiCLIProvider implements IAIProvider {
             console.log(`[GeminiCLIProvider] Tool result: ${part.toolName}`);
 
             // Yield system message for tool result (similar to Codex SDK's commandExecution)
+            // AI SDK v5 uses 'output' instead of 'result'
+            const toolOutput = (part as { output?: unknown }).output;
+            const outputSuccess = (toolOutput as { success?: boolean })?.success;
             yield {
               type: 'system',
               content: {
                 commandExecution: {
                   command: part.toolName,
-                  output: JSON.stringify(part.result),
-                  exitCode: part.result?.success === false ? 1 : 0,
-                  status: part.result?.success === false ? 'failed' : 'completed',
+                  output: JSON.stringify(toolOutput),
+                  exitCode: outputSuccess === false ? 1 : 0,
+                  status: outputSuccess === false ? 'failed' : 'completed',
                 },
               },
               timestamp: new Date(),

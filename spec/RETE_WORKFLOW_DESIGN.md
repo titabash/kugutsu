@@ -889,23 +889,330 @@ function getNodeIcon(type: string): string {
 5. **実行**: ツールバーの"Run Workflow"ボタン
 6. **リアルタイム表示**: 実行中のノードをハイライト、ログビューアに進捗表示
 
-## 9. セキュリティ・パフォーマンス考慮事項
+## 9. ノード間データ連携設計
 
-### 9.1 セキュリティ
+### 9.1 設計原則
+
+ノード間のデータ連携は、**State（軽量メッセージ）** と **ファイルシステム（成果物）** の2層で行う。
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                    ノード間データ連携アーキテクチャ                   │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                    │
+│   State層（軽量）                    ファイル層（成果物）              │
+│   ┌────────────────────┐           ┌────────────────────────┐    │
+│   │ • プロンプト        │           │ • 仕様書               │    │
+│   │ • 参照先パス        │           │ • ソースコード          │    │
+│   │ • メタデータ        │           │ • テスト結果           │    │
+│   │ • 実行状態         │           │ • レビューコメント       │    │
+│   └────────────────────┘           └────────────────────────────┘    │
+│            │                                    │                   │
+│            │     ノード実行時の流れ              │                   │
+│            ▼                                    ▼                   │
+│   ┌─────────────────────────────────────────────────────────┐     │
+│   │                    ノード実行                             │     │
+│   │  1. Stateからプロンプト/参照先を取得                      │     │
+│   │  2. 参照先のファイルを読み込み                            │     │
+│   │  3. AIが作業を実行（ファイル作成/編集）                    │     │
+│   │  4. 成果物をファイルシステムに保存                        │     │
+│   │  5. 次ノードへのプロンプト/参照先をStateに設定            │     │
+│   └─────────────────────────────────────────────────────────┘     │
+│                                                                    │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### 9.2 State層の設計
+
+State層は軽量なメッセージングに使用し、大きなデータは含めない。
+
+```typescript
+/**
+ * ノード間で受け渡すStateの構造
+ */
+interface NodeState {
+  /** 次のノードへのプロンプト/指示 */
+  prompt: string;
+
+  /** 参照すべきファイルパス（プロジェクトルートからの相対パス） */
+  references?: {
+    /** ファイルパス */
+    path: string;
+    /** ファイルの種類（仕様書、コード、テスト結果など） */
+    type: 'spec' | 'code' | 'test-result' | 'review' | 'other';
+    /** 説明 */
+    description?: string;
+  }[];
+
+  /** メタデータ */
+  metadata?: {
+    /** 前のノードID */
+    previousNodeId: string;
+    /** 処理の成功/失敗 */
+    success: boolean;
+    /** 追加情報 */
+    [key: string]: unknown;
+  };
+}
+```
+
+### 9.3 ファイル層の設計
+
+成果物はプロジェクト内のファイルとして保存する。
+
+```
+project/
+├── .kugutsu/
+│   └── workflow-artifacts/          # ワークフロー成果物
+│       └── {execution-id}/          # 実行ID別
+│           ├── specs/               # 仕様書
+│           │   ├── requirements.md
+│           │   └── design.md
+│           ├── reviews/             # レビュー結果
+│           │   └── code-review.md
+│           └── reports/             # レポート
+│               └── test-report.md
+├── src/                             # 実際のソースコード
+├── tests/                           # テストコード
+└── docs/                            # ドキュメント
+```
+
+### 9.4 ノード実行フローの例
+
+#### 例1: ProductOwnerNode → EngineerNode
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      ProductOwnerNode                            │
+├─────────────────────────────────────────────────────────────────┤
+│  入力State:                                                      │
+│    prompt: "ユーザー認証機能を実装してください"                    │
+│                                                                   │
+│  実行内容:                                                        │
+│    1. 要件を分析                                                 │
+│    2. 仕様書を作成                                               │
+│    3. ファイルに保存:                                            │
+│       → .kugutsu/workflow-artifacts/{exec-id}/specs/auth.md     │
+│                                                                   │
+│  出力State:                                                      │
+│    prompt: "仕様書に基づいて認証機能を実装してください"            │
+│    references: [{                                                │
+│      path: ".kugutsu/workflow-artifacts/{exec-id}/specs/auth.md",│
+│      type: "spec",                                               │
+│      description: "認証機能の仕様書"                              │
+│    }]                                                            │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                        EngineerNode                              │
+├─────────────────────────────────────────────────────────────────┤
+│  入力State:                                                      │
+│    prompt: "仕様書に基づいて認証機能を実装してください"            │
+│    references: [{ path: "...specs/auth.md", type: "spec" }]     │
+│                                                                   │
+│  実行内容:                                                        │
+│    1. 参照ファイル（仕様書）を読み込み                            │
+│    2. AIが仕様書を理解                                           │
+│    3. コードを実装: src/auth/...                                 │
+│    4. テストを作成: tests/auth/...                               │
+│                                                                   │
+│  出力State:                                                      │
+│    prompt: "実装したコードをレビューしてください"                   │
+│    references: [                                                 │
+│      { path: "src/auth/", type: "code" },                       │
+│      { path: "tests/auth/", type: "code" }                      │
+│    ]                                                             │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                        ReviewerNode                              │
+├─────────────────────────────────────────────────────────────────┤
+│  入力State:                                                      │
+│    prompt: "実装したコードをレビューしてください"                   │
+│    references: [                                                 │
+│      { path: "src/auth/", type: "code" },                       │
+│      { path: "tests/auth/", type: "code" }                      │
+│    ]                                                             │
+│                                                                   │
+│  実行内容:                                                        │
+│    1. 参照ファイル（コード）を読み込み                            │
+│    2. AIがコードレビューを実施                                    │
+│    3. レビュー結果を保存:                                        │
+│       → .kugutsu/workflow-artifacts/{exec-id}/reviews/auth.md   │
+│    4. 必要に応じてコードを修正                                    │
+│                                                                   │
+│  出力State:                                                      │
+│    prompt: "レビューが完了しました"                               │
+│    references: [{ path: "...reviews/auth.md", type: "review" }] │
+│    metadata: { approved: true }                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 9.5 NodeState インターフェースの実装
+
+```typescript
+// src/workflow/types.ts に追加
+
+/**
+ * ノード間で受け渡す参照情報
+ */
+export interface FileReference {
+  /** ファイルパス（プロジェクトルートからの相対パス） */
+  path: string;
+  /** ファイルの種類 */
+  type: 'spec' | 'code' | 'test-result' | 'review' | 'config' | 'other';
+  /** 説明 */
+  description?: string;
+}
+
+/**
+ * ノード間で受け渡すState
+ */
+export interface NodeState {
+  /** 次のノードへのプロンプト/指示 */
+  prompt: string;
+  /** 参照すべきファイル */
+  references?: FileReference[];
+  /** メタデータ */
+  metadata?: {
+    previousNodeId?: string;
+    success?: boolean;
+    [key: string]: unknown;
+  };
+}
+
+/**
+ * ExecutionContextの拡張（ノード実行時に利用）
+ */
+export interface ExecutionContext {
+  // 既存のフィールド
+  inputs: Record<string, unknown>;
+  global: GlobalContext;
+  services: Services;
+  utils: Utils;
+
+  // ノード間連携用の追加フィールド
+  /** 入力として受け取ったNodeState */
+  nodeState: NodeState;
+  /** 成果物保存用のベースパス */
+  artifactsBasePath: string;
+}
+
+/**
+ * NodeResultの拡張（ノード実行結果）
+ */
+export interface NodeResult {
+  success: boolean;
+  outputs: Record<string, unknown>;
+  error?: Error;
+  metadata?: ResultMetadata;
+
+  // ノード間連携用の追加フィールド
+  /** 次のノードに渡すState */
+  nextNodeState?: NodeState;
+}
+```
+
+### 9.6 AITaskNodeでの実装例
+
+```typescript
+class EngineerNode extends AITaskNode {
+  async execute(context: ExecutionContext): Promise<NodeResult> {
+    const { nodeState, artifactsBasePath } = context;
+
+    // 1. 参照ファイルの内容をプロンプトに含める
+    let contextInfo = '';
+    if (nodeState.references) {
+      for (const ref of nodeState.references) {
+        const content = await this.readFile(
+          path.join(context.global.projectPath, ref.path)
+        );
+        contextInfo += `\n\n## ${ref.description || ref.path}\n\`\`\`\n${content}\n\`\`\``;
+      }
+    }
+
+    // 2. AIに実装を依頼
+    const result = await context.services.aiProvider.query({
+      prompt: `${nodeState.prompt}\n\n### 参考資料${contextInfo}`,
+      options: {
+        maxTurns: this.config.ai?.maxTurns || 30,
+        allowedTools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep']
+      }
+    });
+
+    // 3. 実装されたファイルのパスを収集
+    const implementedFiles: FileReference[] = result.fileChanges?.map(change => ({
+      path: change.path,
+      type: 'code' as const,
+      description: `Implemented: ${change.path}`
+    })) || [];
+
+    // 4. 次のノードへのStateを作成
+    return {
+      success: true,
+      outputs: {
+        code: result.finalState,
+        changes: result.fileChanges
+      },
+      nextNodeState: {
+        prompt: 'レビューしてください。問題があれば修正してください。',
+        references: implementedFiles,
+        metadata: {
+          previousNodeId: this.id,
+          success: true,
+          implementedAt: new Date().toISOString()
+        }
+      }
+    };
+  }
+}
+```
+
+### 9.7 設計上の利点
+
+1. **State層の軽量化**
+   - 大きなデータ（ソースコード、仕様書など）をStateに含めない
+   - メモリ効率が良い
+   - シリアライズ/デシリアライズが高速
+
+2. **成果物の永続化**
+   - すべての成果物がファイルとして残る
+   - 実行後も確認可能
+   - バージョン管理可能（Git）
+
+3. **AIの柔軟性**
+   - AIが必要なファイルを自由に読み書きできる
+   - 参照情報により、どのファイルを見るべきか明確
+   - プロンプトで意図を伝達
+
+4. **デバッグ容易性**
+   - 各ステップの成果物がファイルとして残る
+   - 問題発生時に原因追跡が容易
+   - 中間状態の確認が可能
+
+5. **再実行対応**
+   - ファイルが残っているため、途中からの再実行が可能
+   - 特定ノードだけの再実行も可能
+
+## 10. セキュリティ・パフォーマンス考慮事項
+
+### 10.1 セキュリティ
 
 - **プロンプトインジェクション対策**: ユーザー入力のサニタイズ
 - **ファイルアクセス制限**: プロジェクトディレクトリ外へのアクセス禁止
 - **API鍵管理**: 環境変数または安全なストレージに保存
 
-### 9.2 パフォーマンス
+### 10.2 パフォーマンス
 
 - **大規模グラフの最適化**: 仮想スクロール、遅延レンダリング
 - **メモリ管理**: MemoryMonitorで監視、必要に応じてworktreeクリーンアップ
 - **並列実行の制限**: maxConcurrencyで同時実行数を制限
 
-## 10. マイグレーション戦略
+## 11. マイグレーション戦略
 
-### 10.1 段階的移行
+### 11.1 段階的移行
 
 **Phase 1**: Rete.jsエディタと既存UIの並行運用
 - 既存のKanban UIは維持
@@ -920,7 +1227,7 @@ function getNodeIcon(type: string): string {
 - Rete.jsをメインUIに
 - 既存Kanban UIは非推奨に
 
-## 11. 今後の拡張可能性
+## 12. 今後の拡張可能性
 
 - **外部サービス連携**: GitHub Actions、CI/CDパイプライン
 - **ワークフローマーケットプレイス**: コミュニティでワークフロー共有

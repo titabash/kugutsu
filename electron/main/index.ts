@@ -1,12 +1,35 @@
 import { app, BrowserWindow, ipcMain, Menu, dialog } from 'electron';
 import * as path from 'path';
 import { existsSync, statSync } from 'fs';
-import { StateStreamManager } from '../../src/electron/StateStreamManager.js';
-import { ParallelDevOrchestrator } from '../../src/electron/ParallelDevOrchestrator.js';
+import { Blob } from 'buffer';
+
+// Polyfill for File global (required by undici in Electron)
+// Node.js 20+ has File globally, but earlier versions and Electron may not
+if (typeof globalThis.File === 'undefined') {
+  // @ts-expect-error - File polyfill for Electron environment
+  globalThis.File = class File extends Blob {
+    name: string;
+    lastModified: number;
+    constructor(chunks: BlobPart[], name: string, options?: FilePropertyBag) {
+      super(chunks, options);
+      this.name = name;
+      this.lastModified = options?.lastModified ?? Date.now();
+    }
+  };
+}
+
+// LangChain-dependent imports are loaded dynamically to avoid undici issues in Electron
+// import { StateStreamManager } from '../../src/electron/StateStreamManager.js';
+// import { ParallelDevOrchestrator } from '../../src/electron/ParallelDevOrchestrator.js';
+import { SimpleWorkflowExecutor, type ReteWorkflowJSON } from './SimpleWorkflowExecutor.js';
 import { FileSystemWatcher } from './FileSystemWatcher.js';
 import { FileSystemLoader } from './FileSystemLoader.js';
-import type { ParallelDevStateType } from '../../src/graph/state.js';
-import type { ParallelDevConfig } from '../../src/graph/types.js';
+
+// Type imports (these don't cause runtime issues)
+type StateStreamManager = any;
+type ParallelDevOrchestrator = any;
+type ParallelDevStateType = any;
+type ParallelDevConfig = any;
 
 // electron-viteが__dirnameと__filenameを自動的に提供するため、手動宣言は不要
 
@@ -17,6 +40,42 @@ let currentGraphState: ParallelDevStateType | null = null;
 let orchestrator: ParallelDevOrchestrator | null = null;
 let fileSystemWatcher: FileSystemWatcher | null = null;
 let fileSystemLoader: FileSystemLoader | null = null;
+let workflowExecutor: SimpleWorkflowExecutor | null = null;
+
+// Dynamic import helper for LangChain-dependent modules
+async function loadLangChainModules() {
+  try {
+    const [stateStreamModule, orchestratorModule] = await Promise.all([
+      import('../../src/electron/StateStreamManager.js'),
+      import('../../src/electron/ParallelDevOrchestrator.js'),
+    ]);
+    return {
+      StateStreamManager: stateStreamModule.StateStreamManager,
+      ParallelDevOrchestrator: orchestratorModule.ParallelDevOrchestrator,
+    };
+  } catch (error) {
+    console.error('[Electron Main] Failed to load LangChain modules:', error);
+    return null;
+  }
+}
+
+// Initialize StateStreamManager with dynamic import
+async function initializeStateStreamManager(window: BrowserWindow) {
+  const modules = await loadLangChainModules();
+  if (!modules) {
+    console.warn('[Electron Main] LangChain modules not available, StateStreamManager disabled');
+    return;
+  }
+
+  stateStreamManager = new modules.StateStreamManager({
+    bufferInterval: 50,
+    maxEventsPerSecond: 20,
+    maxBufferSize: 100,
+    maxLogBuffer: 1000,
+  });
+  stateStreamManager.setWindow(window);
+  console.log('[Electron Main] StateStreamManager initialized');
+}
 
 // コマンドライン引数をチェック
 const shouldOpenDevTools = process.argv.includes('--devtools');
@@ -44,7 +103,14 @@ if (projectPathIndex !== -1 && process.argv[projectPathIndex + 1]) {
 if (!initialProjectPath) {
   const lastArg = process.argv[process.argv.length - 1];
   // Electronの実行ファイルパスやその他のオプションを除外
-  if (lastArg && !lastArg.startsWith('-') && !lastArg.includes('electron') && existsSync(lastArg)) {
+  // .jsファイルはElectronのエントリーポイントなので除外
+  if (lastArg &&
+      !lastArg.startsWith('-') &&
+      !lastArg.includes('electron') &&
+      !lastArg.endsWith('.js') &&
+      !lastArg.endsWith('.mjs') &&
+      existsSync(lastArg) &&
+      statSync(lastArg).isDirectory()) {
     initialProjectPath = lastArg;
     console.log('[Electron Main] Project path from last argument:', initialProjectPath);
   }
@@ -138,15 +204,10 @@ function createWindow() {
     }
   });
 
-  // Initialize StateStreamManager
-  stateStreamManager = new StateStreamManager({
-    bufferInterval: 50,
-    maxEventsPerSecond: 20,
-    maxBufferSize: 100,
-    maxLogBuffer: 1000,
+  // Initialize StateStreamManager (dynamic import to avoid undici issues)
+  initializeStateStreamManager(mainWindow).catch(err => {
+    console.warn('[Electron Main] StateStreamManager not available:', err.message);
   });
-  stateStreamManager.setWindow(mainWindow);
-  console.log('[Electron Main] StateStreamManager initialized');
 
   // メニューバーを作成
   createMenu();
@@ -561,8 +622,14 @@ ipcMain.handle('execute-prompt', async (event, { prompt, options }: {
       orchestrator = null;
     }
 
+    console.log('[Electron Main] Loading LangChain modules...');
+    const modules = await loadLangChainModules();
+    if (!modules) {
+      throw new Error('LangChain modules not available. Cannot execute workflow.');
+    }
+
     console.log('[Electron Main] Creating new orchestrator instance...');
-    orchestrator = new ParallelDevOrchestrator();
+    orchestrator = new modules.ParallelDevOrchestrator();
     orchestrator.setWindow(mainWindow);
     console.log('[Electron Main] New orchestrator initialized');
 
@@ -624,7 +691,192 @@ ipcMain.handle('execute-prompt', async (event, { prompt, options }: {
 });
 
 // ==========================================
-// End of LangGraph IPC Handlers
+// Workflow Editor IPC Handlers
+// ==========================================
+
+import { readFile, writeFile, mkdir } from 'fs/promises';
+
+/**
+ * Show save workflow dialog
+ */
+ipcMain.handle('show-save-workflow-dialog', async (event) => {
+  if (!mainWindow) return { canceled: true };
+
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: 'Save Workflow',
+    defaultPath: 'workflow.json',
+    filters: [
+      { name: 'Workflow Files', extensions: ['json'] },
+      { name: 'All Files', extensions: ['*'] }
+    ]
+  });
+
+  return result;
+});
+
+/**
+ * Show load workflow dialog
+ */
+ipcMain.handle('show-load-workflow-dialog', async (event) => {
+  if (!mainWindow) return { canceled: true };
+
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Load Workflow',
+    filters: [
+      { name: 'Workflow Files', extensions: ['json'] },
+      { name: 'All Files', extensions: ['*'] }
+    ],
+    properties: ['openFile']
+  });
+
+  return result;
+});
+
+/**
+ * Save workflow to file
+ */
+ipcMain.handle('save-workflow', async (event, { filePath, workflow }: { filePath: string; workflow: any }) => {
+  try {
+    const content = JSON.stringify(workflow, null, 2);
+    await writeFile(filePath, content, 'utf-8');
+    console.log('[Electron Main] Workflow saved to:', filePath);
+    return { success: true };
+  } catch (error) {
+    console.error('[Electron Main] Failed to save workflow:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+/**
+ * Load workflow from file
+ */
+ipcMain.handle('load-workflow', async (event, { filePath }: { filePath: string }) => {
+  try {
+    const content = await readFile(filePath, 'utf-8');
+    const workflow = JSON.parse(content);
+    console.log('[Electron Main] Workflow loaded from:', filePath);
+    return { success: true, workflow };
+  } catch (error) {
+    console.error('[Electron Main] Failed to load workflow:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+/**
+ * Execute workflow using SimpleWorkflowExecutor (lightweight, no LangChain dependencies)
+ */
+ipcMain.handle('execute-workflow', async (event, { workflow }: { workflow: ReteWorkflowJSON }) => {
+  console.log('[Electron Main] Execute workflow requested');
+  console.log('[Electron Main] Workflow:', JSON.stringify(workflow.metadata, null, 2));
+
+  try {
+    // Create or reuse workflow executor
+    if (!workflowExecutor) {
+      workflowExecutor = new SimpleWorkflowExecutor();
+    }
+
+    // Set up event forwarding to renderer
+    const progressHandler = (progressEvent: { nodeId: string; status: string; progress?: number; outputs?: unknown }) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('workflow-progress', progressEvent);
+      }
+    };
+
+    const completedHandler = (completedEvent: { success: boolean; result?: unknown; error?: string }) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('workflow-completed', completedEvent);
+      }
+      // Clean up listeners after completion
+      workflowExecutor?.off('progress', progressHandler);
+      workflowExecutor?.off('completed', completedHandler);
+    };
+
+    workflowExecutor.on('progress', progressHandler);
+    workflowExecutor.on('completed', completedHandler);
+
+    // Execute workflow
+    const result = await workflowExecutor.execute(workflow, {
+      prompt: workflow.metadata.description || 'Execute workflow',
+    });
+
+    console.log('[Electron Main] Workflow execution completed:', result.success);
+    return { success: result.success, message: result.success ? 'Workflow executed successfully' : result.error?.message };
+  } catch (error) {
+    console.error('[Electron Main] Workflow execution error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+    // Notify renderer of failure
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('workflow-completed', {
+        success: false,
+        error: errorMessage
+      });
+    }
+
+    return { success: false, error: errorMessage };
+  }
+});
+
+/**
+ * Execute workflow with prompt - プロンプト付きワークフロー実行
+ * チャットパネルからのプロンプト入力をStartノードに渡してワークフローを実行
+ */
+ipcMain.handle('execute-workflow-with-prompt', async (event, { workflow, prompt }: { workflow: ReteWorkflowJSON; prompt: string }) => {
+  console.log('[Electron Main] Execute workflow with prompt requested');
+  console.log('[Electron Main] Workflow:', JSON.stringify(workflow.metadata, null, 2));
+  console.log('[Electron Main] Prompt:', prompt);
+
+  try {
+    // Create or reuse workflow executor
+    if (!workflowExecutor) {
+      workflowExecutor = new SimpleWorkflowExecutor();
+    }
+
+    // Set up event forwarding to renderer
+    const progressHandler = (progressEvent: { nodeId: string; status: string; progress?: number; outputs?: unknown }) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('workflow-progress', progressEvent);
+      }
+    };
+
+    const completedHandler = (completedEvent: { success: boolean; result?: unknown; error?: string }) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('workflow-completed', completedEvent);
+      }
+      // Clean up listeners after completion
+      workflowExecutor?.off('progress', progressHandler);
+      workflowExecutor?.off('completed', completedHandler);
+    };
+
+    workflowExecutor.on('progress', progressHandler);
+    workflowExecutor.on('completed', completedHandler);
+
+    // Execute workflow with prompt as initial input
+    const result = await workflowExecutor.execute(workflow, {
+      prompt: prompt,
+      userInput: prompt,
+    });
+
+    console.log('[Electron Main] Workflow execution completed:', result.success);
+    return { success: result.success, message: result.success ? 'Workflow executed successfully' : result.error?.message };
+  } catch (error) {
+    console.error('[Electron Main] Workflow execution error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+    // Notify renderer of failure
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('workflow-completed', {
+        success: false,
+        error: errorMessage
+      });
+    }
+
+    return { success: false, error: errorMessage };
+  }
+});
+
+// ==========================================
+// End of Workflow Editor IPC Handlers
 // ==========================================
 
 // 親プロセスからのメッセージを処理（並列開発システムとの通信）

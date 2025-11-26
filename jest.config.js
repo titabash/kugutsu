@@ -15,6 +15,8 @@ export default {
     '^@/(.*)$': '<rootDir>/electron/renderer/$1',
     // uuid ESM workaround
     '^uuid$': '<rootDir>/tests/mocks/uuidMock.ts',
+    // pkce-challenge ESM workaround
+    '^pkce-challenge$': '<rootDir>/tests/mocks/pkceChallengeMock.ts',
     // CSS files (must be before .js mapping)
     '\\.module\\.css$': 'identity-obj-proxy',
     '\\.css$': 'identity-obj-proxy',
@@ -62,6 +64,6 @@ export default {
   ],
   setupFilesAfterEnv: ['<rootDir>/tests/setup.ts'],
   transformIgnorePatterns: [
-    'node_modules/(?!(@langchain|@anthropic-ai|@xyflow))',
+    'node_modules/(?!(@langchain|@anthropic-ai|@xyflow|@modelcontextprotocol|pkce-challenge))',
   ],
 };

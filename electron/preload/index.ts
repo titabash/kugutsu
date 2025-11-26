@@ -186,7 +186,72 @@ const electronAPI = {
 
   // プロンプト実行関連
   executePrompt: (prompt: string, options: { provider?: string; maxEngineers?: number; maxTurns?: number }) =>
-    ipcRenderer.invoke('execute-prompt', { prompt, options })
+    ipcRenderer.invoke('execute-prompt', { prompt, options }),
+
+  // ==========================================
+  // Workflow Editor API
+  // ==========================================
+
+  /**
+   * Show save workflow dialog
+   */
+  showSaveWorkflowDialog: () => ipcRenderer.invoke('show-save-workflow-dialog'),
+
+  /**
+   * Show load workflow dialog
+   */
+  showLoadWorkflowDialog: () => ipcRenderer.invoke('show-load-workflow-dialog'),
+
+  /**
+   * Save workflow to file
+   */
+  saveWorkflow: (filePath: string, workflow: any) =>
+    ipcRenderer.invoke('save-workflow', { filePath, workflow }),
+
+  /**
+   * Load workflow from file
+   */
+  loadWorkflow: (filePath: string) =>
+    ipcRenderer.invoke('load-workflow', { filePath }),
+
+  /**
+   * Execute workflow
+   */
+  executeWorkflow: (workflow: any) =>
+    ipcRenderer.invoke('execute-workflow', { workflow }),
+
+  /**
+   * Execute workflow with prompt
+   * チャットパネルからのプロンプト入力をStartノードに渡してワークフローを実行
+   */
+  executeWorkflowWithPrompt: (workflow: any, prompt: string) =>
+    ipcRenderer.invoke('execute-workflow-with-prompt', { workflow, prompt }),
+
+  /**
+   * Listen for workflow execution progress
+   */
+  onWorkflowProgress: (callback: (data: { nodeId: string; status: string; progress?: number }) => void) => {
+    const listener = (_event: IpcRendererEvent, data: { nodeId: string; status: string; progress?: number }) => {
+      callback(data);
+    };
+    ipcRenderer.on('workflow-progress', listener);
+    return () => {
+      ipcRenderer.removeListener('workflow-progress', listener);
+    };
+  },
+
+  /**
+   * Listen for workflow execution completed
+   */
+  onWorkflowCompleted: (callback: (data: { success: boolean; result?: any; error?: string }) => void) => {
+    const listener = (_event: IpcRendererEvent, data: { success: boolean; result?: any; error?: string }) => {
+      callback(data);
+    };
+    ipcRenderer.on('workflow-completed', listener);
+    return () => {
+      ipcRenderer.removeListener('workflow-completed', listener);
+    };
+  }
 };
 
 // デバッグ情報を追加

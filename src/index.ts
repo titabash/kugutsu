@@ -26,8 +26,8 @@ class ClaudeCodeRunner {
 
       for await (const message of query({
         prompt,
-        abortController: new AbortController(),
         options: {
+          abortController: new AbortController(),
           maxTurns: 10,
           cwd: this.workingDir,
         },

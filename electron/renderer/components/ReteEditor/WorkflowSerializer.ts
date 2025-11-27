@@ -38,6 +38,8 @@ export interface EditorNode {
   inputs: EditorSocket[];
   outputs: EditorSocket[];
   config: NodeConfig;
+  /** Parent node ID for scoped nodes (e.g., nodes inside parallel groups) */
+  parent?: string;
 }
 
 /**
@@ -86,6 +88,7 @@ const EDITOR_TO_WORKFLOW_TYPE: Record<string, NodeType> = {
   parallel: 'control:parallel',
   aggregator: 'control:aggregator',
   group: 'control:group',
+  'parallel-group': 'control:parallel-group' as NodeType,
   // AI Task Nodes
   engineer: 'preset:engineer',
   reviewer: 'preset:reviewer',
@@ -98,7 +101,7 @@ const EDITOR_TO_WORKFLOW_TYPE: Record<string, NodeType> = {
 /**
  * Map workflow node type to editor node type
  */
-const WORKFLOW_TO_EDITOR_TYPE: Record<NodeType, string> = {
+const WORKFLOW_TO_EDITOR_TYPE: Record<string, string> = {
   // IO Nodes
   'io:start': 'start',
   'io:end': 'end',
@@ -109,6 +112,7 @@ const WORKFLOW_TO_EDITOR_TYPE: Record<NodeType, string> = {
   'control:aggregator': 'aggregator',
   'control:group': 'group',
   'control:loop': 'loop',
+  'control:parallel-group': 'parallel-group',
   // AI Task Nodes
   'ai:custom': 'custom-ai',
   'preset:engineer': 'engineer',
@@ -139,10 +143,25 @@ export class WorkflowSerializer {
   serialize(editorData: EditorData, options: SerializeOptions): ReteWorkflowJSON {
     const now = new Date().toISOString();
 
-    // Convert editor nodes to workflow nodes
-    const nodes: WorkflowNodeJSON[] = editorData.nodes.map((node) =>
-      this.convertEditorNodeToWorkflow(node)
-    );
+    // Build groups from parent relationships
+    const groups = this.buildGroups(editorData);
+
+    // Convert editor nodes to workflow nodes (with subgraph embedding)
+    const nodes: WorkflowNodeJSON[] = editorData.nodes.map((node) => {
+      const workflowNode = this.convertEditorNodeToWorkflow(node);
+
+      // If this is a parallel-group node, embed its subgraph in config
+      if (node.type === 'parallel-group') {
+        const subgraph = this.buildSubgraphForParallelGroup(
+          node.id,
+          editorData.nodes,
+          editorData.connections
+        );
+        workflowNode.config.subgraph = subgraph;
+      }
+
+      return workflowNode;
+    });
 
     // Convert editor connections to workflow connections
     const connections: ConnectionJSON[] = editorData.connections.map((conn, index) => ({
@@ -172,6 +191,7 @@ export class WorkflowSerializer {
       metadata,
       nodes,
       connections,
+      groups,
       entryNodeId,
       exitNodeId,
     };
@@ -273,6 +293,125 @@ export class WorkflowSerializer {
   private findExitNodeId(nodes: EditorNode[]): string {
     const endNode = nodes.find((n) => n.type === 'end');
     return endNode?.id || '';
+  }
+
+  /**
+   * Build groups from parent relationships
+   */
+  private buildGroups(editorData: EditorData): Array<{ id: string; nodeIds: string[]; label?: string }> {
+    const groups: Array<{ id: string; nodeIds: string[]; label?: string }> = [];
+
+    // Find all parallel-group nodes
+    const parallelGroupNodes = editorData.nodes.filter((n) => n.type === 'parallel-group');
+
+    for (const pgNode of parallelGroupNodes) {
+      // Find all child nodes
+      const childNodes = editorData.nodes.filter((n) => n.parent === pgNode.id);
+
+      if (childNodes.length > 0) {
+        groups.push({
+          id: pgNode.id,
+          nodeIds: childNodes.map((n) => n.id),
+          label: pgNode.label,
+        });
+      }
+    }
+
+    return groups;
+  }
+
+  /**
+   * Build subgraph definition for a parallel-group node
+   */
+  private buildSubgraphForParallelGroup(
+    parentNodeId: string,
+    allNodes: EditorNode[],
+    allConnections: EditorConnection[]
+  ): {
+    nodes: WorkflowNodeJSON[];
+    connections: ConnectionJSON[];
+    entryNodeId: string;
+    exitNodeId: string;
+  } {
+    // Find child nodes
+    const childNodes = allNodes.filter((n) => n.parent === parentNodeId);
+
+    // Convert child nodes to workflow format
+    const subgraphNodes = childNodes.map((node) => this.convertEditorNodeToWorkflow(node));
+
+    // Find internal connections (both source and target are child nodes)
+    const childNodeIds = new Set(childNodes.map((n) => n.id));
+    const internalConnections = allConnections
+      .filter((conn) => childNodeIds.has(conn.source) && childNodeIds.has(conn.target))
+      .map((conn, index) => ({
+        id: conn.id || `internal-conn-${index}`,
+        source: conn.source,
+        sourceOutput: conn.sourceOutput,
+        target: conn.target,
+        targetInput: conn.targetInput,
+      }));
+
+    // Determine entry and exit nodes
+    // Entry node: has no incoming internal connections
+    // Exit node: has no outgoing internal connections
+    const nodesWithIncoming = new Set(internalConnections.map((c) => c.target));
+    const nodesWithOutgoing = new Set(internalConnections.map((c) => c.source));
+
+    const entryNode = childNodes.find((n) => !nodesWithIncoming.has(n.id));
+    const exitNode = childNodes.find((n) => !nodesWithOutgoing.has(n.id));
+
+    return {
+      nodes: subgraphNodes,
+      connections: internalConnections,
+      entryNodeId: entryNode?.id || (childNodes[0]?.id ?? ''),
+      exitNodeId: exitNode?.id || (childNodes[childNodes.length - 1]?.id ?? ''),
+    };
+  }
+
+  /**
+   * Deserialize workflow and restore child nodes with parent relationships
+   */
+  deserializeWithChildNodes(workflow: ReteWorkflowJSON): EditorData {
+    const baseData = this.deserialize(workflow);
+    const nodes: EditorNode[] = [...baseData.nodes];
+    const connections: EditorConnection[] = [...baseData.connections];
+
+    // For each node with a subgraph, extract child nodes
+    for (const workflowNode of workflow.nodes) {
+      const subgraph = workflowNode.config.subgraph as
+        | {
+            nodes: WorkflowNodeJSON[];
+            connections: ConnectionJSON[];
+            entryNodeId: string;
+            exitNodeId: string;
+          }
+        | undefined;
+
+      if (subgraph && subgraph.nodes) {
+        // Add child nodes with parent reference
+        for (const childWorkflowNode of subgraph.nodes) {
+          const editorNode = this.convertWorkflowNodeToEditor(childWorkflowNode);
+          editorNode.parent = workflowNode.id;
+          nodes.push(editorNode);
+        }
+
+        // Add internal connections
+        for (const conn of subgraph.connections) {
+          connections.push({
+            id: conn.id,
+            source: conn.source,
+            sourceOutput: conn.sourceOutput,
+            target: conn.target,
+            targetInput: conn.targetInput,
+          });
+        }
+      }
+    }
+
+    return {
+      nodes,
+      connections,
+    };
   }
 }
 

@@ -73,11 +73,13 @@ export type NodeType =
   | 'control:aggregator'
   | 'control:group'
   | 'control:loop'
+  | 'control:parallel-group'
   | 'decision'
   | 'parallel'
   | 'aggregator'
   | 'group'
   | 'loop'
+  | 'parallel-group'
   // AI Task Nodes
   | 'ai:custom'
   | 'preset:engineer'

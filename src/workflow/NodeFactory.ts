@@ -17,6 +17,7 @@ import {
 import { ParallelNode } from './nodes/ParallelNode.js';
 import { AggregatorNode } from './nodes/AggregatorNode.js';
 import { GroupNode } from './nodes/GroupNode.js';
+import { ParallelGroupNode } from './nodes/ParallelGroupNode.js';
 import { EngineerNode } from './nodes/preset/EngineerNode.js';
 import { ReviewerNode } from './nodes/preset/ReviewerNode.js';
 import { ProductOwnerNode } from './nodes/preset/ProductOwnerNode.js';
@@ -83,6 +84,8 @@ const BUILT_IN_TYPES: ReadonlyArray<string> = [
   'parallel',
   'aggregator',
   'group',
+  'parallel-group',
+  'control:parallel-group',
 ] as const;
 
 /**
@@ -142,6 +145,18 @@ const NODE_TYPE_INFO: Record<string, NodeTypeInfo> = {
     name: 'Group',
     category: 'parallel',
     description: 'Subgraph parallel execution',
+    builtIn: true,
+  },
+  'parallel-group': {
+    name: 'Parallel Group',
+    category: 'parallel',
+    description: 'Container for parallel task execution with subgraph replication',
+    builtIn: true,
+  },
+  'control:parallel-group': {
+    name: 'Parallel Group',
+    category: 'parallel',
+    description: 'Container for parallel task execution with subgraph replication',
     builtIn: true,
   },
   // Preset types
@@ -265,6 +280,10 @@ export class NodeFactory {
         break;
       case 'group':
         node = new GroupNode(json.id, json.config);
+        break;
+      case 'parallel-group':
+      case 'control:parallel-group':
+        node = ParallelGroupNode.createFromJSON(json);
         break;
       // Preset types
       case 'preset:engineer':

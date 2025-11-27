@@ -4,15 +4,42 @@
  * Type definitions for the Rete.js visual workflow editor.
  */
 
-import type { ClassicPreset } from 'rete';
+import { ClassicPreset } from 'rete';
 import type { ReactArea2D } from 'rete-react-plugin';
 
 /**
- * Node schemes for Rete.js
+ * Base WorkflowNode class with parent support for scopes
+ *
+ * Note: width and height are intentionally not set to allow Rete.js
+ * to auto-size nodes based on their content.
+ */
+export class WorkflowNode extends ClassicPreset.Node {
+  /** Parent node ID for scopes */
+  parent?: string;
+  /** Node type */
+  nodeType?: WorkflowNodeType;
+  /** Node configuration */
+  config?: Record<string, unknown>;
+
+  /**
+   * Update size - only sets explicit size for parallel-group containers
+   */
+  updateSize(): void {
+    // Only set explicit size for parallel-group (container nodes)
+    if (this.nodeType === 'parallel-group') {
+      this.width = 400;
+      this.height = 300;
+    }
+    // For all other nodes, let Rete.js auto-size based on content
+  }
+}
+
+/**
+ * Node schemes for Rete.js with parent support
  */
 export type Schemes = ClassicPreset.GetSchemes<
-  ClassicPreset.Node,
-  ClassicPreset.Connection<ClassicPreset.Node, ClassicPreset.Node>
+  WorkflowNode,
+  ClassicPreset.Connection<WorkflowNode, WorkflowNode>
 >;
 
 /**
@@ -34,6 +61,7 @@ export type WorkflowNodeType =
   | 'parallel'
   | 'aggregator'
   | 'group'
+  | 'parallel-group'
   | 'merge'
   | 'custom-ai';
 
@@ -103,6 +131,7 @@ export const NODE_COLORS: Record<WorkflowNodeType, string> = {
   parallel: '#8b5cf6',   // Purple
   aggregator: '#f59e0b', // Orange
   group: '#8b5cf6',      // Purple
+  'parallel-group': '#7c3aed', // Violet - container for parallel execution
   merge: '#6b7280',      // Gray
   'custom-ai': '#06b6d4', // Cyan
 };
@@ -121,6 +150,7 @@ export const NODE_ICONS: Record<WorkflowNodeType, string> = {
   parallel: '⫸',
   aggregator: '⫷',
   group: '⫸⫸',
+  'parallel-group': '📦',
   merge: '🔀',
   'custom-ai': '🤖',
 };
@@ -156,9 +186,7 @@ export const DEFAULT_NODE_CATEGORIES: NodeCategory[] = [
     icon: '⚡',
     nodes: [
       { type: 'decision', label: 'Decision', icon: '◆', description: 'Conditional branching' },
-      { type: 'parallel', label: 'Parallel', icon: '⫸', description: 'Parallel execution' },
-      { type: 'aggregator', label: 'Aggregator', icon: '⫷', description: 'Collect parallel results' },
-      { type: 'group', label: 'Parallel Group', icon: '⫸⫸', description: 'Parallel subgraph' },
+      { type: 'parallel-group', label: 'Parallel Group', icon: '📦', description: 'Container for parallel execution' },
     ],
   },
   {

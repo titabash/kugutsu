@@ -285,6 +285,283 @@ const TransformConfigEditor: React.FC<TransformConfigEditorProps> = ({ config, o
 };
 
 // ============================================================================
+// Parallel Group Config Editor
+// ============================================================================
+
+interface ParallelGroupConfigEditorProps {
+  config: Record<string, unknown>;
+  onChange: (config: Record<string, unknown>) => void;
+}
+
+const ParallelGroupConfigEditor: React.FC<ParallelGroupConfigEditorProps> = ({ config, onChange }) => {
+  const pgConfig = (config.parallelGroup || {}) as Record<string, unknown>;
+  const conflictConfig = (pgConfig.conflictResolution || {}) as Record<string, unknown>;
+
+  const updatePGConfig = (key: string, value: unknown) => {
+    onChange({
+      ...config,
+      parallelGroup: {
+        ...pgConfig,
+        [key]: value,
+      },
+    });
+  };
+
+  const updateConflictConfig = (key: string, value: unknown) => {
+    onChange({
+      ...config,
+      parallelGroup: {
+        ...pgConfig,
+        conflictResolution: {
+          ...conflictConfig,
+          [key]: value,
+        },
+      },
+    });
+  };
+
+  return (
+    <div>
+      {/* Execution Settings */}
+      <div style={{ marginBottom: '16px' }}>
+        <h5 style={{ color: '#888', fontSize: '11px', fontWeight: 600, marginBottom: '8px' }}>
+          Execution
+        </h5>
+        <PropertyField
+          label="Max Concurrency"
+          type="number"
+          value={pgConfig.maxConcurrency || 4}
+          onChange={(v) => updatePGConfig('maxConcurrency', v)}
+          placeholder="Maximum parallel tasks"
+        />
+        <PropertyField
+          label="Failure Strategy"
+          type="select"
+          value={pgConfig.failureStrategy || 'continue'}
+          onChange={(v) => updatePGConfig('failureStrategy', v)}
+          options={[
+            { value: 'continue', label: 'Continue (ignore failures)' },
+            { value: 'abort-all', label: 'Abort All (stop on failure)' },
+            { value: 'retry', label: 'Retry (retry failed tasks)' },
+          ]}
+        />
+        <PropertyField
+          label="Aggregation"
+          type="select"
+          value={pgConfig.aggregationStrategy || 'merge'}
+          onChange={(v) => updatePGConfig('aggregationStrategy', v)}
+          options={[
+            { value: 'merge', label: 'Merge Results' },
+            { value: 'concat', label: 'Concatenate Results' },
+            { value: 'none', label: 'No Aggregation' },
+          ]}
+        />
+      </div>
+
+      {/* Git Worktree Settings */}
+      <div style={{ marginBottom: '16px' }}>
+        <h5 style={{ color: '#888', fontSize: '11px', fontWeight: 600, marginBottom: '8px' }}>
+          Git Worktree
+        </h5>
+        <PropertyField
+          label=""
+          type="checkbox"
+          value={pgConfig.useWorktree || false}
+          onChange={(v) => updatePGConfig('useWorktree', v)}
+          placeholder="Use Git Worktree for isolation"
+        />
+        {pgConfig.useWorktree && (
+          <>
+            <PropertyField
+              label="Branch Prefix"
+              type="text"
+              value={pgConfig.branchPrefix || 'parallel'}
+              onChange={(v) => updatePGConfig('branchPrefix', v)}
+              placeholder="e.g., feature/"
+            />
+            <PropertyField
+              label=""
+              type="checkbox"
+              value={pgConfig.cleanupAfter !== false}
+              onChange={(v) => updatePGConfig('cleanupAfter', v)}
+              placeholder="Cleanup worktree after completion"
+            />
+          </>
+        )}
+      </div>
+
+      {/* Conflict Resolution */}
+      {pgConfig.useWorktree && (
+        <div>
+          <h5 style={{ color: '#888', fontSize: '11px', fontWeight: 600, marginBottom: '8px' }}>
+            Conflict Resolution
+          </h5>
+          <PropertyField
+            label="Strategy"
+            type="select"
+            value={conflictConfig.strategy || 'ai'}
+            onChange={(v) => updateConflictConfig('strategy', v)}
+            options={[
+              { value: 'ai', label: 'AI Auto-resolve' },
+              { value: 'ours', label: 'Keep Ours' },
+              { value: 'theirs', label: 'Keep Theirs' },
+              { value: 'manual', label: 'Manual (pause)' },
+            ]}
+          />
+          <PropertyField
+            label=""
+            type="checkbox"
+            value={conflictConfig.autoMergeAfterTask !== false}
+            onChange={(v) => updateConflictConfig('autoMergeAfterTask', v)}
+            placeholder="Auto merge after each task"
+          />
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ============================================================================
+// Merge Config Editor
+// ============================================================================
+
+interface MergeConfigEditorProps {
+  config: Record<string, unknown>;
+  onChange: (config: Record<string, unknown>) => void;
+}
+
+const MergeConfigEditor: React.FC<MergeConfigEditorProps> = ({ config, onChange }) => {
+  const mergeConfig = (config.merge || {}) as Record<string, unknown>;
+
+  const updateMergeConfig = (key: string, value: unknown) => {
+    onChange({
+      ...config,
+      merge: {
+        ...mergeConfig,
+        [key]: value,
+      },
+    });
+  };
+
+  return (
+    <div>
+      <PropertyField
+        label="Merge Strategy"
+        type="select"
+        value={mergeConfig.strategy || 'merge'}
+        onChange={(v) => updateMergeConfig('strategy', v)}
+        options={[
+          { value: 'merge', label: 'Merge' },
+          { value: 'rebase', label: 'Rebase' },
+          { value: 'squash', label: 'Squash' },
+        ]}
+      />
+      <PropertyField
+        label="Conflict Resolution"
+        type="select"
+        value={mergeConfig.conflictResolution || 'ai'}
+        onChange={(v) => updateMergeConfig('conflictResolution', v)}
+        options={[
+          { value: 'ai', label: 'AI Auto-resolve' },
+          { value: 'ours', label: 'Keep Ours' },
+          { value: 'theirs', label: 'Keep Theirs' },
+          { value: 'manual', label: 'Manual (pause)' },
+        ]}
+      />
+      <PropertyField
+        label="Source Branch"
+        type="text"
+        value={mergeConfig.sourceBranch || ''}
+        onChange={(v) => updateMergeConfig('sourceBranch', v)}
+        placeholder="e.g., feature/auth"
+      />
+      <PropertyField
+        label="Target Branch"
+        type="text"
+        value={mergeConfig.targetBranch || 'main'}
+        onChange={(v) => updateMergeConfig('targetBranch', v)}
+        placeholder="e.g., main, develop"
+      />
+      <PropertyField
+        label=""
+        type="checkbox"
+        value={mergeConfig.autoCommit !== false}
+        onChange={(v) => updateMergeConfig('autoCommit', v)}
+        placeholder="Auto commit after merge"
+      />
+      <PropertyField
+        label=""
+        type="checkbox"
+        value={mergeConfig.squash || false}
+        onChange={(v) => updateMergeConfig('squash', v)}
+        placeholder="Squash commits"
+      />
+    </div>
+  );
+};
+
+// ============================================================================
+// End Node Config Editor
+// ============================================================================
+
+interface EndConfigEditorProps {
+  config: Record<string, unknown>;
+  onChange: (config: Record<string, unknown>) => void;
+}
+
+const EndConfigEditor: React.FC<EndConfigEditorProps> = ({ config, onChange }) => {
+  const endConfig = (config.end || {}) as Record<string, unknown>;
+
+  const updateEndConfig = (key: string, value: unknown) => {
+    onChange({
+      ...config,
+      end: {
+        ...endConfig,
+        [key]: value,
+      },
+    });
+  };
+
+  return (
+    <div>
+      <PropertyField
+        label="Output Format"
+        type="select"
+        value={endConfig.outputFormat || 'summary'}
+        onChange={(v) => updateEndConfig('outputFormat', v)}
+        options={[
+          { value: 'summary', label: 'Summary' },
+          { value: 'detailed', label: 'Detailed Report' },
+          { value: 'json', label: 'JSON Output' },
+          { value: 'minimal', label: 'Minimal' },
+        ]}
+      />
+      <PropertyField
+        label=""
+        type="checkbox"
+        value={endConfig.includeMetrics !== false}
+        onChange={(v) => updateEndConfig('includeMetrics', v)}
+        placeholder="Include execution metrics"
+      />
+      <PropertyField
+        label=""
+        type="checkbox"
+        value={endConfig.notifyOnComplete || false}
+        onChange={(v) => updateEndConfig('notifyOnComplete', v)}
+        placeholder="Notify on completion"
+      />
+      <PropertyField
+        label=""
+        type="checkbox"
+        value={endConfig.saveResults !== false}
+        onChange={(v) => updateEndConfig('saveResults', v)}
+        placeholder="Save results to file"
+      />
+    </div>
+  );
+};
+
+// ============================================================================
 // NodePropertyEditor
 // ============================================================================
 
@@ -352,6 +629,24 @@ export const NodePropertyEditor: React.FC<NodePropertyEditorProps> = ({
     if (node.type === 'transform') {
       return (
         <TransformConfigEditor config={editedNode?.config || {}} onChange={handleConfigUpdate} />
+      );
+    }
+
+    if (node.type === 'parallel-group') {
+      return (
+        <ParallelGroupConfigEditor config={editedNode?.config || {}} onChange={handleConfigUpdate} />
+      );
+    }
+
+    if (node.type === 'merge') {
+      return (
+        <MergeConfigEditor config={editedNode?.config || {}} onChange={handleConfigUpdate} />
+      );
+    }
+
+    if (node.type === 'end') {
+      return (
+        <EndConfigEditor config={editedNode?.config || {}} onChange={handleConfigUpdate} />
       );
     }
 

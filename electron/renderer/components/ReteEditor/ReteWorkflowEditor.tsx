@@ -373,12 +373,14 @@ const customNodeStyles = css<{ selected?: boolean }>`
 `;
 
 // Custom styles for Parallel Group container nodes
+// Note: DO NOT use min-height or fixed height here - rete-scopes-plugin sets dimensions dynamically
+// The plugin calls area.resize() which sets inline width/height styles on the node element
 const parallelGroupStyles = css<{ selected?: boolean }>`
   background: rgba(30, 30, 40, 0.95);
   border: 3px solid #fbbf24;
   border-radius: 12px;
-  min-width: 400px;
-  min-height: 300px;
+  /* min-width/min-height are controlled by the size callback in ScopesPlugin */
+  /* DO NOT use width/height here as it would override plugin's inline styles */
 
   ${(props) =>
     props.selected &&
@@ -539,44 +541,27 @@ async function createEditor(container: HTMLElement) {
   // Create React render plugin
   const render = new ReactPlugin<Schemes, AreaExtra>({ createRoot });
 
+  // Minimum size for Parallel Group nodes
+  const PARALLEL_GROUP_MIN_WIDTH = 400;
+  const PARALLEL_GROUP_MIN_HEIGHT = 300;
+
   // Create scopes plugin for nested nodes (Parallel Groups)
-  // Configure padding so child nodes stay inside parent bounds
+  // Keep configuration minimal like the official sample to ensure proper dynamic resizing
   const scopes = new ScopesPlugin<Schemes>({
-    // Exclude nodes that cannot be parents (only parallel-group can be a parent)
-    exclude: (nodeId) => {
-      const node = editor.getNode(nodeId);
-      // Only parallel-group nodes can be parents
-      return node?.nodeType !== 'parallel-group';
-    },
     // Padding inside parent node for child nodes
-    padding: (nodeId) => {
-      const node = editor.getNode(nodeId);
-      if (node?.nodeType === 'parallel-group') {
-        return {
-          top: 100,   // Space for title + Concurrency control
-          left: 30,
-          right: 30,
-          bottom: 30,
-        };
-      }
+    padding: () => ({
+      top: 120,   // Space for title bar (50px) + Concurrency control (50px) + margin (20px)
+      left: 20,
+      right: 20,
+      bottom: 20,
+    }),
+    // Enforce minimum size for Parallel Group nodes
+    // This is called when child nodes are added/removed to recalculate parent size
+    size: (nodeId, size) => {
       return {
-        top: 60,
-        left: 20,
-        right: 20,
-        bottom: 20,
+        width: Math.max(size.width, PARALLEL_GROUP_MIN_WIDTH),
+        height: Math.max(size.height, PARALLEL_GROUP_MIN_HEIGHT),
       };
-    },
-    // Minimum size for parent nodes
-    size: (id, size) => {
-      const node = editor.getNode(id);
-      if (node?.nodeType === 'parallel-group') {
-        // Ensure minimum size for parallel groups
-        return {
-          width: Math.max(size.width, PARALLEL_GROUP_NODE_WIDTH),
-          height: Math.max(size.height, PARALLEL_GROUP_NODE_HEIGHT),
-        };
-      }
-      return size;
     },
   });
 
@@ -780,10 +765,86 @@ async function createEditor(container: HTMLElement) {
   area.use(render);
   area.use(contextMenu);
 
-  // Enable zoom and drag
-  AreaExtensions.selectableNodes(area, AreaExtensions.selector(), {
-    accumulating: AreaExtensions.accumulateOnCtrl(),
-  });
+  // Enable zoom and drag with single-select by default
+  // Ctrl/Cmd+click for multi-select (accumulating)
+  // Using official accumulateOnCtrl() for proper single-select/multi-select behavior
+  const selector = AreaExtensions.selector();
+  const accumulating = AreaExtensions.accumulateOnCtrl();
+
+  AreaExtensions.selectableNodes(area, selector, { accumulating });
+
+  // ============================================================================
+  // Keyboard event handler for Delete key
+  // ============================================================================
+  const handleKeyDown = async (event: KeyboardEvent) => {
+    // Delete or Backspace key to remove selected nodes
+    if (event.key === 'Delete' || event.key === 'Backspace') {
+      // Don't delete if user is typing in an input field
+      const target = event.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') {
+        return;
+      }
+
+      // Get selected entities from selector
+      const selectedEntities = Array.from(selector.entities.values());
+      if (selectedEntities.length === 0) return;
+
+      // Prevent default browser behavior
+      event.preventDefault();
+
+      // Filter to get only node entities (label === 'node')
+      const nodeIds = selectedEntities
+        .filter((entity) => entity.label === 'node')
+        .map((entity) => entity.id);
+
+      // Remove selected nodes and their connections
+      for (const nodeId of nodeIds) {
+        const node = editor.getNode(nodeId);
+        if (!node) continue;
+
+        // Don't allow deleting Start or End nodes
+        if (node.nodeType === 'start' || node.nodeType === 'end') {
+          console.log('[ReteWorkflowEditor] Cannot delete Start or End nodes');
+          continue;
+        }
+
+        // First remove all connections connected to this node
+        const connections = editor.getConnections();
+        for (const conn of connections) {
+          if (conn.source === nodeId || conn.target === nodeId) {
+            await editor.removeConnection(conn.id);
+          }
+        }
+
+        // If this is a Parallel Group, also remove child nodes
+        if (node.nodeType === 'parallel-group') {
+          const allNodes = editor.getNodes();
+          for (const childNode of allNodes) {
+            if (childNode.parent === nodeId) {
+              // Remove child's connections
+              const childConnections = editor.getConnections();
+              for (const conn of childConnections) {
+                if (conn.source === childNode.id || conn.target === childNode.id) {
+                  await editor.removeConnection(conn.id);
+                }
+              }
+              await editor.removeNode(childNode.id);
+            }
+          }
+        }
+
+        // Remove the node
+        await editor.removeNode(nodeId);
+        console.log('[ReteWorkflowEditor] Deleted node:', nodeId);
+      }
+    }
+  };
+
+  // Add keyboard event listener to the container
+  container.addEventListener('keydown', handleKeyDown);
+  // Make container focusable
+  container.setAttribute('tabindex', '0');
+
   // Note: Do NOT use AreaExtensions.simpleNodesOrder(area) with scopes plugin
   // The scopes plugin manages its own node ordering for proper parent/child layering
 
@@ -851,10 +912,22 @@ async function createEditor(container: HTMLElement) {
   AreaExtensions.zoomAt(area, editor.getNodes());
 
   // ============================================================================
+  // Helper: Convert screen coordinates to Area coordinates
+  // ============================================================================
+  const screenToArea = (screenPos: { x: number; y: number }): { x: number; y: number } => {
+    const transform = area.area.transform;
+    return {
+      x: (screenPos.x - transform.x) / transform.k,
+      y: (screenPos.y - transform.y) / transform.k,
+    };
+  };
+
+  // ============================================================================
   // Helper: Find Parallel Group at position for drag & drop
+  // Position should be in Area coordinates
   // ============================================================================
   const findParallelGroupAtPosition = (
-    position: { x: number; y: number }
+    areaPosition: { x: number; y: number }
   ): WorkflowNode | undefined => {
     const nodes = editor.getNodes();
     for (const node of nodes) {
@@ -864,9 +937,10 @@ async function createEditor(container: HTMLElement) {
       if (!nodeView) continue;
 
       const nodePosition = { x: nodeView.position.x, y: nodeView.position.y };
-      const dimensions = getNodeDimensions(node.nodeType);
+      // Use actual node dimensions from the node object
+      const dimensions = { width: node.width, height: node.height };
 
-      if (isPositionInsideNode(position, nodePosition, dimensions.width, dimensions.height)) {
+      if (isPositionInsideNode(areaPosition, nodePosition, dimensions.width, dimensions.height)) {
         return node;
       }
     }
@@ -893,7 +967,10 @@ async function createEditor(container: HTMLElement) {
     editor,
     area,
     scopes,
-    destroy: () => area.destroy(),
+    destroy: () => {
+      container.removeEventListener('keydown', handleKeyDown);
+      area.destroy();
+    },
     /**
      * Auto-arrange all nodes (simple horizontal layout)
      * Note: elkjs-based auto-arrange removed due to Electron compatibility issues
@@ -930,7 +1007,10 @@ async function createEditor(container: HTMLElement) {
       AreaExtensions.zoomAt(area, editor.getNodes());
     },
     // Expose methods for external control
-    addNode: async (type: WorkflowNodeType, position: { x: number; y: number }, parentId?: string) => {
+    addNode: async (type: WorkflowNodeType, screenPosition: { x: number; y: number }, parentId?: string) => {
+      // Convert screen coordinates to Area coordinates
+      const areaPosition = screenToArea(screenPosition);
+
       // Generate display label
       const label = type.charAt(0).toUpperCase() + type.slice(1).replace(/-/g, ' ');
       const node = new WorkflowNode(label);
@@ -939,9 +1019,10 @@ async function createEditor(container: HTMLElement) {
       // Auto-detect parent if not provided and node type is allowed as child
       let detectedParentId = parentId;
       if (!detectedParentId && isAllowedChildType(type)) {
-        const parentGroup = findParallelGroupAtPosition(position);
+        const parentGroup = findParallelGroupAtPosition(areaPosition);
         if (parentGroup) {
           detectedParentId = parentGroup.id;
+          console.log('[ReteWorkflowEditor] Auto-detected parent:', parentGroup.id, 'for node at', areaPosition);
         }
       }
 
@@ -972,16 +1053,17 @@ async function createEditor(container: HTMLElement) {
           cleanupAfter: true,
           failureStrategy: 'continue',
           aggregationStrategy: 'merge',
-          inputMapping: 'task',
+          inputMapping: 'broadcast', // broadcast: send same input to all children, distribute: split input
           conflictResolution: {
             strategy: 'ai',
             autoMergeAfterTask: true,
           },
         };
 
-        // Parallel Group is a container - no sockets needed
-        // Child nodes inside handle their own connections
-        // External connections go to/from the first/last child nodes
+        // Parallel Group has input/output sockets for workflow connections
+        // Input is distributed to all child nodes, outputs are aggregated
+        node.addInput('input', new ClassicPreset.Input(socket, 'Input'));
+        node.addOutput('output', new ClassicPreset.Output(socket, 'Output'));
 
         // Minimal controls - just concurrency (other settings via property panel)
         node.addControl(
@@ -1229,9 +1311,11 @@ async function createEditor(container: HTMLElement) {
       node.updateSize();
 
       await editor.addNode(node);
-      await area.translate(node.id, position);
+      await area.translate(node.id, areaPosition);
 
-      // Update scopes if node was added to a parent
+      // If node has a parent, call scopes.update() to trigger parent resize
+      // Per official docs: "After the nodes have been added to the editor,
+      // to change the bindings between nodes, you need to explicitly call the update method"
       if (detectedParentId) {
         await scopes.update(detectedParentId);
       }
@@ -1522,7 +1606,9 @@ async function createEditor(container: HTMLElement) {
       await editor.addNode(childNode);
       await area.translate(childNode.id, absolutePosition);
 
-      // Update scopes plugin to recalculate parent bounds
+      // Call scopes.update() to trigger parent resize
+      // Per official docs: "After the nodes have been added to the editor,
+      // to change the bindings between nodes, you need to explicitly call the update method"
       await scopes.update(parentId);
 
       return childNode.id;

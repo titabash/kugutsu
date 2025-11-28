@@ -10,8 +10,9 @@ import type { ReactArea2D } from 'rete-react-plugin';
 /**
  * Base WorkflowNode class with parent support for scopes
  *
- * Note: width and height are intentionally not set to allow Rete.js
- * to auto-size nodes based on their content.
+ * Note: rete-scopes-plugin requires explicit width and height for drag-drop nesting.
+ * All nodes must have dimensions set for the plugin to work correctly.
+ * Height is calculated dynamically based on the number of controls.
  */
 export class WorkflowNode extends ClassicPreset.Node {
   /** Parent node ID for scopes */
@@ -21,16 +22,64 @@ export class WorkflowNode extends ClassicPreset.Node {
   /** Node configuration */
   config?: Record<string, unknown>;
 
+  // Default dimensions required by rete-scopes-plugin
+  override width = 200;
+  override height = 150;
+
   /**
-   * Update size - only sets explicit size for parallel-group containers
+   * Update size based on node type and content
+   * Height is calculated dynamically based on controls, inputs, and outputs
    */
   updateSize(): void {
-    // Only set explicit size for parallel-group (container nodes)
+    // Base height includes title bar
+    const titleHeight = 50;
+    const controlHeight = 40;
+    const textAreaHeight = 80;
+    const socketHeight = 30;
+    const padding = 20;
+
+    // Count controls
+    const controlCount = Object.keys(this.controls).length;
+    // Check if any control is a TextArea (needs more height)
+    const hasTextArea = this.nodeType && ['engineer', 'reviewer', 'product-owner', 'custom-ai'].includes(this.nodeType);
+
+    // Count sockets
+    const inputCount = Object.keys(this.inputs).length;
+    const outputCount = Object.keys(this.outputs).length;
+    const socketRows = Math.max(inputCount, outputCount);
+
     if (this.nodeType === 'parallel-group') {
+      // Parallel group is a container - needs larger dimensions
       this.width = 400;
       this.height = 300;
+    } else if (this.nodeType === 'start') {
+      // Start node is minimal
+      this.width = 180;
+      this.height = titleHeight + socketHeight + padding;
+    } else {
+      // Dynamic size for regular nodes
+      this.width = 220;
+
+      // Calculate height based on content
+      let calculatedHeight = titleHeight;
+
+      // Add height for controls
+      if (hasTextArea) {
+        // AI nodes have a dropdown + textarea
+        calculatedHeight += controlHeight + textAreaHeight;
+      } else {
+        calculatedHeight += controlCount * controlHeight;
+      }
+
+      // Add height for sockets
+      calculatedHeight += socketRows * socketHeight;
+
+      // Add padding
+      calculatedHeight += padding;
+
+      // Ensure minimum height
+      this.height = Math.max(calculatedHeight, 120);
     }
-    // For all other nodes, let Rete.js auto-size based on content
   }
 }
 

@@ -334,12 +334,15 @@ function TextControlComponent({ data }: { data: TextControl }) {
 // ============================================================================
 
 // Custom styles for regular nodes - dark theme with blue accent
+// height: auto overrides the JavaScript-set height to allow content-based sizing
 const customNodeStyles = css<{ selected?: boolean }>`
   background: #2d2d2d;
   border: 2px solid #4e58bf;
   border-radius: 8px;
   width: fit-content !important;
   min-width: 180px;
+  height: auto !important;
+  min-height: 80px;
 
   ${(props) =>
     props.selected &&
@@ -539,6 +542,12 @@ async function createEditor(container: HTMLElement) {
   // Create scopes plugin for nested nodes (Parallel Groups)
   // Configure padding so child nodes stay inside parent bounds
   const scopes = new ScopesPlugin<Schemes>({
+    // Exclude nodes that cannot be parents (only parallel-group can be a parent)
+    exclude: (nodeId) => {
+      const node = editor.getNode(nodeId);
+      // Only parallel-group nodes can be parents
+      return node?.nodeType !== 'parallel-group';
+    },
     // Padding inside parent node for child nodes
     padding: (nodeId) => {
       const node = editor.getNode(nodeId);

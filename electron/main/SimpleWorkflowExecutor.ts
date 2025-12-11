@@ -1,11 +1,16 @@
 /**
  * SimpleWorkflowExecutor
  *
- * A lightweight workflow executor for Electron that doesn't depend on LangChain.
- * This is used for MVP to demonstrate the visual workflow editor functionality.
+ * A workflow executor for Electron that integrates with AI providers.
+ * Executes workflow nodes in topological order, with real AI execution for AI nodes.
  */
 
 import { EventEmitter } from 'events';
+
+// AI provider modules are loaded dynamically to avoid undici File polyfill issues in Electron
+// These will be loaded at runtime when AI node execution is needed
+type AIProviderFactoryType = typeof import('../../src/providers/AIProviderFactory.js').AIProviderFactory;
+type MessageHandlerType = typeof import('../../src/utils/MessageHandler.js').MessageHandler;
 
 // ============================================================================
 // Types (copied from workflow types to avoid LangChain dependencies)
@@ -65,6 +70,8 @@ export type ExecutionStatus = 'idle' | 'running' | 'completed' | 'failed' | 'can
 
 export interface WorkflowExecutionOptions {
   prompt: string;
+  cwd?: string;
+  userInput?: string;
   [key: string]: unknown;
 }
 
@@ -80,6 +87,25 @@ export class SimpleWorkflowExecutor extends EventEmitter {
     percentage: 0,
   };
   private cancelled = false;
+  private projectPath: string = process.cwd();
+
+  /**
+   * AI node types that require AI provider execution
+   * Includes both legacy naming (custom-ai) and new naming (ai:custom)
+   */
+  private static readonly AI_NODE_TYPES = [
+    'custom-ai',
+    'ai:custom',
+    'ai:engineer',
+    'ai:reviewer',
+    'ai:product-owner',
+    'preset:engineer',
+    'preset:reviewer',
+    'preset:product-owner',
+    'engineer',
+    'reviewer',
+    'product-owner',
+  ];
 
   /**
    * Execute a workflow by traversing nodes in connection order
@@ -92,6 +118,11 @@ export class SimpleWorkflowExecutor extends EventEmitter {
     const startTime = Date.now();
     const executedNodes: string[] = [];
     const nodeOutputs: Record<string, Record<string, unknown>> = {};
+
+    // Set project path from options
+    if (options.cwd) {
+      this.projectPath = options.cwd;
+    }
 
     // Validate workflow
     if (!workflow.nodes || workflow.nodes.length === 0) {
@@ -292,19 +323,31 @@ export class SimpleWorkflowExecutor extends EventEmitter {
   }
 
   /**
+   * Check if a node type is an AI node
+   * Matches either explicit types in AI_NODE_TYPES or types starting with 'ai:'
+   */
+  private isAINode(type: string): boolean {
+    return SimpleWorkflowExecutor.AI_NODE_TYPES.includes(type) || type.startsWith('ai:');
+  }
+
+  /**
    * Execute a single node based on its type
    */
   private async executeNode(
     node: WorkflowNodeJSON,
     inputs: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
-    // Simulate execution time
-    await this.delay(100);
-
     const outputs: Record<string, unknown> = {};
 
+    // Check if this is an AI node
+    if (this.isAINode(node.type)) {
+      return await this.executeAINode(node, inputs);
+    }
+
+    // Non-AI node execution
     switch (node.type) {
       case 'io:start':
+      case 'start':
         // Start node passes through all inputs
         for (const output of node.outputs) {
           outputs[output.key] = inputs;
@@ -312,12 +355,14 @@ export class SimpleWorkflowExecutor extends EventEmitter {
         break;
 
       case 'io:end':
+      case 'end':
         // End node collects all inputs as final output
         outputs['result'] = inputs;
         break;
 
       case 'control:transform':
-        // Transform node applies a transformation (mock for MVP)
+      case 'transform':
+        // Transform node applies a transformation
         for (const output of node.outputs) {
           outputs[output.key] = {
             ...inputs,
@@ -328,7 +373,8 @@ export class SimpleWorkflowExecutor extends EventEmitter {
         break;
 
       case 'control:decision':
-        // Decision node evaluates a condition (mock for MVP)
+      case 'decision':
+        // Decision node evaluates a condition
         const condition = inputs['condition'] ?? true;
         if (condition) {
           outputs['true'] = inputs;
@@ -337,15 +383,18 @@ export class SimpleWorkflowExecutor extends EventEmitter {
         }
         break;
 
-      case 'preset:engineer':
-      case 'custom-ai':
-        // AI nodes simulate AI response
+      case 'control:parallel-group':
+      case 'parallel-group':
+        // Parallel group - for now, pass through (TODO: implement parallel execution)
         for (const output of node.outputs) {
-          outputs[output.key] = {
-            ...inputs,
-            aiResponse: `Simulated AI response from ${node.label || node.id}`,
-            nodeType: node.type,
-          };
+          outputs[output.key] = inputs;
+        }
+        break;
+
+      case 'merge':
+        // Merge node - pass through (TODO: implement git merge)
+        for (const output of node.outputs) {
+          outputs[output.key] = inputs;
         }
         break;
 
@@ -358,6 +407,146 @@ export class SimpleWorkflowExecutor extends EventEmitter {
 
     console.log(`[SimpleWorkflowExecutor] Executed node ${node.id} (${node.type})`);
     return outputs;
+  }
+
+  /**
+   * Execute an AI node using the AI provider
+   * Uses dynamic imports to avoid undici File polyfill issues at startup
+   */
+  private async executeAINode(
+    node: WorkflowNodeJSON,
+    inputs: Record<string, unknown>
+  ): Promise<Record<string, unknown>> {
+    const nodeLabel = node.label || node.id;
+    console.log(`[SimpleWorkflowExecutor] Executing AI node: ${nodeLabel} (${node.type})`);
+
+    // Dynamic import of AI modules to avoid startup issues with undici
+    const { AIProviderFactory } = await import('../../src/providers/AIProviderFactory.js');
+    const { MessageHandler } = await import('../../src/utils/MessageHandler.js');
+
+    // Get AI configuration from node config
+    const aiConfig = (node.config?.ai as Record<string, unknown>) || {};
+    const providerName = (aiConfig.provider as string) || 'claude';
+    const systemPrompt = (aiConfig.systemPrompt as string) || '';
+    const maxTurns = (aiConfig.maxTurns as number) || 30;
+
+    // Create AI provider
+    const provider = AIProviderFactory.create({
+      provider: providerName as 'claude' | 'codex' | 'gemini',
+    }, true);
+
+    // Build prompt
+    const prompt = this.buildPrompt(node, inputs, systemPrompt);
+
+    // Create message handler
+    const handler = new MessageHandler({
+      maxTurns,
+      nodeName: nodeLabel,
+      silent: false,
+    });
+
+    let lastAssistantContent = '';
+
+    try {
+      // Execute AI provider
+      for await (const message of provider.execute(prompt, {
+        maxTurns,
+        allowedTools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
+        permissionMode: 'acceptEdits',
+        cwd: this.projectPath,
+      })) {
+        await handler.handleMessage(message);
+
+        // Emit message event for UI
+        this.emit('node-message', {
+          nodeId: node.id,
+          nodeLabel,
+          message,
+        });
+
+        // Store last assistant response
+        if (message.type === 'assistant' && typeof message.content === 'string') {
+          lastAssistantContent = message.content;
+        }
+      }
+
+      // Check for errors
+      if (handler.getHasError()) {
+        const errorDetails = handler.getErrorDetails();
+        throw new Error(`AI execution error: ${errorDetails?.message || 'Unknown error'}`);
+      }
+
+      console.log(`[SimpleWorkflowExecutor] AI node completed: ${nodeLabel}`);
+
+      // Return outputs
+      const outputs: Record<string, unknown> = {};
+      for (const output of node.outputs) {
+        outputs[output.key] = {
+          ...inputs,
+          aiResponse: lastAssistantContent,
+          nodeId: node.id,
+          nodeType: node.type,
+          success: true,
+        };
+      }
+      return outputs;
+
+    } catch (error) {
+      const err = error as Error;
+      console.error(`[SimpleWorkflowExecutor] AI node error: ${nodeLabel}`, err.message);
+
+      // Return error in outputs
+      const outputs: Record<string, unknown> = {};
+      for (const output of node.outputs) {
+        outputs[output.key] = {
+          ...inputs,
+          error: err.message,
+          nodeId: node.id,
+          nodeType: node.type,
+          success: false,
+        };
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Build prompt for AI node
+   */
+  private buildPrompt(
+    node: WorkflowNodeJSON,
+    inputs: Record<string, unknown>,
+    systemPrompt: string
+  ): string {
+    const userInput = (inputs.userInput as string) || (inputs.prompt as string) || (inputs.input as string) || '';
+
+    // Get previous node output if available
+    const previousOutput = (inputs.aiResponse as string) || '';
+
+    let prompt = '';
+
+    // Add system prompt if provided
+    if (systemPrompt) {
+      prompt += `${systemPrompt}\n\n`;
+    }
+
+    // Add task description
+    prompt += `## タスク\n${node.label || node.id}\n\n`;
+
+    // Add user input
+    if (userInput) {
+      prompt += `## ユーザーからの入力\n${userInput}\n\n`;
+    }
+
+    // Add previous output if this is not the first AI node
+    if (previousOutput) {
+      prompt += `## 前のノードからの出力\n${previousOutput}\n\n`;
+    }
+
+    // Add working directory info
+    prompt += `## 作業ディレクトリ\n${this.projectPath}\n`;
+
+    return prompt;
   }
 
   /**

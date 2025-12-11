@@ -251,6 +251,20 @@ const electronAPI = {
     return () => {
       ipcRenderer.removeListener('workflow-completed', listener);
     };
+  },
+
+  /**
+   * Listen for workflow node AI messages (real-time streaming)
+   * AIノードからのメッセージをリアルタイムで受信
+   */
+  onWorkflowNodeMessage: (callback: (data: { nodeId: string; nodeLabel: string; message: any }) => void) => {
+    const listener = (_event: IpcRendererEvent, data: { nodeId: string; nodeLabel: string; message: any }) => {
+      callback(data);
+    };
+    ipcRenderer.on('workflow-node-message', listener);
+    return () => {
+      ipcRenderer.removeListener('workflow-node-message', listener);
+    };
   }
 };
 

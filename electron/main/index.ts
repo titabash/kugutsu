@@ -846,15 +846,25 @@ ipcMain.handle('execute-workflow-with-prompt', async (event, { workflow, prompt 
       // Clean up listeners after completion
       workflowExecutor?.off('progress', progressHandler);
       workflowExecutor?.off('completed', completedHandler);
+      workflowExecutor?.off('node-message', nodeMessageHandler);
+    };
+
+    // Forward AI node messages to renderer for real-time display
+    const nodeMessageHandler = (messageEvent: { nodeId: string; nodeLabel: string; message: unknown }) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('workflow-node-message', messageEvent);
+      }
     };
 
     workflowExecutor.on('progress', progressHandler);
     workflowExecutor.on('completed', completedHandler);
+    workflowExecutor.on('node-message', nodeMessageHandler);
 
     // Execute workflow with prompt as initial input
     const result = await workflowExecutor.execute(workflow, {
       prompt: prompt,
       userInput: prompt,
+      cwd: currentProjectPath || undefined,
     });
 
     console.log('[Electron Main] Workflow execution completed:', result.success);

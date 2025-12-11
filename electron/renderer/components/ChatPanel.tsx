@@ -79,14 +79,15 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   const isDisabled = isExecuting || isSubmitting;
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col overflow-hidden">
       {/* ヘッダー */}
-      <div className="flex h-12 items-center justify-between border-b border-border px-4">
+      <div className="flex h-12 flex-shrink-0 items-center justify-between border-b border-border px-4">
         <h2 className="text-sm font-semibold">チャット</h2>
       </div>
 
       {/* メッセージ一覧 */}
-      <ScrollArea className="flex-1 p-4">
+      <div className="flex-1 overflow-hidden">
+        <ScrollArea className="h-full p-4">
         <div className="space-y-4">
           {messages.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center py-12 text-center text-muted-foreground">
@@ -136,13 +137,14 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
             </>
           )}
         </div>
-      </ScrollArea>
+        </ScrollArea>
+      </div>
 
       <Separator />
 
       {/* ローディング表示 */}
       {isDisabled && (
-        <div className="border-t border-border bg-muted/10 p-3">
+        <div className="flex-shrink-0 border-t border-border bg-muted/10 p-3">
           <div className="flex items-center gap-3">
             <Loader2 className="h-4 w-4 animate-spin text-primary" />
             <div className="flex-1">
@@ -153,7 +155,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
       )}
 
       {/* 入力エリア */}
-      <div className="p-4">
+      <div className="flex-shrink-0 p-4">
         <div className="space-y-3">
           <Textarea
             value={prompt}

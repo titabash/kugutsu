@@ -42,6 +42,16 @@ declare global {
           error?: string;
         }) => void
       ) => () => void;
+      onWorkflowNodeMessage?: (
+        callback: (data: {
+          nodeId: string;
+          nodeLabel: string;
+          message: {
+            type: string;
+            content?: string | unknown;
+          };
+        }) => void
+      ) => () => void;
     };
   }
 }
@@ -120,9 +130,26 @@ export default function App() {
       }
     });
 
+    // AIノードからのメッセージをリアルタイムで受信
+    const unsubscribeNodeMessage = window.electronAPI.onWorkflowNodeMessage?.((data) => {
+      console.log('[App] Workflow node message:', data);
+
+      // AIからのアシスタントメッセージをチャットに追加
+      if (data.message?.type === 'assistant' && typeof data.message.content === 'string') {
+        addChatMessage({
+          id: `ai-${data.nodeId}-${Date.now()}`,
+          type: 'ai',
+          content: `**${data.nodeLabel}**: ${data.message.content}`,
+          timestamp: new Date(),
+          isStreaming: true,
+        });
+      }
+    });
+
     return () => {
       unsubscribeProgress?.();
       unsubscribeCompleted?.();
+      unsubscribeNodeMessage?.();
     };
   }, [addChatMessage]);
 

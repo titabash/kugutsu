@@ -52,6 +52,10 @@ export class WorkflowNode extends ClassicPreset.Node {
       // Parallel group is a container - needs larger dimensions
       this.width = 400;
       this.height = 300;
+    } else if (this.nodeType === 'subgraph-start' || this.nodeType === 'subgraph-end') {
+      // Subgraph start/end nodes are small pill-shaped nodes
+      this.width = 100;
+      this.height = 50;
     } else if (this.nodeType === 'start') {
       // Start node is minimal
       this.width = 180;
@@ -102,6 +106,8 @@ export type AreaExtra = ReactArea2D<Schemes>;
 export type WorkflowNodeType =
   | 'start'
   | 'end'
+  | 'subgraph-start'
+  | 'subgraph-end'
   | 'decision'
   | 'transform'
   | 'engineer'
@@ -172,6 +178,8 @@ export interface EditorActions {
 export const NODE_COLORS: Record<WorkflowNodeType, string> = {
   start: '#10b981',      // Green
   end: '#ef4444',        // Red
+  'subgraph-start': '#22c55e',  // Green (for ParallelGroup internal start)
+  'subgraph-end': '#ef4444',    // Red (for ParallelGroup internal end)
   decision: '#eab308',   // Yellow
   transform: '#6b7280',  // Gray
   engineer: '#3b82f6',   // Blue
@@ -191,6 +199,8 @@ export const NODE_COLORS: Record<WorkflowNodeType, string> = {
 export const NODE_ICONS: Record<WorkflowNodeType, string> = {
   start: '▶️',
   end: '⏹️',
+  'subgraph-start': '▶',
+  'subgraph-end': '■',
   decision: '◆',
   transform: '🔄',
   engineer: '👨‍💻',

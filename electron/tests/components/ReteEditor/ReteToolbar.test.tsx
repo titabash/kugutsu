@@ -294,18 +294,18 @@ describe('ReteToolbar', () => {
       expect(stopButton).toBeDisabled();
     });
 
-    it('should show play icon when not running', () => {
+    it('should show Run text when not running', () => {
       render(<ReteToolbar isRunning={false} />);
 
       const runButton = screen.getByTitle(/run workflow/i);
-      expect(runButton).toHaveTextContent('▶️');
+      expect(runButton).toHaveTextContent('Run');
     });
 
-    it('should show stop icon when running', () => {
+    it('should show Stop text when running', () => {
       render(<ReteToolbar isRunning={true} />);
 
       const stopButton = screen.getByTitle(/stop workflow/i);
-      expect(stopButton).toHaveTextContent('⏹️');
+      expect(stopButton).toHaveTextContent('Stop');
     });
   });
 
@@ -335,8 +335,8 @@ describe('ReteToolbar', () => {
       render(<ReteToolbar gridEnabled={true} />);
 
       const gridButton = screen.getByTitle(/hide grid/i);
-      // Active buttons have a different background color
-      expect(gridButton).toHaveStyle({ backgroundColor: 'rgb(74, 74, 74)' });
+      // Active buttons have the bg-accent class
+      expect(gridButton).toHaveClass('bg-accent');
     });
   });
 
@@ -349,15 +349,15 @@ describe('ReteToolbar', () => {
       render(<ReteToolbar />);
 
       const toolbar = document.querySelector('.rete-toolbar');
-      expect(toolbar).toHaveStyle({ display: 'flex' });
+      expect(toolbar).toHaveClass('flex');
     });
 
-    it('should have dividers between button groups', () => {
+    it('should have separators between button groups', () => {
       render(<ReteToolbar />);
 
-      // Check that dividers exist (elements with height: 24px and width: 1px)
-      const dividers = document.querySelectorAll('[style*="width: 1px"][style*="height: 24px"]');
-      expect(dividers.length).toBeGreaterThan(0);
+      // Check that separators exist (Separator components from shadcn/ui)
+      const separators = document.querySelectorAll('[data-orientation="vertical"]');
+      expect(separators.length).toBeGreaterThan(0);
     });
   });
 });

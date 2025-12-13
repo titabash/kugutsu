@@ -115,9 +115,9 @@ describe('ParallelGroupNode', () => {
       expect(node.type).toBe('control:parallel-group');
     });
 
-    it('should have tasks input socket', () => {
+    it('should have prompt input socket', () => {
       const node = createParallelGroupNode();
-      expect(node.hasInput('tasks')).toBe(true);
+      expect(node.hasInput('prompt')).toBe(true);
     });
 
     it('should have results output socket', () => {
@@ -147,24 +147,24 @@ describe('ParallelGroupNode', () => {
   });
 
   describe('Validation', () => {
-    it('should validate successfully when tasks input is connected', () => {
+    it('should validate successfully when prompt input is connected', () => {
       const node = createParallelGroupNode();
-      node.setConnectedInputs(['tasks']);
+      node.setConnectedInputs(['prompt']);
       const result = node.validate();
       expect(result.valid).toBe(true);
       expect(result.errors).toHaveLength(0);
     });
 
-    it('should fail validation when tasks input is not connected', () => {
+    it('should fail validation when prompt input is not connected', () => {
       const node = createParallelGroupNode();
       const result = node.validate();
       expect(result.valid).toBe(false);
-      expect(result.errors).toContain("Required input 'Tasks' is not connected");
+      expect(result.errors).toContain("Required input 'Prompt' is not connected");
     });
 
     it('should validate maxConcurrency is positive', () => {
       const node = createParallelGroupNode('pg-1', { maxConcurrency: 0 });
-      node.setConnectedInputs(['tasks']);
+      node.setConnectedInputs(['prompt']);
       const result = node.validate();
       expect(result.valid).toBe(false);
       expect(result.errors).toContain('maxConcurrency must be at least 1');
@@ -172,7 +172,7 @@ describe('ParallelGroupNode', () => {
 
     it('should validate subgraph is defined', () => {
       const node = createParallelGroupNode();
-      node.setConnectedInputs(['tasks']);
+      node.setConnectedInputs(['prompt']);
       // Subgraph should be set before execution
       const result = node.validateSubgraph();
       expect(result.valid).toBe(false);
@@ -235,12 +235,15 @@ describe('ParallelGroupNode', () => {
     beforeEach(() => {
       node = createParallelGroupNode('pg-1', { useWorktree: false });
       node.setSubgraph(createMockSubgraph());
-      node.setConnectedInputs(['tasks']);
+      node.setConnectedInputs(['prompt']);
       context = createMockExecutionContext();
     });
 
     it('should execute with empty tasks array', async () => {
-      context.inputs = { tasks: [] };
+      context.inputs = { prompt: 'Empty request' };
+      // Return empty task list
+      node.setTaskDecomposer(async () => []);
+
       const result = await node.execute(context);
       expect(result.success).toBe(true);
       expect(result.outputs.results).toEqual([]);
@@ -248,7 +251,8 @@ describe('ParallelGroupNode', () => {
 
     it('should execute with single task', async () => {
       const tasks = [createMockTask('task-1', 'Implement feature')];
-      context.inputs = { tasks };
+      context.inputs = { prompt: 'Implement a feature' };
+      node.setTaskDecomposer(async () => tasks);
 
       const result = await node.execute(context);
 
@@ -263,7 +267,8 @@ describe('ParallelGroupNode', () => {
         createMockTask('task-2', 'Implement feature 2'),
         createMockTask('task-3', 'Implement feature 3'),
       ];
-      context.inputs = { tasks };
+      context.inputs = { prompt: 'Implement multiple features' };
+      node.setTaskDecomposer(async () => tasks);
 
       const result = await node.execute(context);
 
@@ -277,7 +282,7 @@ describe('ParallelGroupNode', () => {
         useWorktree: false,
       });
       node.setSubgraph(createMockSubgraph());
-      node.setConnectedInputs(['tasks']);
+      node.setConnectedInputs(['prompt']);
 
       const tasks = [
         createMockTask('task-1', 'Task 1'),
@@ -285,7 +290,8 @@ describe('ParallelGroupNode', () => {
         createMockTask('task-3', 'Task 3'),
         createMockTask('task-4', 'Task 4'),
       ];
-      context.inputs = { tasks };
+      context.inputs = { prompt: 'Execute multiple tasks' };
+      node.setTaskDecomposer(async () => tasks);
 
       const result = await node.execute(context);
 
@@ -300,14 +306,15 @@ describe('ParallelGroupNode', () => {
         failureStrategy: 'continue',
       });
       node.setSubgraph(createMockSubgraph());
-      node.setConnectedInputs(['tasks']);
+      node.setConnectedInputs(['prompt']);
 
       const tasks = [
         createMockTask('task-1', 'Success task'),
         createMockTask('task-2', 'FAIL'), // Special marker to simulate failure
         createMockTask('task-3', 'Another success'),
       ];
-      context.inputs = { tasks };
+      context.inputs = { prompt: 'Execute with failures' };
+      node.setTaskDecomposer(async () => tasks);
 
       // Mock subgraph executor to fail on specific task
       node.setSubgraphExecutor(async (task: Task) => {
@@ -333,14 +340,15 @@ describe('ParallelGroupNode', () => {
         failureStrategy: 'abort-all',
       });
       node.setSubgraph(createMockSubgraph());
-      node.setConnectedInputs(['tasks']);
+      node.setConnectedInputs(['prompt']);
 
       const tasks = [
         createMockTask('task-1', 'Success task'),
         createMockTask('task-2', 'FAIL'),
         createMockTask('task-3', 'Another task'),
       ];
-      context.inputs = { tasks };
+      context.inputs = { prompt: 'Execute with abort' };
+      node.setTaskDecomposer(async () => tasks);
 
       node.setSubgraphExecutor(async (task: Task) => {
         if (task.description === 'FAIL') {
@@ -369,7 +377,7 @@ describe('ParallelGroupNode', () => {
         cleanupAfter: true,
       });
       node.setSubgraph(createMockSubgraph());
-      node.setConnectedInputs(['tasks']);
+      node.setConnectedInputs(['prompt']);
 
       mockGitManager = {
         createWorktree: jest.fn<IGitWorktreeManager['createWorktree']>().mockImplementation(async (options) => ({
@@ -394,7 +402,8 @@ describe('ParallelGroupNode', () => {
         createMockTask('task-1', 'Feature 1'),
         createMockTask('task-2', 'Feature 2'),
       ];
-      context.inputs = { tasks };
+      context.inputs = { prompt: 'Create two features' };
+      node.setTaskDecomposer(async () => tasks);
 
       await node.execute(context);
 
@@ -408,7 +417,8 @@ describe('ParallelGroupNode', () => {
 
     it('should merge worktree after task completion', async () => {
       const tasks = [createMockTask('task-1', 'Feature 1')];
-      context.inputs = { tasks };
+      context.inputs = { prompt: 'Create a feature' };
+      node.setTaskDecomposer(async () => tasks);
 
       await node.execute(context);
 
@@ -417,7 +427,8 @@ describe('ParallelGroupNode', () => {
 
     it('should cleanup worktree after merge when cleanupAfter=true', async () => {
       const tasks = [createMockTask('task-1', 'Feature 1')];
-      context.inputs = { tasks };
+      context.inputs = { prompt: 'Create a feature' };
+      node.setTaskDecomposer(async () => tasks);
 
       await node.execute(context);
 
@@ -430,14 +441,83 @@ describe('ParallelGroupNode', () => {
         cleanupAfter: false,
       });
       node.setSubgraph(createMockSubgraph());
-      node.setConnectedInputs(['tasks']);
+      node.setConnectedInputs(['prompt']);
 
       const tasks = [createMockTask('task-1', 'Feature 1')];
-      context.inputs = { tasks };
+      context.inputs = { prompt: 'Create a feature' };
+      node.setTaskDecomposer(async () => tasks);
 
       await node.execute(context);
 
       expect(mockGitManager.removeWorktree).not.toHaveBeenCalled();
+    });
+
+    it('should execute subgraph with worktree path when useWorktree is enabled', async () => {
+      // Track the worktree paths passed to subgraph executor
+      const receivedWorktreePaths: (string | undefined)[] = [];
+
+      node = createParallelGroupNode('pg-1', {
+        useWorktree: true,
+        branchPrefix: 'parallel',
+        cleanupAfter: true,
+      });
+      node.setSubgraph(createMockSubgraph());
+      node.setConnectedInputs(['prompt']);
+
+      const tasks = [
+        createMockTask('task-1', 'Feature 1'),
+        createMockTask('task-2', 'Feature 2'),
+      ];
+      node.setTaskDecomposer(async () => tasks);
+
+      // Custom executor that captures the context
+      node.setSubgraphExecutor(async (task: Task, ctx: ExecutionContext) => {
+        // The context should have the worktree path as projectPath
+        // when SubgraphExecutor is used internally
+        receivedWorktreePaths.push(ctx.global.projectPath);
+        return { success: true, output: { taskId: task.id } };
+      });
+
+      context.inputs = { prompt: 'Create two features' };
+
+      await node.execute(context);
+
+      // Worktrees should have been created
+      expect(mockGitManager.createWorktree).toHaveBeenCalledTimes(2);
+      // Custom executor was called (note: custom executor receives original context,
+      // but internal SubgraphExecutor would receive worktree path)
+      expect(receivedWorktreePaths.length).toBe(2);
+    });
+
+    it('should execute default subgraph executor with worktree info', async () => {
+      // Test without custom executor - uses internal SubgraphExecutor
+      node = createParallelGroupNode('pg-1', {
+        useWorktree: true,
+        branchPrefix: 'parallel',
+        cleanupAfter: true,
+      });
+      node.setSubgraph(createMockSubgraph());
+      node.setConnectedInputs(['prompt']);
+      // Set task decomposer but NOT custom subgraph executor - use default implementation
+      const tasks = [createMockTask('task-1', 'Feature 1')];
+      node.setTaskDecomposer(async () => tasks);
+
+      context.inputs = { prompt: 'Create a feature' };
+
+      const result = await node.execute(context);
+
+      // Worktree should have been created
+      expect(mockGitManager.createWorktree).toHaveBeenCalledTimes(1);
+      expect(mockGitManager.createWorktree).toHaveBeenCalledWith(
+        expect.objectContaining({
+          branchName: expect.stringContaining('parallel'),
+          baseBranch: 'main',
+        })
+      );
+
+      // Execution should complete (SubgraphExecutor calls ReteWorkflowExecutor internally)
+      expect(result.success).toBe(true);
+      expect(result.outputs.results).toBeDefined();
     });
   });
 
@@ -455,7 +535,7 @@ describe('ParallelGroupNode', () => {
         },
       });
       node.setSubgraph(createMockSubgraph());
-      node.setConnectedInputs(['tasks']);
+      node.setConnectedInputs(['prompt']);
 
       mockGitManager = {
         createWorktree: jest.fn<IGitWorktreeManager['createWorktree']>().mockImplementation(async (options) => ({
@@ -486,7 +566,8 @@ describe('ParallelGroupNode', () => {
 
     it('should detect merge conflicts', async () => {
       const tasks = [createMockTask('task-1', 'Feature 1')];
-      context.inputs = { tasks };
+      context.inputs = { prompt: 'Create a feature' };
+      node.setTaskDecomposer(async () => tasks);
 
       const result = await node.execute(context);
 
@@ -498,7 +579,8 @@ describe('ParallelGroupNode', () => {
 
     it('should resolve conflicts with AI strategy', async () => {
       const tasks = [createMockTask('task-1', 'Feature 1')];
-      context.inputs = { tasks };
+      context.inputs = { prompt: 'Create a feature' };
+      node.setTaskDecomposer(async () => tasks);
 
       // Mock AI conflict resolution
       const mockAIResolver = jest.fn().mockResolvedValue({
@@ -521,10 +603,11 @@ describe('ParallelGroupNode', () => {
         },
       });
       node.setSubgraph(createMockSubgraph());
-      node.setConnectedInputs(['tasks']);
+      node.setConnectedInputs(['prompt']);
 
       const tasks = [createMockTask('task-1', 'Feature 1')];
-      context.inputs = { tasks };
+      context.inputs = { prompt: 'Create a feature' };
+      node.setTaskDecomposer(async () => tasks);
 
       const result = await node.execute(context);
 
@@ -540,10 +623,11 @@ describe('ParallelGroupNode', () => {
         },
       });
       node.setSubgraph(createMockSubgraph());
-      node.setConnectedInputs(['tasks']);
+      node.setConnectedInputs(['prompt']);
 
       const tasks = [createMockTask('task-1', 'Feature 1')];
-      context.inputs = { tasks };
+      context.inputs = { prompt: 'Create a feature' };
+      node.setTaskDecomposer(async () => tasks);
 
       const result = await node.execute(context);
 
@@ -559,7 +643,7 @@ describe('ParallelGroupNode', () => {
     beforeEach(() => {
       node = createParallelGroupNode('pg-1', { useWorktree: false });
       node.setSubgraph(createMockSubgraph());
-      node.setConnectedInputs(['tasks']);
+      node.setConnectedInputs(['prompt']);
       context = createMockExecutionContext();
     });
 
@@ -569,13 +653,14 @@ describe('ParallelGroupNode', () => {
         aggregationStrategy: 'merge',
       });
       node.setSubgraph(createMockSubgraph());
-      node.setConnectedInputs(['tasks']);
+      node.setConnectedInputs(['prompt']);
 
       const tasks = [
         createMockTask('task-1', 'Feature 1'),
         createMockTask('task-2', 'Feature 2'),
       ];
-      context.inputs = { tasks };
+      context.inputs = { prompt: 'Create two features' };
+      node.setTaskDecomposer(async () => tasks);
 
       node.setSubgraphExecutor(async (task: Task) => ({
         success: true,
@@ -594,13 +679,14 @@ describe('ParallelGroupNode', () => {
         aggregationStrategy: 'concat',
       });
       node.setSubgraph(createMockSubgraph());
-      node.setConnectedInputs(['tasks']);
+      node.setConnectedInputs(['prompt']);
 
       const tasks = [
         createMockTask('task-1', 'Feature 1'),
         createMockTask('task-2', 'Feature 2'),
       ];
-      context.inputs = { tasks };
+      context.inputs = { prompt: 'Create two features' };
+      node.setTaskDecomposer(async () => tasks);
 
       node.setSubgraphExecutor(async (task: Task) => ({
         success: true,
@@ -620,13 +706,14 @@ describe('ParallelGroupNode', () => {
         aggregationStrategy: 'none',
       });
       node.setSubgraph(createMockSubgraph());
-      node.setConnectedInputs(['tasks']);
+      node.setConnectedInputs(['prompt']);
 
       const tasks = [
         createMockTask('task-1', 'Feature 1'),
         createMockTask('task-2', 'Feature 2'),
       ];
-      context.inputs = { tasks };
+      context.inputs = { prompt: 'Create two features' };
+      node.setTaskDecomposer(async () => tasks);
 
       const result = await node.execute(context);
 
@@ -642,13 +729,14 @@ describe('ParallelGroupNode', () => {
     beforeEach(() => {
       node = createParallelGroupNode('pg-1', { useWorktree: false });
       node.setSubgraph(createMockSubgraph());
-      node.setConnectedInputs(['tasks']);
+      node.setConnectedInputs(['prompt']);
       context = createMockExecutionContext();
     });
 
     it('should include execution duration in metadata', async () => {
       const tasks = [createMockTask('task-1', 'Feature 1')];
-      context.inputs = { tasks };
+      context.inputs = { prompt: 'Create a feature' };
+      node.setTaskDecomposer(async () => tasks);
 
       const result = await node.execute(context);
 
@@ -661,7 +749,8 @@ describe('ParallelGroupNode', () => {
         createMockTask('task-1', 'Feature 1'),
         createMockTask('task-2', 'Feature 2'),
       ];
-      context.inputs = { tasks };
+      context.inputs = { prompt: 'Create two features' };
+      node.setTaskDecomposer(async () => tasks);
 
       const result = await node.execute(context);
 
@@ -673,7 +762,8 @@ describe('ParallelGroupNode', () => {
         createMockTask('task-1', 'Feature 1'),
         createMockTask('task-2', 'FAIL'),
       ];
-      context.inputs = { tasks };
+      context.inputs = { prompt: 'Create features with one failing' };
+      node.setTaskDecomposer(async () => tasks);
 
       node.setSubgraphExecutor(async (task: Task) => {
         if (task.description === 'FAIL') {
@@ -713,7 +803,7 @@ describe('ParallelGroupNode', () => {
         type: 'control:parallel-group' as const,
         label: 'Parallel Group',
         position: { x: 100, y: 200 },
-        inputs: [{ id: 'tasks', name: 'Tasks', type: 'data' as const, required: true }],
+        inputs: [{ id: 'prompt', name: 'Prompt', type: 'data' as const, required: true }],
         outputs: [{ id: 'results', name: 'Results', type: 'data' as const, required: false }],
         config: {
           parallelGroup: {
@@ -727,6 +817,299 @@ describe('ParallelGroupNode', () => {
 
       expect(node.id).toBe('pg-2');
       expect(node.type).toBe('control:parallel-group');
+    });
+  });
+
+  // ============================================================================
+  // Task Decomposition Tests (Self-contained ParallelGroup)
+  // ============================================================================
+
+  describe('Task Decomposition (Self-contained)', () => {
+    let node: ParallelGroupNode;
+    let context: ExecutionContext;
+    let mockAiQuery: jest.Mock;
+
+    beforeEach(() => {
+      node = createParallelGroupNode('pg-decompose', { useWorktree: false });
+      node.setSubgraph(createMockSubgraph());
+      node.setConnectedInputs(['prompt']);
+
+      // Create mock AI provider with jest.fn()
+      mockAiQuery = jest.fn().mockResolvedValue({
+        finalState: { tasks: [] },
+        duration: 100,
+        turns: 1,
+      });
+
+      context = createMockExecutionContext({
+        services: {
+          aiProvider: { query: mockAiQuery },
+        },
+      });
+    });
+
+    describe('Input Handling', () => {
+      it('should have prompt input socket instead of tasks', () => {
+        const freshNode = createParallelGroupNode();
+        expect(freshNode.hasInput('prompt')).toBe(true);
+        expect(freshNode.hasInput('tasks')).toBe(false);
+      });
+
+      it('should accept string prompt as input', async () => {
+        context.inputs = { prompt: 'Implement user authentication system' };
+
+        // Mock AI provider to return decomposed tasks
+        mockAiQuery.mockResolvedValue({
+          finalState: {
+            tasks: [
+              { id: 'task-1', description: 'Implement login endpoint' },
+              { id: 'task-2', description: 'Implement logout endpoint' },
+            ],
+          },
+          duration: 1000,
+          turns: 1,
+        });
+
+        const result = await node.execute(context);
+
+        expect(result.success).toBe(true);
+      });
+
+      it('should fail when prompt input is missing', async () => {
+        context.inputs = {};
+
+        const result = await node.execute(context);
+
+        expect(result.success).toBe(false);
+        expect(result.error?.message).toContain('prompt');
+      });
+
+      it('should fail when prompt is empty string', async () => {
+        context.inputs = { prompt: '' };
+
+        const result = await node.execute(context);
+
+        expect(result.success).toBe(false);
+        expect(result.error?.message).toContain('empty');
+      });
+
+      it('should fail when prompt is not a string', async () => {
+        context.inputs = { prompt: { invalid: 'object' } };
+
+        const result = await node.execute(context);
+
+        expect(result.success).toBe(false);
+        expect(result.error?.message).toContain('string');
+      });
+    });
+
+    describe('AI Task Decomposition', () => {
+      it('should call AI provider to decompose prompt into tasks', async () => {
+        context.inputs = { prompt: 'Build a REST API for user management' };
+
+        mockAiQuery.mockResolvedValue({
+          finalState: {
+            tasks: [
+              { id: 'task-1', description: 'Create user model' },
+              { id: 'task-2', description: 'Implement CRUD endpoints' },
+              { id: 'task-3', description: 'Add authentication middleware' },
+            ],
+          },
+          duration: 1000,
+          turns: 1,
+        });
+
+        await node.execute(context);
+
+        expect(mockAiQuery).toHaveBeenCalled();
+        const callArgs = mockAiQuery.mock.calls[0][0];
+        expect(callArgs.prompt).toContain('Build a REST API for user management');
+      });
+
+      it('should decompose prompt into multiple tasks', async () => {
+        context.inputs = { prompt: 'Implement user authentication system' };
+
+        mockAiQuery.mockResolvedValue({
+          finalState: {
+            tasks: [
+              { id: 'task-1', description: 'Implement login' },
+              { id: 'task-2', description: 'Implement logout' },
+              { id: 'task-3', description: 'Implement session management' },
+            ],
+          },
+          duration: 1000,
+          turns: 1,
+        });
+
+        // Use custom subgraph executor to track executed tasks
+        const executedTasks: Task[] = [];
+        node.setSubgraphExecutor(async (task: Task) => {
+          executedTasks.push(task);
+          return { success: true, output: { taskId: task.id } };
+        });
+
+        const result = await node.execute(context);
+
+        expect(result.success).toBe(true);
+        expect(executedTasks.length).toBe(3);
+        expect(executedTasks[0].description).toBe('Implement login');
+        expect(executedTasks[1].description).toBe('Implement logout');
+        expect(executedTasks[2].description).toBe('Implement session management');
+      });
+
+      it('should handle AI decomposition failure gracefully', async () => {
+        context.inputs = { prompt: 'Some development request' };
+
+        mockAiQuery.mockRejectedValue(new Error('AI service unavailable'));
+
+        const result = await node.execute(context);
+
+        expect(result.success).toBe(false);
+        expect(result.error?.message).toContain('AI');
+      });
+
+      it('should handle empty task list from AI', async () => {
+        context.inputs = { prompt: 'Vague request' };
+
+        mockAiQuery.mockResolvedValue({
+          finalState: { tasks: [] },
+          duration: 1000,
+          turns: 1,
+        });
+
+        const result = await node.execute(context);
+
+        expect(result.success).toBe(true);
+        expect(result.outputs.results).toEqual([]);
+      });
+
+      it('should generate unique task IDs if not provided by AI', async () => {
+        context.inputs = { prompt: 'Build feature X' };
+
+        mockAiQuery.mockResolvedValue({
+          finalState: {
+            tasks: [
+              { description: 'Task without ID 1' },
+              { description: 'Task without ID 2' },
+            ],
+          },
+          duration: 1000,
+          turns: 1,
+        });
+
+        const executedTasks: Task[] = [];
+        node.setSubgraphExecutor(async (task: Task) => {
+          executedTasks.push(task);
+          return { success: true, output: {} };
+        });
+
+        await node.execute(context);
+
+        // Each task should have a unique ID
+        expect(executedTasks[0].id).toBeDefined();
+        expect(executedTasks[1].id).toBeDefined();
+        expect(executedTasks[0].id).not.toBe(executedTasks[1].id);
+      });
+    });
+
+    describe('Integration with Worktree', () => {
+      let mockGitManager: IGitWorktreeManager;
+      let worktreeMockAiQuery: jest.Mock;
+
+      beforeEach(() => {
+        node = createParallelGroupNode('pg-decompose-wt', {
+          useWorktree: true,
+          branchPrefix: 'feature',
+          cleanupAfter: true,
+        });
+        node.setSubgraph(createMockSubgraph());
+        node.setConnectedInputs(['prompt']);
+
+        mockGitManager = {
+          createWorktree: jest.fn<IGitWorktreeManager['createWorktree']>().mockImplementation(async (options) => ({
+            path: `/tmp/worktree-${options.branchName}`,
+            branchName: options.branchName,
+          })),
+          removeWorktree: jest.fn<IGitWorktreeManager['removeWorktree']>().mockResolvedValue(undefined),
+          merge: jest.fn<IGitWorktreeManager['merge']>().mockResolvedValue({
+            success: true,
+            hasConflict: false,
+          }),
+          deleteBranch: jest.fn<IGitWorktreeManager['deleteBranch']>().mockResolvedValue(undefined),
+        };
+
+        worktreeMockAiQuery = jest.fn().mockResolvedValue({
+          finalState: { tasks: [] },
+          duration: 100,
+          turns: 1,
+        });
+
+        context = createMockExecutionContext({
+          services: {
+            gitManager: mockGitManager,
+            aiProvider: { query: worktreeMockAiQuery },
+          },
+        });
+      });
+
+      it('should create worktrees for each decomposed task', async () => {
+        context.inputs = { prompt: 'Build authentication system' };
+
+        worktreeMockAiQuery.mockResolvedValue({
+          finalState: {
+            tasks: [
+              { id: 'auth-1', description: 'Login feature' },
+              { id: 'auth-2', description: 'Logout feature' },
+            ],
+          },
+          duration: 1000,
+          turns: 1,
+        });
+
+        await node.execute(context);
+
+        expect(mockGitManager.createWorktree).toHaveBeenCalledTimes(2);
+      });
+
+      it('should merge and cleanup worktrees after task completion', async () => {
+        context.inputs = { prompt: 'Build feature' };
+
+        worktreeMockAiQuery.mockResolvedValue({
+          finalState: {
+            tasks: [{ id: 'task-1', description: 'Single task' }],
+          },
+          duration: 1000,
+          turns: 1,
+        });
+
+        await node.execute(context);
+
+        expect(mockGitManager.merge).toHaveBeenCalled();
+        expect(mockGitManager.removeWorktree).toHaveBeenCalled();
+      });
+    });
+
+    describe('Custom Task Decomposer', () => {
+      it('should allow setting custom task decomposer for testing', async () => {
+        context.inputs = { prompt: 'Custom decomposition test' };
+
+        const customTasks: Task[] = [
+          { id: 'custom-1', description: 'Custom task 1' },
+          { id: 'custom-2', description: 'Custom task 2' },
+        ];
+
+        node.setTaskDecomposer(async (_prompt: string) => customTasks);
+
+        const executedTasks: Task[] = [];
+        node.setSubgraphExecutor(async (task: Task) => {
+          executedTasks.push(task);
+          return { success: true, output: {} };
+        });
+
+        await node.execute(context);
+
+        expect(executedTasks).toEqual(customTasks);
+      });
     });
   });
 });

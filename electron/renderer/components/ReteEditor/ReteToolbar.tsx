@@ -1,11 +1,33 @@
 /**
  * ReteToolbar
  *
- * Toolbar component for the Rete.js workflow editor.
- * Provides common actions like zoom, clear, save, and load.
+ * Modern toolbar component for the Rete.js workflow editor.
+ * Uses shadcn/ui Button and Tooltip with Lucide icons.
  */
 
 import React from 'react';
+import {
+  FolderOpen,
+  Save,
+  Undo2,
+  Redo2,
+  ZoomIn,
+  ZoomOut,
+  Maximize2,
+  Grid3X3,
+  Trash2,
+  Play,
+  Square,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { Separator } from '@/components/ui/separator';
+import { cn } from '@/lib/utils';
 
 // ============================================================================
 // Types
@@ -35,103 +57,58 @@ export interface ReteToolbarProps {
 // ============================================================================
 
 interface ToolbarButtonProps {
-  icon: string;
+  icon: React.ReactNode;
   label: string;
+  shortcut?: string;
   onClick?: () => void;
   disabled?: boolean;
   active?: boolean;
-  variant?: 'default' | 'primary' | 'danger';
+  variant?: 'default' | 'destructive' | 'success';
 }
 
-const ToolbarButton: React.FC<ToolbarButtonProps> = ({
+function ToolbarButton({
   icon,
   label,
+  shortcut,
   onClick,
   disabled = false,
   active = false,
   variant = 'default',
-}) => {
-  const getBackgroundColor = () => {
-    if (disabled) return '#2a2a2a';
-    if (active) return '#4a4a4a';
-    switch (variant) {
-      case 'primary':
-        return '#3b82f6';
-      case 'danger':
-        return '#ef4444';
-      default:
-        return '#333';
-    }
-  };
-
-  const getHoverColor = () => {
-    if (disabled) return '#2a2a2a';
-    switch (variant) {
-      case 'primary':
-        return '#2563eb';
-      case 'danger':
-        return '#dc2626';
-      default:
-        return '#444';
-    }
-  };
+}: ToolbarButtonProps) {
+  const tooltipContent = shortcut ? `${label} (${shortcut})` : label;
 
   return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      title={label}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        width: '36px',
-        height: '36px',
-        backgroundColor: getBackgroundColor(),
-        border: 'none',
-        borderRadius: '6px',
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        opacity: disabled ? 0.5 : 1,
-        transition: 'background-color 0.2s ease',
-        fontSize: '18px',
-      }}
-      onMouseEnter={(e) => {
-        if (!disabled) {
-          e.currentTarget.style.backgroundColor = getHoverColor();
-        }
-      }}
-      onMouseLeave={(e) => {
-        if (!disabled) {
-          e.currentTarget.style.backgroundColor = getBackgroundColor();
-        }
-      }}
-    >
-      {icon}
-    </button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onClick}
+          disabled={disabled}
+          title={label}
+          className={cn(
+            'h-8 w-8',
+            active && 'bg-accent',
+            variant === 'destructive' && 'text-destructive hover:text-destructive hover:bg-destructive/10',
+            variant === 'success' && 'text-green-500 hover:text-green-500 hover:bg-green-500/10'
+          )}
+        >
+          {icon}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>
+        <p>{tooltipContent}</p>
+      </TooltipContent>
+    </Tooltip>
   );
-};
-
-// ============================================================================
-// ToolbarDivider Component
-// ============================================================================
-
-const ToolbarDivider: React.FC = () => (
-  <div
-    style={{
-      width: '1px',
-      height: '24px',
-      backgroundColor: '#444',
-      margin: '0 8px',
-    }}
-  />
-);
+}
 
 // ============================================================================
 // ReteToolbar
 // ============================================================================
 
 /**
- * ReteToolbar - Toolbar for workflow editor actions
+ * ReteToolbar - Modern toolbar for workflow editor actions
  */
 export const ReteToolbar: React.FC<ReteToolbarProps> = ({
   className = '',
@@ -152,71 +129,121 @@ export const ReteToolbar: React.FC<ReteToolbarProps> = ({
   zoom = 100,
 }) => {
   return (
-    <div
-      className={`rete-toolbar ${className}`}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '4px',
-        padding: '8px 12px',
-        backgroundColor: '#1f1f1f',
-        borderBottom: '1px solid #333',
-      }}
-    >
-      {/* File operations */}
-      <ToolbarButton icon="📂" label="Load workflow" onClick={onLoad} />
-      <ToolbarButton icon="💾" label="Save workflow" onClick={onSave} />
-
-      <ToolbarDivider />
-
-      {/* History */}
-      <ToolbarButton icon="↩️" label="Undo" onClick={onUndo} disabled={!canUndo} />
-      <ToolbarButton icon="↪️" label="Redo" onClick={onRedo} disabled={!canRedo} />
-
-      <ToolbarDivider />
-
-      {/* Zoom controls */}
-      <ToolbarButton icon="➖" label="Zoom out" onClick={onZoomOut} />
+    <TooltipProvider delayDuration={300}>
       <div
-        style={{
-          minWidth: '50px',
-          textAlign: 'center',
-          color: '#888',
-          fontSize: '12px',
-        }}
+        className={cn(
+          'rete-toolbar flex items-center gap-1 px-3 py-1.5 bg-background border-b',
+          className
+        )}
       >
-        {Math.round(zoom)}%
+        {/* File operations */}
+        <ToolbarButton
+          icon={<FolderOpen className="h-4 w-4" />}
+          label="Load workflow"
+          shortcut="Cmd+O"
+          onClick={onLoad}
+        />
+        <ToolbarButton
+          icon={<Save className="h-4 w-4" />}
+          label="Save workflow"
+          shortcut="Cmd+S"
+          onClick={onSave}
+        />
+
+        <Separator orientation="vertical" className="mx-1 h-6" />
+
+        {/* History */}
+        <ToolbarButton
+          icon={<Undo2 className="h-4 w-4" />}
+          label="Undo"
+          shortcut="Cmd+Z"
+          onClick={onUndo}
+          disabled={!canUndo}
+        />
+        <ToolbarButton
+          icon={<Redo2 className="h-4 w-4" />}
+          label="Redo"
+          shortcut="Cmd+Shift+Z"
+          onClick={onRedo}
+          disabled={!canRedo}
+        />
+
+        <Separator orientation="vertical" className="mx-1 h-6" />
+
+        {/* Zoom controls */}
+        <ToolbarButton
+          icon={<ZoomOut className="h-4 w-4" />}
+          label="Zoom out"
+          shortcut="-"
+          onClick={onZoomOut}
+        />
+        <span className="min-w-[50px] text-center text-xs text-muted-foreground">
+          {Math.round(zoom)}%
+        </span>
+        <ToolbarButton
+          icon={<ZoomIn className="h-4 w-4" />}
+          label="Zoom in"
+          shortcut="+"
+          onClick={onZoomIn}
+        />
+        <ToolbarButton
+          icon={<Maximize2 className="h-4 w-4" />}
+          label="Fit to view"
+          shortcut="F"
+          onClick={onZoomFit}
+        />
+
+        <Separator orientation="vertical" className="mx-1 h-6" />
+
+        {/* View options */}
+        <ToolbarButton
+          icon={<Grid3X3 className="h-4 w-4" />}
+          label={gridEnabled ? 'Hide grid' : 'Show grid'}
+          shortcut="G"
+          onClick={onToggleGrid}
+          active={gridEnabled}
+        />
+
+        <Separator orientation="vertical" className="mx-1 h-6" />
+
+        {/* Editor actions */}
+        <ToolbarButton
+          icon={<Trash2 className="h-4 w-4" />}
+          label="Clear editor"
+          onClick={onClear}
+          variant="destructive"
+        />
+
+        {/* Spacer */}
+        <div className="flex-1" />
+
+        {/* Run button */}
+        <Button
+          size="sm"
+          onClick={onRun}
+          disabled={isRunning}
+          title={isRunning ? 'Stop workflow' : 'Run workflow'}
+          className={cn(
+            'gap-1',
+            isRunning
+              ? 'bg-red-600 hover:bg-red-700'
+              : 'bg-green-600 hover:bg-green-700'
+          )}
+        >
+          {isRunning ? (
+            <>
+              <Square className="h-3.5 w-3.5" />
+              Stop
+            </>
+          ) : (
+            <>
+              <Play className="h-3.5 w-3.5" />
+              Run
+            </>
+          )}
+        </Button>
       </div>
-      <ToolbarButton icon="➕" label="Zoom in" onClick={onZoomIn} />
-      <ToolbarButton icon="🔍" label="Fit to view" onClick={onZoomFit} />
-
-      <ToolbarDivider />
-
-      {/* View options */}
-      <ToolbarButton
-        icon="⊞"
-        label={gridEnabled ? 'Hide grid' : 'Show grid'}
-        onClick={onToggleGrid}
-        active={gridEnabled}
-      />
-
-      <ToolbarDivider />
-
-      {/* Editor actions */}
-      <ToolbarButton icon="🗑️" label="Clear editor" onClick={onClear} variant="danger" />
-
-      {/* Spacer */}
-      <div style={{ flex: 1 }} />
-
-      {/* Run button */}
-      <ToolbarButton
-        icon={isRunning ? '⏹️' : '▶️'}
-        label={isRunning ? 'Stop workflow' : 'Run workflow'}
-        onClick={onRun}
-        variant="primary"
-        disabled={isRunning}
-      />
-    </div>
+    </TooltipProvider>
   );
 };
 

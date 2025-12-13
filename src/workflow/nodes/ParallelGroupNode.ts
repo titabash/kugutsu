@@ -16,6 +16,7 @@ import {
   type WorkflowNodeJSON,
 } from './BaseWorkflowNode.js';
 import type { ConnectionJSON, WorkflowNodeJSON as NodeJSON } from '../types.js';
+import { SubgraphExecutor as SubgraphExecutorService } from '../SubgraphExecutor.js';
 
 // ============================================================================
 // Types
@@ -136,12 +137,22 @@ export type ConflictResolver = (
   context: ExecutionContext
 ) => Promise<{ resolved: boolean; resolvedContent?: string }>;
 
+/**
+ * Task decomposer function type
+ * Takes a prompt string and returns an array of tasks
+ */
+export type TaskDecomposer = (
+  prompt: string,
+  context: ExecutionContext
+) => Promise<Task[]>;
+
 // ============================================================================
 // ParallelGroupNode
 // ============================================================================
 
 /**
  * Node for parallel task execution with subgraph replication
+ * Self-contained: receives a prompt and decomposes it into tasks internally
  */
 export class ParallelGroupNode extends BaseWorkflowNode {
   /** Subgraph definition */
@@ -153,6 +164,9 @@ export class ParallelGroupNode extends BaseWorkflowNode {
   /** Custom conflict resolver (for testing) */
   private conflictResolver?: ConflictResolver;
 
+  /** Custom task decomposer (for testing) */
+  private taskDecomposer?: TaskDecomposer;
+
   constructor(id: string, config: NodeConfig) {
     const parallelConfig = config.parallelGroup as ParallelGroupConfig | undefined;
 
@@ -160,11 +174,11 @@ export class ParallelGroupNode extends BaseWorkflowNode {
       id,
       type: 'control:parallel-group' as any,
       label: 'Parallel Group',
-      description: 'Execute subgraph for each task in parallel',
+      description: 'Decompose prompt into tasks and execute subgraph for each in parallel',
       inputs: [
         {
-          id: 'tasks',
-          name: 'Tasks',
+          id: 'prompt',
+          name: 'Prompt',
           type: 'data',
           required: true,
         },
@@ -235,6 +249,13 @@ export class ParallelGroupNode extends BaseWorkflowNode {
   }
 
   /**
+   * Set custom task decomposer (for testing)
+   */
+  setTaskDecomposer(decomposer: TaskDecomposer): void {
+    this.taskDecomposer = decomposer;
+  }
+
+  /**
    * Validate the node configuration and connections
    */
   override validate(): ValidationResult {
@@ -295,7 +316,45 @@ export class ParallelGroupNode extends BaseWorkflowNode {
   async execute(context: ExecutionContext): Promise<NodeResult> {
     const startTime = Date.now();
     const config = this.getParallelConfig();
-    const tasks = context.inputs.tasks as Task[];
+
+    // Validate and get prompt input
+    const prompt = context.inputs.prompt;
+
+    if (prompt === undefined || prompt === null) {
+      return {
+        success: false,
+        outputs: {},
+        error: new Error('prompt input is required'),
+      };
+    }
+
+    if (typeof prompt !== 'string') {
+      return {
+        success: false,
+        outputs: {},
+        error: new Error('prompt must be a string'),
+      };
+    }
+
+    if (prompt.trim() === '') {
+      return {
+        success: false,
+        outputs: {},
+        error: new Error('prompt cannot be empty'),
+      };
+    }
+
+    // Decompose prompt into tasks
+    let tasks: Task[];
+    try {
+      tasks = await this.decomposePromptToTasks(prompt, context);
+    } catch (error) {
+      return {
+        success: false,
+        outputs: {},
+        error: error instanceof Error ? error : new Error(`AI task decomposition failed: ${error}`),
+      };
+    }
 
     // Handle empty tasks
     if (!tasks || tasks.length === 0) {
@@ -318,6 +377,7 @@ export class ParallelGroupNode extends BaseWorkflowNode {
     let conflicts: Array<{
       taskId: string;
       files: string[];
+      resolved?: boolean;
     }> = [];
     let paused = false;
     let waitingForManualResolution = false;
@@ -348,8 +408,8 @@ export class ParallelGroupNode extends BaseWorkflowNode {
             // Use custom executor (for testing)
             result = await this.subgraphExecutor(task, context);
           } else {
-            // Default execution - this would call the actual subgraph executor
-            result = await this.executeSubgraphDefault(task, context);
+            // Default execution - execute subgraph within worktree
+            result = await this.executeSubgraphDefault(task, context, worktreeInfo);
           }
         } catch (error) {
           result = { success: false, output: error };
@@ -369,14 +429,31 @@ export class ParallelGroupNode extends BaseWorkflowNode {
           });
 
           if (mergeResult.hasConflict) {
-            conflicts.push({
+            const conflictEntry: { taskId: string; files: string[]; resolved?: boolean } = {
               taskId: task.id,
               files: mergeResult.conflictFiles || [],
-            });
+              resolved: false,
+            };
+            conflicts.push(conflictEntry);
 
             // Handle conflict based on strategy
-            if (config.conflictResolution.strategy === 'ai' && this.conflictResolver) {
-              await this.conflictResolver(mergeResult.conflictDetails || [], context);
+            if (config.conflictResolution.strategy === 'ai') {
+              // Use AI to resolve conflicts
+              const resolved = await this.resolveConflictsWithAI(
+                mergeResult.conflictDetails || [],
+                context,
+                worktreeInfo
+              );
+
+              if (resolved) {
+                // Stage resolved files and complete merge
+                await context.services.gitManager.stageFiles(
+                  mergeResult.conflictFiles || [],
+                  context.global.projectPath
+                );
+                await context.services.gitManager.commitMerge(context.global.projectPath);
+                conflictEntry.resolved = true;
+              }
             } else if (config.conflictResolution.strategy === 'manual') {
               paused = true;
               waitingForManualResolution = true;
@@ -517,16 +594,209 @@ export class ParallelGroupNode extends BaseWorkflowNode {
   }
 
   /**
-   * Default subgraph execution (placeholder)
+   * Decompose a prompt into tasks using AI or custom decomposer
+   */
+  private async decomposePromptToTasks(
+    prompt: string,
+    context: ExecutionContext
+  ): Promise<Task[]> {
+    // Use custom task decomposer if set (for testing)
+    if (this.taskDecomposer) {
+      return this.taskDecomposer(prompt, context);
+    }
+
+    // Use AI provider to decompose prompt into tasks
+    const aiResult = await context.services.aiProvider.query({
+      prompt: `You are a task decomposition expert. Analyze the following development request and break it down into independent, parallelizable tasks.
+
+Development Request:
+${prompt}
+
+Return a JSON object with a "tasks" array. Each task should have:
+- id: unique identifier (optional, will be auto-generated if not provided)
+- description: clear description of what needs to be done
+- priority: one of "low", "medium", "high", "critical" (optional, defaults to "medium")
+
+Example response:
+{
+  "tasks": [
+    { "id": "task-1", "description": "Implement user login endpoint", "priority": "high" },
+    { "id": "task-2", "description": "Add input validation", "priority": "medium" }
+  ]
+}
+
+Return ONLY the JSON object, no other text.`,
+      options: {
+        allowedTools: [],
+        maxTurns: 1,
+      },
+    });
+
+    // Parse the response
+    const tasks = this.parseTasksFromAIResponse(aiResult.finalState);
+
+    return tasks;
+  }
+
+  /**
+   * Parse tasks from AI response
+   */
+  private parseTasksFromAIResponse(finalState: unknown): Task[] {
+    // Handle various response formats
+    let tasks: Array<{ id?: string; description: string; priority?: string; metadata?: Record<string, unknown> }> = [];
+
+    if (finalState && typeof finalState === 'object') {
+      const state = finalState as Record<string, unknown>;
+
+      if (Array.isArray(state.tasks)) {
+        tasks = state.tasks;
+      } else if (typeof state.result === 'string') {
+        // Try to parse JSON from result string
+        try {
+          const parsed = JSON.parse(state.result);
+          if (Array.isArray(parsed.tasks)) {
+            tasks = parsed.tasks;
+          }
+        } catch {
+          // Ignore parse errors
+        }
+      }
+    }
+
+    // Ensure each task has a unique ID
+    return tasks.map((task, index) => ({
+      id: task.id || `task-${Date.now()}-${index}`,
+      description: task.description,
+      priority: (task.priority as Task['priority']) || 'medium',
+      metadata: task.metadata,
+    }));
+  }
+
+  /**
+   * Maximum number of AI conflict resolution attempts
+   */
+  private static readonly MAX_CONFLICT_RESOLUTION_ATTEMPTS = 3;
+
+  /**
+   * Resolve conflicts using AI provider
+   *
+   * @param conflictDetails - Array of conflict details for each file
+   * @param context - Execution context with AI provider
+   * @param worktreeInfo - Worktree information for the task
+   * @returns true if resolution succeeded, false otherwise
+   */
+  private async resolveConflictsWithAI(
+    conflictDetails: Array<{ file: string; content: string; ours: string; theirs: string }>,
+    context: ExecutionContext,
+    worktreeInfo?: { path: string; branchName: string }
+  ): Promise<boolean> {
+    // Skip if no conflicts to resolve
+    if (!conflictDetails || conflictDetails.length === 0) {
+      return true;
+    }
+
+    // Use custom conflict resolver if set (for testing)
+    if (this.conflictResolver) {
+      const result = await this.conflictResolver(conflictDetails, context);
+      return result.resolved;
+    }
+
+    // Build conflict resolution prompt
+    const prompt = this.buildConflictResolutionPrompt(conflictDetails);
+    const cwd = worktreeInfo?.path || context.global.projectPath;
+
+    for (let attempt = 1; attempt <= ParallelGroupNode.MAX_CONFLICT_RESOLUTION_ATTEMPTS; attempt++) {
+      try {
+        console.log(`[ParallelGroupNode] AI コンフリクト解決 試行 ${attempt}/${ParallelGroupNode.MAX_CONFLICT_RESOLUTION_ATTEMPTS}`);
+
+        await context.services.aiProvider.query({
+          prompt,
+          options: {
+            allowedTools: ['Read', 'Write', 'Edit', 'Bash'],
+            cwd,
+            maxTurns: 10,
+          },
+        });
+
+        console.log(`[ParallelGroupNode] AI コンフリクト解決成功 (試行 ${attempt})`);
+        return true;
+      } catch (error) {
+        console.warn(
+          `[ParallelGroupNode] AI コンフリクト解決失敗 (試行 ${attempt}/${ParallelGroupNode.MAX_CONFLICT_RESOLUTION_ATTEMPTS}):`,
+          error
+        );
+      }
+    }
+
+    console.error(
+      `[ParallelGroupNode] AI コンフリクト解決失敗: ${ParallelGroupNode.MAX_CONFLICT_RESOLUTION_ATTEMPTS}回の試行後も解決できませんでした`
+    );
+    return false;
+  }
+
+  /**
+   * Build AI prompt for conflict resolution
+   */
+  private buildConflictResolutionPrompt(
+    conflictDetails: Array<{ file: string; content: string; ours: string; theirs: string }>
+  ): string {
+    const filesInfo = conflictDetails
+      .map(
+        (d) => `File: ${d.file}
+--- OURS (target branch) ---
+${d.ours || '(empty - file does not exist in target branch)'}
+--- THEIRS (source branch) ---
+${d.theirs || '(empty - file does not exist in source branch)'}
+--- CURRENT CONFLICT STATE ---
+${d.content || '(empty)'}`
+      )
+      .join('\n\n' + '='.repeat(80) + '\n\n');
+
+    return `以下のGitマージコンフリクトを解決してください。
+両方の変更を適切にマージし、コードが正しく動作するようにしてください。
+
+${filesInfo}
+
+【指示】
+1. 各ファイルを編集してコンフリクトマーカー（<<<<<<<, =======, >>>>>>>）を除去してください
+2. 両方の変更を適切にマージして、正しく動作するコードにしてください
+3. 編集にはEditツールまたはWriteツールを使用してください
+4. 全てのファイルのコンフリクトを解決するまで作業を続けてください`;
+  }
+
+  /**
+   * Execute subgraph within the specified worktree (if provided)
    */
   private async executeSubgraphDefault(
     task: Task,
-    _context: ExecutionContext
+    context: ExecutionContext,
+    worktreeInfo?: { path: string; branchName: string }
   ): Promise<{ success: boolean; output: unknown }> {
-    // This would be replaced by actual subgraph execution logic
+    const subgraph = this.getSubgraph();
+    if (!subgraph) {
+      return {
+        success: false,
+        output: { error: 'Subgraph not defined', taskId: task.id },
+      };
+    }
+
+    const config = this.getParallelConfig();
+    const subgraphExecutor = new SubgraphExecutorService();
+
+    // Map task to entry node input using inputMapping config
+    const initialInputs = { [config.inputMapping]: task };
+
+    // Execute subgraph within worktree path (if provided)
+    const result = await subgraphExecutor.execute(
+      subgraph,
+      worktreeInfo?.path || null,
+      context,
+      initialInputs
+    );
+
     return {
-      success: true,
-      output: { taskId: task.id, result: `Executed ${task.description}` },
+      success: result.success,
+      output: result.output,
     };
   }
 

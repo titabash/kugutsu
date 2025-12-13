@@ -14,6 +14,10 @@ import {
   type ValidationResult,
 } from './BaseWorkflowNode.js';
 import type { WorkflowNodeJSON, ConnectionJSON, WorktreeInfo } from '../types.js';
+import {
+  SubgraphExecutor as SubgraphExecutorService,
+  type SubgraphDefinition as SubgraphDefinitionType,
+} from '../SubgraphExecutor.js';
 
 // ============================================================================
 // Types
@@ -404,16 +408,70 @@ export class GroupNode extends BaseWorkflowNode {
 
   /**
    * Default subgraph executor
-   * In production, this would use WorkflowTransformer to execute the subgraph
+   * Executes the subgraph within the specified worktree using SubgraphExecutor
    */
   private async defaultSubgraphExecutor(
     input: unknown,
-    _worktree: WorktreeInfo | null,
-    _context: ExecutionContext
+    worktree: WorktreeInfo | null,
+    context: ExecutionContext
   ): Promise<unknown> {
-    // Default implementation just passes through the input
-    // Real implementation would transform and execute the subgraph
-    return { processed: input };
+    const subgraph = this.config.subgraph;
+    if (!subgraph) {
+      return { error: 'Subgraph not defined', input };
+    }
+
+    // Convert subgraph to SubgraphDefinition format
+    const subgraphDef: SubgraphDefinitionType = {
+      nodes: subgraph.nodes,
+      connections: subgraph.connections,
+      // Find entry and exit nodes (first and last in the chain, or first start/end nodes)
+      entryNodeId: this.findEntryNodeId(subgraph),
+      exitNodeId: this.findExitNodeId(subgraph),
+    };
+
+    const subgraphExecutor = new SubgraphExecutorService();
+
+    // Execute subgraph within worktree path (if provided)
+    const result = await subgraphExecutor.execute(
+      subgraphDef,
+      worktree?.path || null,
+      context,
+      { input }
+    );
+
+    if (result.success) {
+      return result.output;
+    } else {
+      return { error: result.error?.message || 'Subgraph execution failed', input };
+    }
+  }
+
+  /**
+   * Find the entry node ID in a subgraph
+   */
+  private findEntryNodeId(subgraph: { nodes: WorkflowNodeJSON[]; connections: ConnectionJSON[] }): string {
+    // First, look for a start node
+    const startNode = subgraph.nodes.find((n) => n.type === 'io:start' || n.type === 'start');
+    if (startNode) return startNode.id;
+
+    // Otherwise, find a node with no incoming connections
+    const targetIds = new Set(subgraph.connections.map((c) => c.target));
+    const entryNode = subgraph.nodes.find((n) => !targetIds.has(n.id));
+    return entryNode?.id || subgraph.nodes[0]?.id || '';
+  }
+
+  /**
+   * Find the exit node ID in a subgraph
+   */
+  private findExitNodeId(subgraph: { nodes: WorkflowNodeJSON[]; connections: ConnectionJSON[] }): string {
+    // First, look for an end node
+    const endNode = subgraph.nodes.find((n) => n.type === 'io:end' || n.type === 'end');
+    if (endNode) return endNode.id;
+
+    // Otherwise, find a node with no outgoing connections
+    const sourceIds = new Set(subgraph.connections.map((c) => c.source));
+    const exitNode = subgraph.nodes.find((n) => !sourceIds.has(n.id));
+    return exitNode?.id || subgraph.nodes[subgraph.nodes.length - 1]?.id || '';
   }
 
   /**

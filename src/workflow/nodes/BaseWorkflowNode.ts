@@ -275,6 +275,8 @@ export function createMockExecutionContext(
       return { success: true, hasConflict: false };
     },
     async deleteBranch() {},
+    async stageFiles() {},
+    async commitMerge() {},
   };
 
   const mockStateManager: IStateStreamManager = {

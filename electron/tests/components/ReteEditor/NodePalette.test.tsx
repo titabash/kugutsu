@@ -9,8 +9,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
-import { NodePalette } from '../../../renderer/components/ReteEditor/NodePalette';
-import { DEFAULT_NODE_CATEGORIES, type NodeCategory } from '../../../renderer/components/ReteEditor/types';
+import { NodePalette, DEFAULT_NODE_CATEGORIES } from '../../../renderer/components/ReteEditor/NodePalette';
+import { type NodeCategory } from '../../../renderer/components/ReteEditor/types';
 
 // ============================================================================
 // Test Setup
@@ -267,17 +267,20 @@ describe('NodePalette', () => {
     it('should render vertical layout when position is left', () => {
       render(<NodePalette position="left" />);
 
-      // Categories should be rendered with vertical layout
-      const categories = document.querySelectorAll('.node-category');
-      expect(categories.length).toBeGreaterThan(0);
+      // In vertical mode, categories should be rendered with expandable sections
+      const palette = document.querySelector('.node-palette');
+      expect(palette).toBeInTheDocument();
+      // Check for flex-col class in vertical mode
+      expect(palette).toHaveClass('flex-col');
     });
 
     it('should render horizontal layout when position is bottom', () => {
       render(<NodePalette position="bottom" />);
 
-      // In horizontal mode, nodes are rendered differently
+      // In horizontal mode, palette should have flex-row class
       const palette = document.querySelector('.node-palette');
-      expect(palette).toHaveStyle({ flexDirection: 'row' });
+      expect(palette).toBeInTheDocument();
+      expect(palette).toHaveClass('flex-row');
     });
   });
 
@@ -334,8 +337,9 @@ describe('NodePalette', () => {
     it('should display node icon', () => {
       render(<NodePalette position="left" />);
 
-      // Start node has ▶️ icon (emoji version)
-      expect(screen.getByText('▶️')).toBeInTheDocument();
+      // Lucide icons render as SVG elements
+      const svgIcons = document.querySelectorAll('svg');
+      expect(svgIcons.length).toBeGreaterThan(0);
     });
 
     it('should display node description', () => {
@@ -348,8 +352,8 @@ describe('NodePalette', () => {
     it('should show node color indicator', () => {
       render(<NodePalette position="left" />);
 
-      // Each node should have a color indicator
-      const colorIndicators = document.querySelectorAll('.node-palette-item div[style*="border-radius: 50%"]');
+      // Each node should have a color indicator (rounded bars)
+      const colorIndicators = document.querySelectorAll('.rounded-full');
       expect(colorIndicators.length).toBeGreaterThan(0);
     });
   });
@@ -363,17 +367,16 @@ describe('NodePalette', () => {
       render(<NodePalette position="bottom" />);
 
       const palette = document.querySelector('.node-palette');
-      expect(palette).toHaveStyle({ flexDirection: 'row' });
+      expect(palette).toBeInTheDocument();
+      expect(palette).toHaveClass('flex-row');
     });
 
     it('should show category icons in horizontal mode', () => {
       render(<NodePalette position="bottom" />);
 
-      // Category icons should be visible (some icons appear multiple times)
-      DEFAULT_NODE_CATEGORIES.forEach((category) => {
-        const icons = screen.getAllByText(category.icon);
-        expect(icons.length).toBeGreaterThan(0);
-      });
+      // Lucide icons render as SVG elements in horizontal mode
+      const svgIcons = document.querySelectorAll('svg');
+      expect(svgIcons.length).toBeGreaterThan(0);
     });
 
     it('should filter nodes in horizontal mode', async () => {

@@ -1,11 +1,96 @@
 /**
  * NodePalette
  *
- * Displays a categorized list of nodes that can be dragged onto the canvas.
+ * Modern categorized list of nodes that can be dragged onto the canvas.
+ * Uses shadcn/ui components with Lucide icons.
  */
 
 import React, { useState, useMemo } from 'react';
-import { DEFAULT_NODE_CATEGORIES, NODE_COLORS, NODE_ICONS, type WorkflowNodeType, type NodeCategory, type NodePaletteItem } from './types';
+import {
+  Play,
+  StopCircle,
+  Bot,
+  GitMerge,
+  Split,
+  Users,
+  ClipboardList,
+  Workflow,
+  Code,
+  Box,
+  ChevronRight,
+  Search,
+  type LucideIcon,
+} from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { cn } from '@/lib/utils';
+import { NODE_CATEGORY_COLORS, getNodeCategory } from './styles/design-tokens';
+import { type WorkflowNodeType, type NodeCategory, type NodePaletteItem } from './types';
+
+// ============================================================================
+// Lucide Icon Mapping
+// ============================================================================
+
+const NODE_LUCIDE_ICONS: Record<WorkflowNodeType, LucideIcon> = {
+  start: Play,
+  end: StopCircle,
+  decision: Split,
+  transform: Workflow,
+  engineer: Code,
+  reviewer: Users,
+  'product-owner': ClipboardList,
+  parallel: Workflow,
+  aggregator: GitMerge,
+  group: Box,
+  'parallel-group': Box,
+  merge: GitMerge,
+  'custom-ai': Bot,
+};
+
+// ============================================================================
+// Default Categories with Lucide Icons
+// ============================================================================
+
+export const DEFAULT_NODE_CATEGORIES: NodeCategory[] = [
+  {
+    id: 'io',
+    name: 'Start/End',
+    icon: 'Play',
+    nodes: [
+      { type: 'start', label: 'Start', icon: 'Play', description: 'Workflow entry point' },
+      { type: 'end', label: 'End', icon: 'StopCircle', description: 'Workflow exit point' },
+      { type: 'transform', label: 'Transform', icon: 'Workflow', description: 'Transform data' },
+    ],
+  },
+  {
+    id: 'ai',
+    name: 'AI Tasks',
+    icon: 'Bot',
+    nodes: [
+      { type: 'engineer', label: 'Engineer', icon: 'Code', description: 'AI code implementation' },
+      { type: 'reviewer', label: 'Reviewer', icon: 'Users', description: 'AI code review' },
+      { type: 'product-owner', label: 'Product Owner', icon: 'ClipboardList', description: 'Requirements analysis' },
+      { type: 'custom-ai', label: 'Custom AI', icon: 'Bot', description: 'Custom AI task' },
+    ],
+  },
+  {
+    id: 'control',
+    name: 'Control Flow',
+    icon: 'Split',
+    nodes: [
+      { type: 'decision', label: 'Decision', icon: 'Split', description: 'Conditional branching' },
+      { type: 'parallel-group', label: 'Parallel Group', icon: 'Box', description: 'Container for parallel execution' },
+    ],
+  },
+  {
+    id: 'git',
+    name: 'Git Operations',
+    icon: 'GitMerge',
+    nodes: [
+      { type: 'merge', label: 'Merge', icon: 'GitMerge', description: 'Merge branches' },
+    ],
+  },
+];
 
 // ============================================================================
 // NodePaletteItemComponent
@@ -20,7 +105,9 @@ const NodePaletteItemComponent: React.FC<NodePaletteItemComponentProps> = ({
   item,
   onDragStart,
 }) => {
-  const backgroundColor = NODE_COLORS[item.type];
+  const category = getNodeCategory(item.type);
+  const colors = NODE_CATEGORY_COLORS[category];
+  const Icon = NODE_LUCIDE_ICONS[item.type];
 
   const handleDragStart = (e: React.DragEvent) => {
     e.dataTransfer.setData('nodeType', item.type);
@@ -32,57 +119,21 @@ const NodePaletteItemComponent: React.FC<NodePaletteItemComponentProps> = ({
     <div
       draggable
       onDragStart={handleDragStart}
-      className="node-palette-item"
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px',
-        padding: '8px 12px',
-        marginBottom: '4px',
-        borderRadius: '6px',
-        backgroundColor: 'rgba(255, 255, 255, 0.05)',
-        cursor: 'grab',
-        transition: 'all 0.2s ease',
-        border: '1px solid transparent',
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
-        e.currentTarget.style.borderColor = backgroundColor;
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
-        e.currentTarget.style.borderColor = 'transparent';
-      }}
+      className="group flex items-center gap-2 px-3 py-2 rounded-md cursor-grab hover:bg-accent/50 transition-colors border border-transparent hover:border-border"
     >
       {/* Color indicator */}
       <div
-        style={{
-          width: '8px',
-          height: '8px',
-          borderRadius: '50%',
-          backgroundColor,
-        }}
+        className="w-1.5 h-8 rounded-full flex-shrink-0"
+        style={{ backgroundColor: colors.primary }}
       />
 
       {/* Icon */}
-      <span style={{ fontSize: '16px' }}>{item.icon}</span>
+      <Icon className="w-4 h-4 text-muted-foreground flex-shrink-0" />
 
       {/* Label and description */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontWeight: 500, color: '#fff', fontSize: '13px' }}>
-          {item.label}
-        </div>
-        <div
-          style={{
-            color: '#888',
-            fontSize: '11px',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {item.description}
-        </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-medium text-foreground">{item.label}</div>
+        <div className="text-xs text-muted-foreground truncate">{item.description}</div>
       </div>
     </div>
   );
@@ -120,36 +171,34 @@ const NodeCategoryComponent: React.FC<NodeCategoryComponentProps> = ({
 
   if (filteredNodes.length === 0) return null;
 
+  const categoryColors = NODE_CATEGORY_COLORS[category.id as keyof typeof NODE_CATEGORY_COLORS];
+
   return (
-    <div className="node-category" style={{ marginBottom: '8px' }}>
+    <div className="mb-1">
       {/* Category header */}
       <button
         onClick={onToggle}
-        style={{
-          width: '100%',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '8px 12px',
-          background: 'none',
-          border: 'none',
-          cursor: 'pointer',
-          color: '#aaa',
-          fontSize: '12px',
-          fontWeight: 600,
-          textTransform: 'uppercase',
-          letterSpacing: '0.5px',
-        }}
+        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-accent/30 rounded-md transition-colors"
       >
-        <span>{category.name}</span>
-        <span style={{ transform: isExpanded ? 'rotate(90deg)' : 'rotate(0)', transition: 'transform 0.2s' }}>
-          ▶
+        <ChevronRight
+          className={cn(
+            'w-4 h-4 text-muted-foreground transition-transform',
+            isExpanded && 'rotate-90'
+          )}
+        />
+        <div
+          className="w-2 h-2 rounded-full"
+          style={{ backgroundColor: categoryColors?.primary || '#6b7280' }}
+        />
+        <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+          {category.name}
         </span>
+        <span className="text-xs text-muted-foreground/60">({filteredNodes.length})</span>
       </button>
 
       {/* Category nodes */}
       {isExpanded && (
-        <div style={{ padding: '0 8px' }}>
+        <div className="ml-4 mt-1 space-y-0.5">
           {filteredNodes.map((node) => (
             <NodePaletteItemComponent
               key={node.type}
@@ -177,7 +226,7 @@ export interface NodePaletteProps {
 }
 
 /**
- * NodePalette - Categorized list of draggable nodes
+ * NodePalette - Modern categorized list of draggable nodes
  */
 export const NodePalette: React.FC<NodePaletteProps> = ({
   className = '',
@@ -216,118 +265,92 @@ export const NodePalette: React.FC<NodePaletteProps> = ({
 
   return (
     <div
-      className={`node-palette ${className}`}
-      style={{
-        backgroundColor: '#1f1f1f',
-        borderTop: isHorizontal ? '1px solid #333' : undefined,
-        borderRight: !isHorizontal ? '1px solid #333' : undefined,
-        display: 'flex',
-        flexDirection: isHorizontal ? 'row' : 'column',
-        overflow: 'hidden',
-      }}
+      className={cn(
+        'node-palette bg-background flex overflow-hidden',
+        isHorizontal ? 'border-t flex-row' : 'border-r flex-col w-64',
+        className
+      )}
       onDragEnd={onNodeDragEnd}
     >
       {/* Search bar */}
-      <div
-        style={{
-          padding: '12px',
-          borderBottom: isHorizontal ? undefined : '1px solid #333',
-          borderRight: isHorizontal ? '1px solid #333' : undefined,
-          minWidth: isHorizontal ? '200px' : undefined,
-        }}
-      >
-        <input
-          type="text"
-          placeholder="Search nodes..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          style={{
-            width: '100%',
-            padding: '8px 12px',
-            backgroundColor: '#333',
-            border: '1px solid #444',
-            borderRadius: '6px',
-            color: '#fff',
-            fontSize: '13px',
-            outline: 'none',
-          }}
-        />
+      <div className={cn(
+        'p-3',
+        isHorizontal ? 'border-r min-w-[200px]' : 'border-b'
+      )}>
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            type="text"
+            placeholder="Search nodes..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-8 h-8 text-sm"
+          />
+        </div>
       </div>
 
       {/* Categories */}
-      <div
-        style={{
-          flex: 1,
-          overflowY: 'auto',
-          overflowX: isHorizontal ? 'hidden' : undefined,
-          display: isHorizontal ? 'flex' : 'block',
-          gap: isHorizontal ? '8px' : undefined,
-          padding: isHorizontal ? '8px' : undefined,
-        }}
-      >
-        {isHorizontal ? (
-          // Horizontal layout: show all nodes in a row
-          categories.map((category) => (
-            <div
-              key={category.id}
-              style={{
-                display: 'flex',
-                gap: '4px',
-                alignItems: 'center',
-              }}
-            >
-              <span style={{ color: '#888', fontSize: '12px', marginRight: '4px' }}>
-                {category.icon}
-              </span>
-              {category.nodes
-                .filter((node) => {
-                  if (!searchQuery) return true;
-                  const query = searchQuery.toLowerCase();
-                  return (
-                    node.label.toLowerCase().includes(query) ||
-                    node.type.toLowerCase().includes(query)
-                  );
-                })
-                .map((node) => (
+      {isHorizontal ? (
+        // Horizontal layout: compact inline nodes
+        <div className="flex-1 overflow-x-auto">
+          <div className="flex gap-1 p-2">
+            {categories.map((category) => {
+              const categoryColors = NODE_CATEGORY_COLORS[category.id as keyof typeof NODE_CATEGORY_COLORS];
+              return (
+                <div key={category.id} className="flex items-center gap-1">
                   <div
-                    key={node.type}
-                    draggable
-                    onDragStart={(e) => {
-                      e.dataTransfer.setData('nodeType', node.type);
-                      handleDragStart(node.type);
-                    }}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      padding: '6px 10px',
-                      backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                      borderRadius: '6px',
-                      cursor: 'grab',
-                      border: `1px solid ${NODE_COLORS[node.type]}40`,
-                    }}
-                    title={node.description}
-                  >
-                    <span>{node.icon}</span>
-                    <span style={{ color: '#fff', fontSize: '12px' }}>{node.label}</span>
-                  </div>
-                ))}
-            </div>
-          ))
-        ) : (
-          // Vertical layout: show categorized nodes
-          categories.map((category) => (
-            <NodeCategoryComponent
-              key={category.id}
-              category={category}
-              isExpanded={expandedCategories.has(category.id)}
-              onToggle={() => toggleCategory(category.id)}
-              onDragStart={handleDragStart}
-              searchQuery={searchQuery}
-            />
-          ))
-        )}
-      </div>
+                    className="w-1 h-6 rounded-full mr-1"
+                    style={{ backgroundColor: categoryColors?.primary || '#6b7280' }}
+                  />
+                  {category.nodes
+                    .filter((node) => {
+                      if (!searchQuery) return true;
+                      const query = searchQuery.toLowerCase();
+                      return (
+                        node.label.toLowerCase().includes(query) ||
+                        node.type.toLowerCase().includes(query)
+                      );
+                    })
+                    .map((node) => {
+                      const Icon = NODE_LUCIDE_ICONS[node.type];
+                      return (
+                        <div
+                          key={node.type}
+                          draggable
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData('nodeType', node.type);
+                            handleDragStart(node.type);
+                          }}
+                          className="flex items-center gap-1.5 px-2.5 py-1.5 bg-accent/30 hover:bg-accent rounded-md cursor-grab text-xs transition-colors"
+                          title={node.description}
+                        >
+                          <Icon className="w-3.5 h-3.5" />
+                          <span>{node.label}</span>
+                        </div>
+                      );
+                    })}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+        // Vertical layout: categorized nodes with expand/collapse
+        <ScrollArea className="flex-1">
+          <div className="p-2">
+            {categories.map((category) => (
+              <NodeCategoryComponent
+                key={category.id}
+                category={category}
+                isExpanded={expandedCategories.has(category.id)}
+                onToggle={() => toggleCategory(category.id)}
+                onDragStart={handleDragStart}
+                searchQuery={searchQuery}
+              />
+            ))}
+          </div>
+        </ScrollArea>
+      )}
     </div>
   );
 };

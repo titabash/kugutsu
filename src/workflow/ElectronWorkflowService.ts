@@ -310,6 +310,8 @@ export class ElectronWorkflowService extends EventEmitter {
         hasConflict: false,
       }),
       deleteBranch: async () => {},
+      stageFiles: async () => {},
+      commitMerge: async () => {},
     };
   }
 

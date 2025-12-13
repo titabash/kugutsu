@@ -13,6 +13,7 @@ import { Toaster } from '@/components/ui/toaster';
 import { useElectronSync } from './hooks/useElectronSync';
 import { useAppStore } from './store/appStore';
 import { serializeWorkflow } from './components/ReteEditor';
+import { formatNodeMessage } from './utils/messageFilter';
 import type { ChatMessage } from '@/components/ChatPanel';
 
 // ElectronAPI型定義
@@ -135,14 +136,18 @@ export default function App() {
       console.log('[App] Workflow node message:', data);
 
       // AIからのアシスタントメッセージをチャットに追加
+      // 空メッセージや空白のみのメッセージはフィルタリング
       if (data.message?.type === 'assistant' && typeof data.message.content === 'string') {
-        addChatMessage({
-          id: `ai-${data.nodeId}-${Date.now()}`,
-          type: 'ai',
-          content: `**${data.nodeLabel}**: ${data.message.content}`,
-          timestamp: new Date(),
-          isStreaming: true,
-        });
+        const formattedContent = formatNodeMessage(data.nodeLabel, data.message.content);
+        if (formattedContent) {
+          addChatMessage({
+            id: `ai-${data.nodeId}-${Date.now()}`,
+            type: 'ai',
+            content: formattedContent,
+            timestamp: new Date(),
+            isStreaming: true,
+          });
+        }
       }
     });
 

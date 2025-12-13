@@ -574,4 +574,233 @@ export class GitWorktreeManager {
     }
   }
 
+  // ============================================================================
+  // Merge Operations
+  // ============================================================================
+
+  /**
+   * Merge a worktree branch into target branch
+   *
+   * @param options - Merge configuration
+   * @returns Merge result with conflict information if any
+   */
+  async merge(options: {
+    source: string;
+    sourceBranch?: string;
+    target: string;
+    targetBranch?: string;
+    strategy: 'merge' | 'rebase';
+  }): Promise<{
+    success: boolean;
+    hasConflict: boolean;
+    conflictFiles?: string[];
+    conflictDetails?: Array<{
+      file: string;
+      content: string;
+      ours: string;
+      theirs: string;
+    }>;
+  }> {
+    const { source, sourceBranch, target, strategy } = options;
+    const targetBranch = options.targetBranch || this.baseBranch;
+
+    if (!sourceBranch) {
+      throw new Error('sourceBranch is required for merge');
+    }
+
+    console.log(`🔀 マージ開始: ${sourceBranch} -> ${targetBranch}`);
+
+    try {
+      // Checkout target branch
+      execSync(`git checkout ${targetBranch}`, {
+        cwd: target,
+        stdio: 'pipe',
+      });
+
+      // Perform merge
+      if (strategy === 'merge') {
+        execSync(`git merge ${sourceBranch} --no-ff --no-edit`, {
+          cwd: target,
+          stdio: 'pipe',
+        });
+      } else {
+        // rebase strategy
+        execSync(`git rebase ${sourceBranch}`, {
+          cwd: target,
+          stdio: 'pipe',
+        });
+      }
+
+      console.log(`✅ マージ成功: ${sourceBranch} -> ${targetBranch}`);
+      return { success: true, hasConflict: false };
+
+    } catch (error) {
+      // Check if merge is in progress (conflict state)
+      let isMergeConflict = false;
+      try {
+        // Check if we're in the middle of a merge
+        execSync('git rev-parse -q --verify MERGE_HEAD', {
+          cwd: target,
+          stdio: 'pipe',
+        });
+        isMergeConflict = true;
+      } catch {
+        // MERGE_HEAD doesn't exist, check for conflict files
+        const conflictFiles = this.getConflictFiles(target);
+        if (conflictFiles.length > 0) {
+          isMergeConflict = true;
+        }
+      }
+
+      if (isMergeConflict) {
+        console.log(`⚠️ マージコンフリクトを検出: ${sourceBranch} -> ${targetBranch}`);
+
+        // Get conflict information before aborting
+        const conflictFiles = this.getConflictFiles(target);
+        const conflictDetails = this.getConflictDetails(target, conflictFiles);
+
+        // Abort the merge to leave repo in clean state
+        try {
+          if (strategy === 'merge') {
+            execSync('git merge --abort', { cwd: target, stdio: 'pipe' });
+          } else {
+            execSync('git rebase --abort', { cwd: target, stdio: 'pipe' });
+          }
+        } catch {
+          // Ignore abort errors
+        }
+
+        return {
+          success: false,
+          hasConflict: true,
+          conflictFiles,
+          conflictDetails,
+        };
+      }
+
+      // Non-conflict error - rethrow
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.error(`❌ マージエラー: ${errorMsg}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Get list of files with merge conflicts
+   */
+  private getConflictFiles(repoPath: string): string[] {
+    try {
+      const output = execSync('git diff --name-only --diff-filter=U', {
+        cwd: repoPath,
+        encoding: 'utf-8',
+        stdio: 'pipe',
+      });
+      return output.trim().split('\n').filter(Boolean);
+    } catch {
+      // If git diff fails, try alternative method
+      try {
+        const statusOutput = execSync('git status --porcelain', {
+          cwd: repoPath,
+          encoding: 'utf-8',
+          stdio: 'pipe',
+        });
+        // UU = both modified (conflict)
+        return statusOutput
+          .split('\n')
+          .filter(line => line.startsWith('UU ') || line.startsWith('AA ') || line.startsWith('DD '))
+          .map(line => line.substring(3).trim());
+      } catch {
+        return [];
+      }
+    }
+  }
+
+  /**
+   * Get detailed conflict information for each file
+   */
+  private getConflictDetails(
+    repoPath: string,
+    files: string[]
+  ): Array<{ file: string; content: string; ours: string; theirs: string }> {
+    return files.map(file => {
+      let content = '';
+      let ours = '';
+      let theirs = '';
+
+      try {
+        content = fs.readFileSync(path.join(repoPath, file), 'utf-8');
+      } catch {
+        content = '';
+      }
+
+      try {
+        // :2: is "ours" (target branch version)
+        ours = execSync(`git show :2:"${file}"`, {
+          cwd: repoPath,
+          encoding: 'utf-8',
+          stdio: 'pipe',
+        });
+      } catch {
+        ours = '';
+      }
+
+      try {
+        // :3: is "theirs" (source branch version)
+        theirs = execSync(`git show :3:"${file}"`, {
+          cwd: repoPath,
+          encoding: 'utf-8',
+          stdio: 'pipe',
+        });
+      } catch {
+        theirs = '';
+      }
+
+      return { file, content, ours, theirs };
+    });
+  }
+
+  /**
+   * Stage files for commit (git add)
+   *
+   * @param files - Array of file paths to stage
+   * @param repoPath - Repository path (optional, defaults to baseRepoPath)
+   */
+  async stageFiles(files: string[], repoPath?: string): Promise<void> {
+    const targetPath = repoPath || this.baseRepoPath;
+
+    for (const file of files) {
+      try {
+        execSync(`git add "${file}"`, {
+          cwd: targetPath,
+          stdio: 'pipe',
+        });
+      } catch (error) {
+        console.warn(`⚠️ ファイルのステージングに失敗: ${file}`, error);
+        throw new Error(`Failed to stage file: ${file}`);
+      }
+    }
+
+    console.log(`✅ ファイルをステージング完了: ${files.length}件`);
+  }
+
+  /**
+   * Complete a merge commit (git commit --no-edit)
+   *
+   * @param repoPath - Repository path (optional, defaults to baseRepoPath)
+   */
+  async commitMerge(repoPath?: string): Promise<void> {
+    const targetPath = repoPath || this.baseRepoPath;
+
+    try {
+      execSync('git commit --no-edit', {
+        cwd: targetPath,
+        stdio: 'pipe',
+      });
+      console.log('✅ マージコミット完了');
+    } catch (error) {
+      console.error('❌ マージコミットに失敗:', error);
+      throw new Error('Failed to complete merge commit');
+    }
+  }
+
 }

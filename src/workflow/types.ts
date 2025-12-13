@@ -210,6 +210,8 @@ export interface IAIProviderForWorkflow {
       allowedTools?: string[];
       temperature?: number;
       topP?: number;
+      /** Working directory for tool execution */
+      cwd?: string;
     };
   }): Promise<{
     finalState: unknown;
@@ -258,6 +260,16 @@ export interface IGitWorktreeManager {
   }>;
 
   deleteBranch(branchName: string): Promise<void>;
+
+  /**
+   * Stage files for commit (git add)
+   */
+  stageFiles(files: string[], repoPath?: string): Promise<void>;
+
+  /**
+   * Complete a merge commit (git commit --no-edit)
+   */
+  commitMerge(repoPath?: string): Promise<void>;
 }
 
 /**

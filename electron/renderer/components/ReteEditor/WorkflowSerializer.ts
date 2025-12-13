@@ -82,6 +82,8 @@ const EDITOR_TO_WORKFLOW_TYPE: Record<string, NodeType> = {
   // IO Nodes
   start: 'io:start',
   end: 'io:end',
+  'subgraph-start': 'io:start' as NodeType,  // ParallelGroup internal start
+  'subgraph-end': 'io:end' as NodeType,      // ParallelGroup internal end
   transform: 'io:transform',
   // Control Flow Nodes
   decision: 'control:decision',
@@ -352,13 +354,23 @@ export class WorkflowSerializer {
       }));
 
     // Determine entry and exit nodes
-    // Entry node: has no incoming internal connections
-    // Exit node: has no outgoing internal connections
-    const nodesWithIncoming = new Set(internalConnections.map((c) => c.target));
-    const nodesWithOutgoing = new Set(internalConnections.map((c) => c.source));
+    // Priority 1: Explicit subgraph-start and subgraph-end nodes
+    // Priority 2: Nodes with no incoming/outgoing internal connections
+    // Priority 3: First/last node in array
+    let entryNode = childNodes.find((n) => n.type === 'subgraph-start');
+    let exitNode = childNodes.find((n) => n.type === 'subgraph-end');
 
-    const entryNode = childNodes.find((n) => !nodesWithIncoming.has(n.id));
-    const exitNode = childNodes.find((n) => !nodesWithOutgoing.has(n.id));
+    if (!entryNode) {
+      // Fallback: find node with no incoming internal connections
+      const nodesWithIncoming = new Set(internalConnections.map((c) => c.target));
+      entryNode = childNodes.find((n) => !nodesWithIncoming.has(n.id));
+    }
+
+    if (!exitNode) {
+      // Fallback: find node with no outgoing internal connections
+      const nodesWithOutgoing = new Set(internalConnections.map((c) => c.source));
+      exitNode = childNodes.find((n) => !nodesWithOutgoing.has(n.id));
+    }
 
     return {
       nodes: subgraphNodes,

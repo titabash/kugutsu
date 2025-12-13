@@ -52,6 +52,7 @@
     "chokidar": "^5.0.0",
     "dagre": "^0.8.5",
     "electron": "^28.3.3",
+    "lucide-react": "^0.559.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "rete": "^2.0.6",

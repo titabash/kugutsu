@@ -5,7 +5,7 @@
  * Provides a canvas for creating and editing workflows.
  */
 
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { NodeEditor, ClassicPreset, GetSchemes } from 'rete';
 import { AreaPlugin, AreaExtensions } from 'rete-area-plugin';
 import { ConnectionPlugin, Presets as ConnectionPresets } from 'rete-connection-plugin';
@@ -24,6 +24,8 @@ import type { Schemes, WorkflowNodeType } from './types';
 import type { ReactArea2D } from 'rete-react-plugin';
 import { WorkflowNode, NODE_COLORS } from './types';
 import type { EditorData, EditorNode, EditorConnection } from './WorkflowSerializer';
+import { CanvasBackground } from './components/CanvasBackground';
+import { Minimap, type MinimapNode } from './components/Minimap';
 
 // Update AreaExtra type to include ContextMenuExtra
 type AreaExtra = ReactArea2D<Schemes> | ContextMenuExtra;
@@ -426,8 +428,9 @@ function StyledNode(props: { data: Schemes['Node']; emit: (data: unknown) => voi
 
 /**
  * Node types that cannot be children of a Parallel Group
+ * Note: subgraph-start/end are auto-created inside parallel-group and cannot be moved
  */
-const FORBIDDEN_CHILD_TYPES: WorkflowNodeType[] = ['start', 'end', 'parallel-group'];
+const FORBIDDEN_CHILD_TYPES: WorkflowNodeType[] = ['start', 'end', 'parallel-group', 'subgraph-start', 'subgraph-end'];
 
 /**
  * Check if a node type can be a child of Parallel Group
@@ -707,7 +710,7 @@ async function createEditor(container: HTMLElement) {
           node.updateSize();
           return node;
         }],
-        ['Parallel Group', () => {
+        ['Parallel Group', async () => {
           const node = new WorkflowNode('Parallel Group');
           node.nodeType = 'parallel-group';
           node.config = {
@@ -721,7 +724,9 @@ async function createEditor(container: HTMLElement) {
               conflictResolution: { strategy: 'ai', autoMergeAfterTask: true },
             },
           };
-          // No sockets - Parallel Group is a container for child nodes
+          // Parallel Group has input/output sockets for workflow connections
+          node.addInput('input', new ClassicPreset.Input(socket, 'Input'));
+          node.addOutput('output', new ClassicPreset.Output(socket, 'Output'));
           // Add concurrency control
           node.addControl(
             'maxConcurrency',
@@ -765,6 +770,73 @@ async function createEditor(container: HTMLElement) {
   area.use(render);
   area.use(contextMenu);
 
+  // ============================================================================
+  // Auto-place subgraph nodes when Parallel Group is created via context menu
+  // ============================================================================
+  const pendingSubgraphCreation = new Set<string>();
+
+  editor.addPipe(async (context) => {
+    if (context.type === 'nodecreated') {
+      const node = context.data as WorkflowNode;
+
+      // Check if this is a parallel-group that needs subgraph nodes
+      if (node.nodeType === 'parallel-group' && !pendingSubgraphCreation.has(node.id)) {
+        // Check if it already has subgraph children (from loadEditorData)
+        const existingNodes = editor.getNodes();
+        const hasSubgraphChildren = existingNodes.some(
+          (n) => n.parent === node.id &&
+                 (n.nodeType === 'subgraph-start' || n.nodeType === 'subgraph-end')
+        );
+
+        if (!hasSubgraphChildren) {
+          // Mark as pending to avoid duplicate creation
+          pendingSubgraphCreation.add(node.id);
+
+          // Get parent position
+          const nodeView = area.nodeViews.get(node.id);
+          const parentPos = nodeView ? nodeView.position : { x: 0, y: 0 };
+
+          // Create subgraph-start node
+          const startNode = new WorkflowNode('Start');
+          startNode.nodeType = 'subgraph-start';
+          startNode.parent = node.id;
+          startNode.config = {};
+          startNode.addOutput('output', new ClassicPreset.Output(socket, 'Out'));
+          startNode.updateSize();
+          await editor.addNode(startNode);
+          await area.translate(startNode.id, {
+            x: parentPos.x + 50,
+            y: parentPos.y + 150,
+          });
+
+          // Create subgraph-end node
+          const endNode = new WorkflowNode('End');
+          endNode.nodeType = 'subgraph-end';
+          endNode.parent = node.id;
+          endNode.config = {};
+          endNode.addInput('input', new ClassicPreset.Input(socket, 'In'));
+          endNode.updateSize();
+          await editor.addNode(endNode);
+          await area.translate(endNode.id, {
+            x: parentPos.x + 280,
+            y: parentPos.y + 150,
+          });
+
+          // Create initial connection (Start -> End)
+          const initialConn = new ClassicPreset.Connection(startNode, 'output', endNode, 'input');
+          await editor.addConnection(initialConn);
+
+          // Update scopes to recalculate parent size
+          await scopes.update(node.id);
+
+          // Remove from pending set
+          pendingSubgraphCreation.delete(node.id);
+        }
+      }
+    }
+    return context;
+  });
+
   // Enable zoom and drag with single-select by default
   // Ctrl/Cmd+click for multi-select (accumulating)
   // Using official accumulateOnCtrl() for proper single-select/multi-select behavior
@@ -802,9 +874,10 @@ async function createEditor(container: HTMLElement) {
         const node = editor.getNode(nodeId);
         if (!node) continue;
 
-        // Don't allow deleting Start or End nodes
-        if (node.nodeType === 'start' || node.nodeType === 'end') {
-          console.log('[ReteWorkflowEditor] Cannot delete Start or End nodes');
+        // Don't allow deleting Start, End, or Subgraph nodes
+        if (node.nodeType === 'start' || node.nodeType === 'end' ||
+            node.nodeType === 'subgraph-start' || node.nodeType === 'subgraph-end') {
+          console.log('[ReteWorkflowEditor] Cannot delete Start, End, or Subgraph nodes');
           continue;
         }
 
@@ -1313,6 +1386,9 @@ async function createEditor(container: HTMLElement) {
       await editor.addNode(node);
       await area.translate(node.id, areaPosition);
 
+      // Note: For parallel-group nodes, subgraph-start/end nodes are auto-created
+      // by the editor.addPipe listener when 'nodecreated' event fires
+
       // If node has a parent, call scopes.update() to trigger parent resize
       // Per official docs: "After the nodes have been added to the editor,
       // to change the bindings between nodes, you need to explicitly call the update method"
@@ -1700,6 +1776,10 @@ export interface ReteWorkflowEditorProps {
   className?: string;
   onNodeSelect?: (nodeId: string | null) => void;
   onEditorReady?: (editor: ReturnType<typeof createEditor> extends Promise<infer T> ? T : never) => void;
+  showGrid?: boolean;
+  gridSize?: number;
+  gridType?: 'dots' | 'lines';
+  showMinimap?: boolean;
 }
 
 /**
@@ -1709,10 +1789,53 @@ export const ReteWorkflowEditor: React.FC<ReteWorkflowEditorProps> = ({
   className = '',
   onNodeSelect,
   onEditorReady,
+  showGrid = true,
+  gridSize = 20,
+  gridType = 'dots',
+  showMinimap = true,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isReady, setIsReady] = useState(false);
   const editorRef = useRef<Awaited<ReturnType<typeof createEditor>> | null>(null);
+
+  // Canvas state for grid and minimap
+  const [zoom, setZoom] = useState(1);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [minimapNodes, setMinimapNodes] = useState<MinimapNode[]>([]);
+  const [viewportSize, setViewportSize] = useState({ width: 800, height: 600 });
+
+  // Update minimap nodes when editor changes
+  const updateMinimapNodes = useCallback(() => {
+    if (!editorRef.current) return;
+
+    const editor = editorRef.current.editor;
+    const area = editorRef.current.area;
+    const nodes: MinimapNode[] = [];
+
+    for (const node of editor.getNodes()) {
+      const view = area.nodeViews.get(node.id);
+      if (view) {
+        nodes.push({
+          id: node.id,
+          x: view.position.x,
+          y: view.position.y,
+          width: node.width || 200,
+          height: node.height || 100,
+          type: (node as WorkflowNode).nodeType || 'transform',
+        });
+      }
+    }
+
+    setMinimapNodes(nodes);
+  }, []);
+
+  // Handle viewport change from minimap
+  const handleViewportChange = useCallback((x: number, y: number) => {
+    if (!editorRef.current) return;
+
+    const area = editorRef.current.area;
+    area.area.translate(-x, -y);
+  }, []);
 
   // Initialize editor
   useEffect(() => {
@@ -1728,6 +1851,35 @@ export const ReteWorkflowEditor: React.FC<ReteWorkflowEditorProps> = ({
           editorRef.current = editorInstance;
           setIsReady(true);
           onEditorReady?.(editorInstance);
+
+          // Update viewport size
+          const rect = containerRef.current!.getBoundingClientRect();
+          setViewportSize({ width: rect.width, height: rect.height });
+
+          // Subscribe to area events for zoom/pan updates
+          const area = editorInstance.area;
+
+          // Listen to transform changes
+          area.addPipe((ctx) => {
+            if (ctx.type === 'zoomed' || ctx.type === 'translated') {
+              const transform = area.area.transform;
+              setZoom(transform.k);
+              setOffset({ x: -transform.x / transform.k, y: -transform.y / transform.k });
+            }
+            return ctx;
+          });
+
+          // Listen to node changes for minimap
+          editorInstance.editor.addPipe((ctx) => {
+            if (ctx.type === 'nodecreated' || ctx.type === 'noderemoved') {
+              // Delay to allow position to be set
+              setTimeout(updateMinimapNodes, 100);
+            }
+            return ctx;
+          });
+
+          // Initial minimap update
+          updateMinimapNodes();
         } else {
           editorInstance.destroy();
         }
@@ -1745,11 +1897,30 @@ export const ReteWorkflowEditor: React.FC<ReteWorkflowEditorProps> = ({
         editorRef.current = null;
       }
     };
-  }, [onEditorReady]);
+  }, [onEditorReady, updateMinimapNodes]);
+
+  // Update viewport size on resize
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setViewportSize({
+          width: entry.contentRect.width,
+          height: entry.contentRect.height,
+        });
+      }
+    });
+
+    resizeObserver.observe(containerRef.current);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, []);
 
   return (
     <div
-      ref={containerRef}
       className={`rete-editor-container ${className}`}
       style={{
         width: '100%',
@@ -1759,18 +1930,53 @@ export const ReteWorkflowEditor: React.FC<ReteWorkflowEditorProps> = ({
         overflow: 'hidden',
       }}
     >
-      {!isReady && (
-        <div
-          style={{
-            position: 'absolute',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            color: '#666',
-          }}
-        >
-          Loading editor...
-        </div>
+      {/* Grid Background */}
+      <CanvasBackground
+        showGrid={showGrid}
+        gridSize={gridSize}
+        gridType={gridType}
+        zoom={zoom}
+        offsetX={offset.x}
+        offsetY={offset.y}
+        theme="dark"
+      />
+
+      {/* Rete.js Canvas Container */}
+      <div
+        ref={containerRef}
+        style={{
+          width: '100%',
+          height: '100%',
+          position: 'relative',
+        }}
+      >
+        {!isReady && (
+          <div
+            style={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              color: '#666',
+            }}
+          >
+            Loading editor...
+          </div>
+        )}
+      </div>
+
+      {/* Minimap */}
+      {showMinimap && isReady && (
+        <Minimap
+          nodes={minimapNodes}
+          viewportX={offset.x}
+          viewportY={offset.y}
+          viewportWidth={viewportSize.width / zoom}
+          viewportHeight={viewportSize.height / zoom}
+          onViewportChange={handleViewportChange}
+          position="bottom-right"
+          collapsible={true}
+        />
       )}
     </div>
   );

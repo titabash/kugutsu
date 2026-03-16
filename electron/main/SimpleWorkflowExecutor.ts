@@ -140,6 +140,7 @@ export class SimpleWorkflowExecutor extends EventEmitter {
 
     this.status = 'running';
     this.cancelled = false;
+    this.executedSubgraphNodes = [];  // Reset subgraph tracking
     this.progress = {
       totalNodes: workflow.nodes.length,
       completedNodes: 0,
@@ -192,6 +193,9 @@ export class SimpleWorkflowExecutor extends EventEmitter {
       // Get final outputs from exit node
       const finalOutputs = nodeOutputs[workflow.exitNodeId] || {};
 
+      // Include subgraph nodes in executed nodes list
+      const allExecutedNodes = [...executedNodes, ...this.executedSubgraphNodes];
+
       this.emit('completed', {
         success: true,
         result: finalOutputs,
@@ -200,7 +204,7 @@ export class SimpleWorkflowExecutor extends EventEmitter {
       return {
         success: true,
         executionId,
-        executedNodes,
+        executedNodes: allExecutedNodes,
         outputs: finalOutputs,
         duration,
       };
@@ -385,9 +389,10 @@ export class SimpleWorkflowExecutor extends EventEmitter {
 
       case 'control:parallel-group':
       case 'parallel-group':
-        // Parallel group - for now, pass through (TODO: implement parallel execution)
+        // Parallel group - execute subgraph
+        const parallelResult = await this.executeParallelGroup(node, inputs);
         for (const output of node.outputs) {
-          outputs[output.key] = inputs;
+          outputs[output.key] = parallelResult;
         }
         break;
 
@@ -569,6 +574,275 @@ export class SimpleWorkflowExecutor extends EventEmitter {
    */
   private delay(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Track executed subgraph nodes (set by execute method)
+   */
+  private executedSubgraphNodes: string[] = [];
+
+  /**
+   * Execute a Parallel Group's subgraph in parallel
+   * This executes the nodes inside the parallel group (Start -> ... -> End) multiple times concurrently
+   */
+  private async executeParallelGroup(
+    node: WorkflowNodeJSON,
+    inputs: Record<string, unknown>
+  ): Promise<Record<string, unknown>> {
+    const subgraph = node.config.subgraph as {
+      nodes: WorkflowNodeJSON[];
+      connections: ConnectionJSON[];
+      entryNodeId: string;
+      exitNodeId: string;
+    } | undefined;
+
+    if (!subgraph || !subgraph.nodes || subgraph.nodes.length === 0) {
+      console.log(`[SimpleWorkflowExecutor] Parallel group ${node.id} has no subgraph, passing through`);
+      return inputs;
+    }
+
+    const parallelConfig = node.config.parallelGroup as {
+      maxConcurrency?: number;
+    } | undefined;
+    const maxConcurrency = parallelConfig?.maxConcurrency || 4;
+
+    // Get prompt and split into tasks
+    const prompt = (inputs.prompt as string) || (inputs.userInput as string) || '';
+    const tasks = this.splitPromptIntoTasks(prompt, maxConcurrency);
+
+    console.log(`[SimpleWorkflowExecutor] Executing parallel group ${node.id} with ${tasks.length} parallel tasks (concurrency: ${maxConcurrency})`);
+    console.log(`[SimpleWorkflowExecutor] Tasks:`, tasks.map((t, i) => `[${i + 1}] ${t.substring(0, 50)}...`));
+
+    // Execute subgraph for each task in parallel
+    const parallelPromises = tasks.map((task, index) =>
+      this.executeSubgraphOnce(subgraph, {
+        ...inputs,
+        prompt: task,
+        userInput: task,
+        taskIndex: index,
+        taskTotal: tasks.length,
+      }, node.id, index)
+    );
+
+    // Wait for all parallel executions to complete
+    const results = await Promise.all(parallelPromises);
+
+    console.log(`[SimpleWorkflowExecutor] All ${results.length} parallel tasks completed`);
+
+    // Aggregate results
+    return {
+      ...inputs,
+      parallelResults: results,
+      parallelGroupId: node.id,
+      taskCount: tasks.length,
+    };
+  }
+
+  /**
+   * Split a prompt into multiple tasks based on natural language patterns
+   */
+  private splitPromptIntoTasks(prompt: string, maxTasks: number): string[] {
+    if (!prompt || prompt.trim().length === 0) {
+      return ['Default task'];
+    }
+
+    // Try to split by common task separators
+    const separators = [
+      /[。．]\s*(?=[^。．])/g,  // Japanese period
+      /\.\s+(?=[A-Z])/g,        // English sentence
+      /(?:タスク|Task)\s*\d+[：:]/gi,  // Task 1:, タスク1：
+      /(?:と|and|,)\s*(?=.*(?:を|する|implement|create|add|fix))/gi,  // "A and B" pattern
+    ];
+
+    let tasks: string[] = [prompt];
+
+    // Try each separator pattern
+    for (const separator of separators) {
+      const splits = prompt.split(separator).filter(s => s.trim().length > 10);
+      if (splits.length > 1 && splits.length <= maxTasks) {
+        tasks = splits.map(s => s.trim());
+        break;
+      }
+    }
+
+    // If still single task but contains multiple verb phrases, try to split
+    if (tasks.length === 1 && prompt.length > 50) {
+      // Look for patterns like "AをするタスクとBをするタスク" or "implement A and implement B"
+      const verbPattern = /(.+?(?:を|する|タスク|implement|create|add|fix)[^、,]*)[、,と]\s*(.+)/i;
+      const match = prompt.match(verbPattern);
+      if (match && match[1] && match[2]) {
+        tasks = [match[1].trim(), match[2].trim()];
+      }
+    }
+
+    // Limit to maxTasks
+    if (tasks.length > maxTasks) {
+      tasks = tasks.slice(0, maxTasks);
+    }
+
+    // Ensure at least one task
+    if (tasks.length === 0) {
+      tasks = [prompt];
+    }
+
+    return tasks;
+  }
+
+  /**
+   * Execute subgraph once with given inputs
+   */
+  private async executeSubgraphOnce(
+    subgraph: {
+      nodes: WorkflowNodeJSON[];
+      connections: ConnectionJSON[];
+      entryNodeId: string;
+      exitNodeId: string;
+    },
+    inputs: Record<string, unknown>,
+    parentNodeId: string,
+    taskIndex: number
+  ): Promise<Record<string, unknown>> {
+    const executionOrder = this.buildSubgraphExecutionOrder(subgraph);
+    const nodeOutputs: Record<string, Record<string, unknown>> = {};
+
+    console.log(`[SimpleWorkflowExecutor] Starting parallel task ${taskIndex + 1}`);
+
+    // Execute subgraph nodes in order
+    for (const subNodeId of executionOrder) {
+      if (this.cancelled) {
+        throw new Error('Execution cancelled');
+      }
+
+      const subNode = subgraph.nodes.find(n => n.id === subNodeId);
+      if (!subNode) continue;
+
+      // Create unique node ID for this parallel execution
+      const uniqueNodeId = `${subNodeId}#${taskIndex}`;
+
+      // Gather inputs for this subgraph node
+      const subInputs = this.gatherSubgraphInputs(
+        subNodeId,
+        subgraph.connections,
+        nodeOutputs,
+        inputs
+      );
+
+      // Execute subgraph node
+      const subOutputs = await this.executeNode(subNode, subInputs);
+      nodeOutputs[subNodeId] = subOutputs;
+
+      // Track executed subgraph nodes
+      this.executedSubgraphNodes.push(uniqueNodeId);
+
+      // Emit progress for subgraph node
+      this.emit('progress', {
+        nodeId: uniqueNodeId,
+        originalNodeId: subNodeId,
+        parentNodeId,
+        taskIndex,
+        status: 'completed',
+        progress: this.calculateProgress(),
+        outputs: subOutputs,
+      });
+
+      console.log(`[SimpleWorkflowExecutor] Task ${taskIndex + 1}: Executed ${subNodeId} (${subNode.type})`);
+    }
+
+    console.log(`[SimpleWorkflowExecutor] Completed parallel task ${taskIndex + 1}`);
+
+    // Return outputs from exit node
+    return {
+      taskIndex,
+      result: nodeOutputs[subgraph.exitNodeId] || {},
+    };
+  }
+
+  /**
+   * Build execution order for subgraph using topological sort
+   */
+  private buildSubgraphExecutionOrder(subgraph: {
+    nodes: WorkflowNodeJSON[];
+    connections: ConnectionJSON[];
+    entryNodeId: string;
+    exitNodeId: string;
+  }): string[] {
+    const nodeIds = new Set(subgraph.nodes.map(n => n.id));
+    const inDegree = new Map<string, number>();
+    const adjacency = new Map<string, string[]>();
+
+    // Initialize
+    for (const nodeId of nodeIds) {
+      inDegree.set(nodeId, 0);
+      adjacency.set(nodeId, []);
+    }
+
+    // Build adjacency and in-degree from connections
+    for (const conn of subgraph.connections) {
+      if (nodeIds.has(conn.source) && nodeIds.has(conn.target)) {
+        adjacency.get(conn.source)!.push(conn.target);
+        inDegree.set(conn.target, (inDegree.get(conn.target) || 0) + 1);
+      }
+    }
+
+    // Topological sort (Kahn's algorithm)
+    const queue: string[] = [];
+    const result: string[] = [];
+
+    // Find all nodes with no incoming edges
+    for (const [nodeId, degree] of inDegree) {
+      if (degree === 0) {
+        queue.push(nodeId);
+      }
+    }
+
+    while (queue.length > 0) {
+      const nodeId = queue.shift()!;
+      result.push(nodeId);
+
+      for (const neighbor of adjacency.get(nodeId) || []) {
+        const newDegree = (inDegree.get(neighbor) || 0) - 1;
+        inDegree.set(neighbor, newDegree);
+        if (newDegree === 0) {
+          queue.push(neighbor);
+        }
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Gather inputs for a subgraph node
+   */
+  private gatherSubgraphInputs(
+    nodeId: string,
+    connections: ConnectionJSON[],
+    nodeOutputs: Record<string, Record<string, unknown>>,
+    parentInputs: Record<string, unknown>
+  ): Record<string, unknown> {
+    const inputs: Record<string, unknown> = { ...parentInputs };
+
+    // Find all connections targeting this node
+    const incomingConnections = connections.filter(c => c.target === nodeId);
+
+    for (const conn of incomingConnections) {
+      const sourceOutputs = nodeOutputs[conn.source];
+      if (sourceOutputs) {
+        const value = sourceOutputs[conn.sourceOutput];
+        if (value !== undefined) {
+          inputs[conn.targetInput] = value;
+        }
+      }
+    }
+
+    return inputs;
+  }
+
+  /**
+   * Get executed subgraph nodes (for test verification)
+   */
+  getExecutedSubgraphNodes(): string[] {
+    return [...this.executedSubgraphNodes];
   }
 }
 

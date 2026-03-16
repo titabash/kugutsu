@@ -229,3 +229,30 @@ export const SPACING = {
   lg: 16,
   xl: 24,
 };
+
+// ============================================================================
+// Parallel Group Constants
+// ============================================================================
+
+/**
+ * Padding inside Parallel Group for child nodes
+ * These values define the minimum margin between child nodes and the group border
+ */
+export const PARALLEL_GROUP_PADDING = {
+  /** Top padding: Title bar (50px) + Concurrency control (50px) + margin (20px) */
+  top: 120,
+  /** Left padding for child nodes (space for Input socket + label) */
+  left: 100,
+  /** Right padding for child nodes (space for Output socket + label) */
+  right: 100,
+  /** Bottom padding for child nodes */
+  bottom: 80,
+};
+
+/**
+ * Minimum size for Parallel Group nodes
+ */
+export const PARALLEL_GROUP_MIN_SIZE = {
+  width: 500,
+  height: 400,
+};

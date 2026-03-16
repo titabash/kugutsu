@@ -23,6 +23,7 @@ import { css } from 'styled-components';
 import type { Schemes, WorkflowNodeType } from './types';
 import type { ReactArea2D } from 'rete-react-plugin';
 import { WorkflowNode, NODE_COLORS } from './types';
+import { PARALLEL_GROUP_PADDING, PARALLEL_GROUP_MIN_SIZE } from './styles/design-tokens';
 import type { EditorData, EditorNode, EditorConnection } from './WorkflowSerializer';
 import { CanvasBackground } from './components/CanvasBackground';
 import { Minimap, type MinimapNode } from './components/Minimap';
@@ -544,26 +545,23 @@ async function createEditor(container: HTMLElement) {
   // Create React render plugin
   const render = new ReactPlugin<Schemes, AreaExtra>({ createRoot });
 
-  // Minimum size for Parallel Group nodes
-  const PARALLEL_GROUP_MIN_WIDTH = 400;
-  const PARALLEL_GROUP_MIN_HEIGHT = 300;
-
   // Create scopes plugin for nested nodes (Parallel Groups)
   // Keep configuration minimal like the official sample to ensure proper dynamic resizing
   const scopes = new ScopesPlugin<Schemes>({
     // Padding inside parent node for child nodes
+    // Use constants from design-tokens for consistent margins
     padding: () => ({
-      top: 120,   // Space for title bar (50px) + Concurrency control (50px) + margin (20px)
-      left: 20,
-      right: 20,
-      bottom: 20,
+      top: PARALLEL_GROUP_PADDING.top,
+      left: PARALLEL_GROUP_PADDING.left,
+      right: PARALLEL_GROUP_PADDING.right,
+      bottom: PARALLEL_GROUP_PADDING.bottom,
     }),
     // Enforce minimum size for Parallel Group nodes
     // This is called when child nodes are added/removed to recalculate parent size
     size: (nodeId, size) => {
       return {
-        width: Math.max(size.width, PARALLEL_GROUP_MIN_WIDTH),
-        height: Math.max(size.height, PARALLEL_GROUP_MIN_HEIGHT),
+        width: Math.max(size.width, PARALLEL_GROUP_MIN_SIZE.width),
+        height: Math.max(size.height, PARALLEL_GROUP_MIN_SIZE.height),
       };
     },
   });
@@ -818,13 +816,12 @@ async function createEditor(container: HTMLElement) {
           endNode.updateSize();
           await editor.addNode(endNode);
           await area.translate(endNode.id, {
-            x: parentPos.x + 280,
-            y: parentPos.y + 150,
+            x: parentPos.x + 350,
+            y: parentPos.y + 350,
           });
 
-          // Create initial connection (Start -> End)
-          const initialConn = new ClassicPreset.Connection(startNode, 'output', endNode, 'input');
-          await editor.addConnection(initialConn);
+          // Note: Start and End are NOT connected by default
+          // Users will add nodes between them and connect manually
 
           // Update scopes to recalculate parent size
           await scopes.update(node.id);
